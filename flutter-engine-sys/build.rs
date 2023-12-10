@@ -19,12 +19,6 @@ fn main() {
         clang_args.push(sdk_path);
     }
 
-    // https://github.com/rust-lang/rust-bindgen/issues/1211
-    let target = if target == "aarch64-apple-ios" {
-        String::from("arm64-apple-ios")
-    } else {
-        target
-    };
     clang_args.push(format!("--target={}", target));
 
     let bindings = bindgen::Builder::default()
