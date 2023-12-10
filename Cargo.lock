@@ -145,6 +145,7 @@ dependencies = [
  "priority-queue",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]

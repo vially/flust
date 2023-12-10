@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{mem, ptr};
+use thiserror::Error;
 
 pub(crate) type MainThreadEngineFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
 pub(crate) type MainThreadRenderThreadFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
@@ -314,16 +315,17 @@ impl FlutterEngine {
         &self.inner.arguments
     }
 
-    pub fn run(&self) -> Result<(), ()> {
+    pub fn run(&self) -> Result<(), RunError> {
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
 
-        // TODO: Safeguard, process results
         unsafe {
             match flutter_engine_sys::FlutterEngineRunInitialized(self.engine_ptr()) {
                 FlutterEngineResult::kSuccess => Ok(()),
-                _ => Err(()),
+                FlutterEngineResult::kInvalidLibraryVersion => Err(RunError::InvalidLibraryVersion),
+                FlutterEngineResult::kInvalidArguments => Err(RunError::InvalidArguments),
+                FlutterEngineResult::kInternalInconsistency => Err(RunError::InternalInconsistency),
             }
         }
     }
@@ -565,3 +567,15 @@ impl core::fmt::Display for CreateError {
 }
 
 impl std::error::Error for CreateError {}
+
+#[derive(Error, Debug)]
+pub enum RunError {
+    #[error("Invalid library version")]
+    InvalidLibraryVersion,
+
+    #[error("Invalid arguments")]
+    InvalidArguments,
+
+    #[error("Internal inconsistency")]
+    InternalInconsistency,
+}
