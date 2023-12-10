@@ -40,8 +40,8 @@ mod tests {
 
     #[test]
     fn link() {
-        let lib = Library::new(LIB).unwrap();
         unsafe {
+            let lib = Library::new(LIB).unwrap();
             lib.get::<*const ()>(b"gIcudtlData\0").unwrap();
             lib.get::<*const ()>(b"gIcudtlEnd\0").unwrap();
             lib.get::<*const ()>(b"gIcudtlSize\0").unwrap();
