@@ -28,7 +28,7 @@ fn main() {
     clang_args.push(format!("--target={}", target));
 
     let bindings = bindgen::Builder::default()
-        .header("flutter-engine.h")
+        .header("embedder.h")
         .default_enum_style(EnumVariation::Rust {
             non_exhaustive: false,
         })
