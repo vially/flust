@@ -1,7 +1,5 @@
 use crate::FlutterEngine;
 use flutter_engine_sys::FlutterOpenGLTexture;
-#[cfg(feature = "image")]
-use image::RgbaImage;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::os::raw::c_void;
@@ -65,49 +63,6 @@ impl Texture {
 
     pub fn post_frame(&self, frame: TextureFrame) {
         post_frame_internal(&self.engine, self.texture_id, &self.frames, frame);
-    }
-
-    #[cfg(feature = "image")]
-    pub fn post_frame_rgba(&self, img: RgbaImage) {
-        let texture_id = self.texture_id;
-        let frames = self.frames.clone();
-        self.engine.run_on_render_thread(move |engine| {
-            let (width, height) = img.dimensions();
-
-            let glid = unsafe {
-                let mut glid: u32 = 0;
-                gl::GenTextures(1, &mut glid as *mut _);
-                gl::BindTexture(gl::TEXTURE_2D, glid);
-                gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
-                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
-                gl::TexImage2D(
-                    gl::TEXTURE_2D,
-                    0,             // mipmap level
-                    gl::RGBA as _, // internal format of the texture
-                    width as _,
-                    height as _,
-                    0,                           // border, must be 0
-                    gl::RGBA,                    // format of the pixel data
-                    gl::UNSIGNED_BYTE,           // data type of the pixel data
-                    (&img).as_ptr() as *const _, // pixel data
-                );
-                gl::BindTexture(gl::TEXTURE_2D, 0);
-
-                glid
-            };
-
-            let engine_weak = engine.downgrade();
-            let frame = TextureFrame::new(gl::TEXTURE_2D, glid, gl::RGBA8, move || {
-                if let Some(engine) = engine_weak.upgrade() {
-                    engine.run_on_render_thread(move |_| unsafe {
-                        gl::DeleteTextures(1, &glid as *const _);
-                    });
-                }
-            });
-
-            post_frame_internal(&engine, texture_id, &frames, frame);
-        });
     }
 }
 
