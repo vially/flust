@@ -2,7 +2,7 @@
 name = "flutter-engine"
 version = "0.4.0"
 authors = ["juju <gliheng@gmail.com>", "Sophie Tauchert <sophie@999eagle.moe>"]
-edition = "2018"
+edition = "2021"
 description = "Flutter engine embedder in rust."
 keywords = ["flutter", "GUI"]
 repository = "https://github.com/flutter-rs/flutter-rs"
@@ -16,8 +16,8 @@ image = { version = "0.22.4", optional = true, default_features = false }
 log = "0.4.8"
 parking_lot = "0.10.0"
 priority-queue = "0.7.0"
-serde = { version = "1.0.106", features = ["derive"] }
-serde_json = "1.0.44"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.107"
 async-std = "1.2"
 futures-task = "0.3.1"
 

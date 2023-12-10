@@ -179,6 +179,9 @@ impl FlutterEngine {
                     gl_external_texture_frame_callback: Some(
                         flutter_callbacks::gl_external_texture_frame,
                     ),
+                    fbo_with_frame_info_callback: None,
+                    present_with_info: None,
+                    populate_existing_damage: None,
                 },
             },
         };
@@ -204,6 +207,7 @@ impl FlutterEngine {
             platform_task_runner: &platform_task_runner
                 as *const flutter_engine_sys::FlutterTaskRunnerDescription,
             render_task_runner: std::ptr::null(),
+            thread_priority_setter: None,
         };
 
         // Configure engine
@@ -235,6 +239,17 @@ impl FlutterEngine {
                 as *const flutter_engine_sys::FlutterCustomTaskRunners,
             shutdown_dart_vm_when_done: true,
             compositor: std::ptr::null(),
+            dart_old_gen_heap_size: -1,
+            aot_data: std::ptr::null_mut(),
+            compute_platform_resolved_locale_callback: None,
+            dart_entrypoint_argc: 0,
+            dart_entrypoint_argv: std::ptr::null(),
+            log_message_callback: None,
+            log_tag: std::ptr::null(),
+            on_pre_engine_restart_callback: None,
+            update_semantics_callback: None,
+            update_semantics_callback2: None,
+            channel_update_callback: None,
         };
 
         // Initialise engine
@@ -367,6 +382,13 @@ impl FlutterEngine {
             width,
             height,
             pixel_ratio,
+            left: 0,
+            top: 0,
+            physical_view_inset_top: 0.0,
+            physical_view_inset_right: 0.0,
+            physical_view_inset_bottom: 0.0,
+            physical_view_inset_left: 0.0,
+            display_id: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
         };
@@ -404,6 +426,10 @@ impl FlutterEngine {
             scroll_delta_y,
             device_kind: device_kind.into(),
             buttons: buttons as i64,
+            pan_x: 0.0,
+            pan_y: 0.0,
+            scale: 1.0,
+            rotation: 0.0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]

@@ -2,7 +2,7 @@
 name = "flutter-engine-sys"
 version = "0.4.0"
 authors = ["juju <gliheng@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Rust bindings for the flutter engine."
 keywords = ["flutter", "GUI"]
 repository = "https://github.com/flutter-rs/flutter-rs"

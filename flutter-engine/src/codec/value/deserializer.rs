@@ -290,6 +290,7 @@ impl<'de> de::VariantAccess<'de> for EnumAccess<'de> {
 #[cfg(test)]
 mod tests {
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
 
     use super::{from_value, Value};
 
@@ -324,11 +325,13 @@ mod tests {
 
     #[test]
     fn test_deserialize_tuple_enum() {
-        let value = json_value!({ "A": 42 });
+        let value =
+            Value::try_from(json!({ "A": 42 })).expect("JSON to value deserialization failed");
         let deserialized = from_value::<TupleEnum>(&value).expect("deserialization failed");
         assert_eq!(deserialized, TupleEnum::A(42));
 
-        let value = json_value!({ "B": [ "text", 1337 ] });
+        let value = Value::try_from(json!({ "B": [ "text", 1337 ] }))
+            .expect("JSON to value deserialization failed");
         let deserialized = from_value::<TupleEnum>(&value).expect("deserialization failed");
         if let TupleEnum::B(s, i) = deserialized {
             assert_eq!(s, "text");
@@ -340,11 +343,13 @@ mod tests {
 
     #[test]
     fn test_deserialize_struct_enum() {
-        let value = json_value!({ "A": { "number": 42 } });
+        let value = Value::try_from(json!({ "A": { "number": 42 } }))
+            .expect("JSON to value deserialization failed");
         let deserialized = from_value::<StructEnum>(&value).expect("deserialization failed");
         assert_eq!(deserialized, StructEnum::A { number: 42 });
 
-        let value = json_value!({ "B": { "text": "test" } });
+        let value = Value::try_from(json!({ "B": { "text": "test" } }))
+            .expect("JSON to value deserialization failed");
         let deserialized = from_value::<StructEnum>(&value).expect("deserialization failed");
         assert_eq!(
             deserialized,
