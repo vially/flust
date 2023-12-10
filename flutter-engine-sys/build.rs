@@ -56,7 +56,7 @@ fn sdk_path(target: &str) -> Option<String> {
     };
 
     let output = Command::new("xcrun")
-        .args(&["--sdk", sdk, "--show-sdk-path"])
+        .args(["--sdk", sdk, "--show-sdk-path"])
         .output()
         .expect("xcrun command failed")
         .stdout;
