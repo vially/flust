@@ -7,8 +7,6 @@ mod flutter_callbacks;
 pub mod plugins;
 pub mod tasks;
 
-use futures_task::FutureObj;
-
 pub mod texture_registry;
 
 use crate::builder::FlutterEngineBuilder;
@@ -21,13 +19,11 @@ use crate::ffi::{
 use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseHandle};
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
-use async_std::task;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use flutter_engine_sys::{FlutterEngineResult, FlutterTask};
 use log::trace;
 use parking_lot::RwLock;
 use std::ffi::CString;
-use std::future::Future;
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
@@ -363,11 +359,6 @@ impl FlutterEngine {
         // } else {
         self.post_platform_callback(MainThreadCallback::RenderThread(Box::new(f)));
         // }
-    }
-
-    #[deprecated(note = "Soon to be removed: Unclear use cases")]
-    pub fn run_in_background(&self, future: impl Future<Output = ()> + Send + 'static) {
-        task::spawn(FutureObj::new(Box::new(future)));
     }
 
     pub fn send_window_metrics_event(&self, width: usize, height: usize, pixel_ratio: f64) {
