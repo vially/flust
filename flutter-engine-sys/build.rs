@@ -2,6 +2,11 @@ use bindgen::EnumVariation;
 use std::path::PathBuf;
 
 fn main() {
+    // Tell cargo to look for shared libraries in the specified directory (needed for `cargo test`)
+    if let Ok(flutter_engine_search_path) = std::env::var("FLUTTER_ENGINE_LIB_PATH") {
+        println!("cargo:rustc-link-search={flutter_engine_search_path}");
+    }
+
     let target = std::env::var("TARGET").unwrap();
     let mut clang_args: Vec<String> = Vec::new();
 

@@ -42,9 +42,7 @@ mod tests {
     fn link() {
         unsafe {
             let lib = Library::new(LIB).unwrap();
-            lib.get::<*const ()>(b"gIcudtlData\0").unwrap();
-            lib.get::<*const ()>(b"gIcudtlEnd\0").unwrap();
-            lib.get::<*const ()>(b"gIcudtlSize\0").unwrap();
+            lib.get::<*const ()>(b"FlutterEngineRun\0").unwrap();
         }
     }
 }

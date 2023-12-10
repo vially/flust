@@ -14,3 +14,8 @@ dirs = "5.0.1"
 
 [dev-dependencies]
 libloading = "0.8.1"
+
+[lib]
+# Do not treat comments coming from `embedder.h` as doc tests:
+# https://github.com/rust-lang/rust-bindgen/issues/1313
+doctest = false
