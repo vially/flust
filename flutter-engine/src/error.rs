@@ -177,9 +177,9 @@ impl error::Error for MethodCallError {
     }
 }
 
-impl Into<MethodCallResult> for MethodCallError {
-    fn into(self) -> MethodCallResult {
-        match self {
+impl From<MethodCallError> for MethodCallResult {
+    fn from(val: MethodCallError) -> Self {
+        match val {
             MethodCallError::NotImplemented => MethodCallResult::NotImplemented,
             MethodCallError::CustomError {
                 code,

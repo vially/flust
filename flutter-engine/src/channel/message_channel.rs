@@ -103,7 +103,7 @@ impl MessageChannel {
     pub fn send_with_result<T, F, V>(&self, value: T, callback: F)
     where
         T: Serialize,
-        F: FnOnce(V) -> () + 'static + Send,
+        F: FnOnce(V) + 'static + Send,
         V: DeserializeOwned,
     {
         if let Some(engine) = self.engine() {

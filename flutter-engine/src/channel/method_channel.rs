@@ -175,7 +175,7 @@ impl MethodChannel {
     pub fn invoke_method_with_result<T, F, V, D>(&self, method: String, args: T, callback: F)
     where
         T: Serialize,
-        F: FnOnce(Result<V, MethodError<D>>) -> () + 'static + Send,
+        F: FnOnce(Result<V, MethodError<D>>) + 'static + Send,
         V: DeserializeOwned,
         D: DeserializeOwned + Serialize,
     {

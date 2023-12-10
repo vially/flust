@@ -145,6 +145,8 @@ struct Task {
     task: FlutterTask,
 }
 
+unsafe impl Send for Task {}
+
 impl Ord for TaskPriority {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.time.cmp(&other.time) {

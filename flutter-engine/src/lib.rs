@@ -64,10 +64,7 @@ unsafe impl Sync for FlutterEngineWeakRef {}
 
 impl FlutterEngineWeakRef {
     pub fn upgrade(&self) -> Option<FlutterEngine> {
-        match self.inner.upgrade() {
-            None => None,
-            Some(arc) => Some(FlutterEngine { inner: arc }),
-        }
+        self.inner.upgrade().map(|arc| FlutterEngine { inner: arc })
     }
 
     pub fn is_valid(&self) -> bool {
@@ -140,6 +137,7 @@ impl FlutterEngine {
         let (main_tx, main_rx) = unbounded();
 
         let engine = Self {
+            #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(FlutterEngineInner {
                 opengl_handler: builder
                     .opengl_handler
@@ -346,7 +344,7 @@ impl FlutterEngine {
 
     pub fn run_on_platform_thread<F>(&self, f: F)
     where
-        F: FnOnce(&FlutterEngine) -> () + 'static + Send,
+        F: FnOnce(&FlutterEngine) + 'static + Send,
     {
         if self.is_platform_thread() {
             f(self);
@@ -357,7 +355,7 @@ impl FlutterEngine {
 
     pub fn run_on_render_thread<F>(&self, f: F)
     where
-        F: FnOnce(&FlutterEngine) -> () + 'static + Send,
+        F: FnOnce(&FlutterEngine) + 'static + Send,
     {
         // TODO: Reimplement render thread
         // if self.is_platform_thread() {
@@ -519,7 +517,7 @@ impl FlutterEngine {
 
     fn post_render_thread_task<F>(&self, f: F)
     where
-        F: FnOnce() -> () + 'static,
+        F: FnOnce() + 'static,
     {
         unsafe {
             let cbk = CallbackBox { cbk: Box::new(f) };

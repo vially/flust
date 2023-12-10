@@ -317,7 +317,8 @@ impl<'a> Reader<'a> {
             } else {
                 let v = slice::from_raw_parts(&self.buf[self.pos], len);
                 self.pos += len;
-                String::from_utf8_lossy(v).to_owned().to_string()
+                // TODO: Investigate if `into_owned` is correct in here
+                String::from_utf8_lossy(v).into_owned().to_string()
             }
         }
     }

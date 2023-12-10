@@ -18,7 +18,7 @@ unsafe impl Sync for PlatformMessageResponseHandle {}
 impl PlatformMessageResponseHandle {
     pub fn new<F>(engine: FlutterEngine, callback: F) -> Self
     where
-        F: FnOnce(&[u8]) -> () + 'static + Send,
+        F: FnOnce(&[u8]) + 'static + Send,
     {
         unsafe {
             let callback = Box::new(callback);
@@ -50,9 +50,9 @@ unsafe extern "C" fn response_handle_callback(
     user_data(message);
 }
 
-impl Into<PlatformMessageResponseHandle> for *const FlutterPlatformMessageResponseHandle {
-    fn into(self) -> PlatformMessageResponseHandle {
-        PlatformMessageResponseHandle { handle: self }
+impl From<*const FlutterPlatformMessageResponseHandle> for PlatformMessageResponseHandle {
+    fn from(val: *const FlutterPlatformMessageResponseHandle) -> Self {
+        PlatformMessageResponseHandle { handle: val }
     }
 }
 
@@ -79,14 +79,14 @@ pub struct PlatformMessage<'a, 'b> {
     pub response_handle: Option<PlatformMessageResponseHandle>,
 }
 
-impl<'a, 'b> Into<FlutterPlatformMessage> for PlatformMessage<'a, 'b> {
-    fn into(mut self) -> FlutterPlatformMessage {
+impl<'a, 'b> From<PlatformMessage<'a, 'b>> for FlutterPlatformMessage {
+    fn from(mut val: PlatformMessage<'a, 'b>) -> Self {
         FlutterPlatformMessage {
             struct_size: mem::size_of::<FlutterPlatformMessage>(),
-            channel: CString::new(&*self.channel).unwrap().into_raw(),
-            message: self.message.as_ptr(),
-            message_size: self.message.len(),
-            response_handle: self.response_handle.take().map_or(ptr::null(), Into::into),
+            channel: CString::new(&*val.channel).unwrap().into_raw(),
+            message: val.message.as_ptr(),
+            message_size: val.message.len(),
+            response_handle: val.response_handle.take().map_or(ptr::null(), Into::into),
         }
     }
 }
