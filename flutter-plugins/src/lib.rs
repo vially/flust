@@ -1,4 +1,3 @@
-pub mod dialog;
 pub mod isolate;
 pub mod keyevent;
 pub mod lifecycle;
