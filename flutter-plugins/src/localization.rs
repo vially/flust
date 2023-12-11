@@ -1,6 +1,7 @@
 //! Plugin to work with locales.
 //! It handles flutter/localization type message.
 
+use icu_locid::Locale;
 use log::{debug, error, info, warn};
 use std::sync::Weak;
 
@@ -39,26 +40,22 @@ impl Plugin for LocalizationPlugin {
 }
 
 impl LocalizationPlugin {
-    pub fn send_locale(&self, locale: locale_config::Locale) {
+    pub fn send_locale(&self, locale: String) {
         debug!("Sending locales to flutter");
         if let Some(channel) = self.channel.upgrade() {
             let mut languages = Vec::<String>::new();
-            for (tag, language) in locale.tags() {
-                if tag.is_some() {
-                    continue;
-                }
-                // This is kind of a hack. `locale_config` doesn't provide a way to get the components of a locale,
-                // but `unic-locale` doesn't support getting the system locales. So we use the former crate to get
-                // the current locale and then use `unic-locale` to parse it.
-                if let Ok(loc) = unic_locale::parser::parse_locale(language.as_ref()) {
-                    info!("Available locale: {}", loc);
-                    languages.push(loc.get_language().to_owned());
-                    languages.push(loc.get_region().unwrap_or_default().to_owned());
-                    languages.push(loc.get_script().unwrap_or_default().to_owned());
-                    languages.push(loc.get_variants().next().map_or("", |v| v).to_owned());
+            if let Ok(loc) = locale.parse::<Locale>() {
+                info!("Available locale: {}", loc);
+                if let (Some(region), Some(script)) = (loc.id.region, loc.id.script) {
+                    languages.push(loc.id.language.as_str().to_owned());
+                    languages.push(region.as_str().to_owned());
+                    languages.push(script.as_str().to_owned());
+                    languages.push(loc.id.variants.get(0).map_or("", |v| v.as_str()).to_owned());
                 } else {
-                    warn!("Failed to parse language range: {}", language);
+                    warn!("Failed to unwrap locale region and/or script: {}", locale);
                 }
+            } else {
+                warn!("Failed to parse locale: {}", locale);
             }
 
             channel.invoke_method("setLocale", languages)
