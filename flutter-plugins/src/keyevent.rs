@@ -66,7 +66,7 @@ impl KeyEventPlugin {
         F: FnOnce(&MessageChannel),
     {
         if let Some(channel) = self.channel.upgrade() {
-            f(&*channel);
+            f(&channel);
         }
     }
 

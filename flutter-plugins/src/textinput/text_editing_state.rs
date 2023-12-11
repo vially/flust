@@ -75,7 +75,7 @@ impl TextEditingState {
         let index = self
             .text
             .byte_index_of_char(self.selection_extent as usize)
-            .unwrap_or_else(|| self.text.len());
+            .unwrap_or(self.text.len());
         self.text.insert_str(index, c);
         if self.selection_extent < 0 {
             self.selection_extent = 0;
@@ -190,7 +190,7 @@ impl TextEditingState {
                 return 0;
             }
             let s = &v[..start - 1];
-            let len = s.iter().count();
+            let len = s.len();
             s.iter().rposition(|&c| c == '\n').map_or(0, |n| {
                 // start of line pos
                 start - len + n

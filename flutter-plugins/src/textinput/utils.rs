@@ -17,17 +17,14 @@ impl StringUtils for str {
             return "";
         }
         let start_idx = self.byte_index_of_char(start).unwrap_or(0);
-        let end_idx = self.byte_index_of_char(end).unwrap_or_else(|| self.len());
+        let end_idx = self.byte_index_of_char(end).unwrap_or(self.len());
         &self[start_idx..end_idx]
     }
     fn char_count(&self) -> usize {
         self.chars().count()
     }
     fn byte_index_of_char(&self, char_index: usize) -> Option<usize> {
-        match self.char_indices().nth(char_index) {
-            Some((i, _)) => Some(i),
-            None => None,
-        }
+        self.char_indices().nth(char_index).map(|(i, _)| i)
     }
     fn byte_range_of_chars(&self, char_range: Range<usize>) -> Option<Range<usize>> {
         let mut indices = self.char_indices();
@@ -90,7 +87,7 @@ mod tests {
         let s = String::from("hello world");
         assert_eq!(s.byte_range_of_chars(0..0), Some(0..0));
         assert_eq!(s.byte_range_of_chars(0..1), Some(0..1));
-        assert_eq!(s.byte_range_of_chars(1..0), Some(1..1));
+        assert_eq!(s.byte_range_of_chars(1..1), Some(1..1));
         assert_eq!(s.byte_range_of_chars(1..4), Some(1..4));
         assert_eq!(s.byte_range_of_chars(14..27), None);
         assert_eq!(s.byte_range_of_chars(10..10), Some(10..10));

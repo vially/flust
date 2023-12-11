@@ -89,19 +89,17 @@ impl MethodCallHandler for Handler {
             }
             "Clipboard.setData" => {
                 if let Value::Map(v) = &call.args() {
-                    if let Some(v) = &v.get("text") {
-                        if let Value::String(text) = v {
-                            let text = text.clone();
-                            self.handler.lock().set_clipboard_data(text);
-                            return call.success_empty();
-                        }
+                    if let Some(Value::String(text)) = &v.get("text") {
+                        let text = text.clone();
+                        self.handler.lock().set_clipboard_data(text);
+                        return call.success_empty();
                     }
                 }
                 call.error("unknown-data", "Unknown data type", Value::Null)
             }
             "Clipboard.getData" => {
                 if let Value::String(mime) = call.raw_args() {
-                    match self.handler.lock().get_clipboard_data(&mime) {
+                    match self.handler.lock().get_clipboard_data(mime) {
                         Ok(text) => call.success(ClipboardData { text }),
                         Err(_) => call.error("unknown-data", "Unknown data type", Value::Null),
                     }

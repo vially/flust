@@ -26,7 +26,7 @@ pub struct IsolatePlugin {
 impl IsolatePlugin {
     pub fn new<F>(callback: F) -> Self
     where
-        F: FnOnce() -> () + 'static + Send,
+        F: FnOnce() + 'static + Send,
     {
         Self {
             channel: Weak::new(),

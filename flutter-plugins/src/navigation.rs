@@ -45,7 +45,7 @@ impl NavigationPlugin {
         F: FnOnce(&MethodChannel),
     {
         if let Some(channel) = self.channel.upgrade() {
-            f(&*channel);
+            f(&channel);
         }
     }
 

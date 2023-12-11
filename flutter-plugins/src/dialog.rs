@@ -17,13 +17,8 @@ const CHANNEL_NAME: &str = "flutter-rs/dialog";
 
 pub struct DialogPlugin {}
 
+#[derive(Default)]
 struct Handler;
-
-impl Default for DialogPlugin {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl Plugin for DialogPlugin {
     fn plugin_name() -> &'static str {
