@@ -1,102 +1,73 @@
-use glutin::event::VirtualKeyCode as Key;
+use winit::keyboard::{Key, NamedKey};
 
 // Emulates glfw key numbers
-// https://github.com/flutter/flutter/blob/master/packages/flutter/lib/src/services/keyboard_maps.dart
-pub fn raw_key(key: Option<Key>) -> Option<u32> {
-    let key = if let Some(key) = key {
-        if key as u32 >= Key::A as u32 && key as u32 <= Key::Z as u32 {
-            return Some(key as u32 - Key::A as u32 + 65);
-        }
+// https://github.com/flutter/flutter/blob/9a72e1c699f2b277b85110c89cbbb851f4de6935/packages/flutter/lib/src/services/keyboard_maps.g.dart#L1607-L1723
+pub fn raw_key(key: Key) -> Option<u32> {
+    if key >= Key::Character("a".into()) && key <= Key::Character("z".into()) {
+        return Some(key.to_text()?.chars().next()? as u32);
+    }
 
-        if key as u32 >= Key::Key1 as u32 && key as u32 <= Key::Key9 as u32 {
-            return Some(key as u32 - Key::Key1 as u32 + 49);
-        }
+    if key >= Key::Character("0".into()) && key <= Key::Character("9".into()) {
+        return Some(key.to_text()?.chars().next()? as u32);
+    }
 
-        key
-    } else {
-        return None;
-    };
-
+    // TODO(vially): Map remaining keys and modifiers state
     let code = match key {
-        Key::Key0 => 48,
-        Key::Return => 257,
-        Key::Escape => 256,
-        Key::Back => 259,
-        Key::Tab => 258,
-        Key::Space => 32,
-        Key::LControl => 341,
-        Key::LShift => 340,
-        Key::LAlt => 342,
-        Key::LWin => 343,
-        Key::RControl => 345,
-        Key::RShift => 344,
-        Key::RAlt => 346,
-        Key::RWin => 347,
-        Key::Minus => 45,
-        Key::Equals => 61,
-        Key::LBracket => 91,
-        Key::RBracket => 93,
-        Key::Backslash => 92,
-        Key::Semicolon => 59,
-        Key::Apostrophe => 39,
-        //Key::Backquote => 96,
-        Key::Comma => 44,
-        Key::Period => 46,
-        Key::Slash => 47,
-        //Key::CapsLock => 280,
-        Key::Snapshot => 283,
-        Key::Pause => 284,
-        Key::Insert => 260,
-        Key::Home => 268,
-        Key::PageUp => 266,
-        Key::Delete => 261,
-        Key::End => 269,
-        Key::PageDown => 267,
-        Key::Right => 262,
-        Key::Left => 263,
-        Key::Down => 264,
-        Key::Up => 265,
-        Key::Numlock => 282,
-        //Key::NumpadDivide => 331,
-        //Key::NumpadMultiply => 332,
-        //Key::NumpadAdd => 334,
-        Key::NumpadEnter => 335,
-        Key::Numpad0 => 320,
-        Key::Numpad1 => 321,
-        Key::Numpad2 => 322,
-        Key::Numpad3 => 323,
-        Key::Numpad4 => 324,
-        Key::Numpad5 => 325,
-        Key::Numpad6 => 326,
-        Key::Numpad7 => 327,
-        Key::Numpad8 => 328,
-        Key::Numpad9 => 329,
-        //Key::NumpadDecimal => 330,
-        //Key::ContextMenu => 348,
-        Key::NumpadEquals => 336,
-        Key::F1 => 290,
-        Key::F2 => 291,
-        Key::F3 => 292,
-        Key::F4 => 293,
-        Key::F5 => 294,
-        Key::F6 => 295,
-        Key::F7 => 296,
-        Key::F8 => 297,
-        Key::F9 => 298,
-        Key::F10 => 299,
-        Key::F11 => 300,
-        Key::F12 => 301,
-        Key::F13 => 302,
-        Key::F14 => 303,
-        Key::F15 => 304,
-        Key::F16 => 305,
-        Key::F17 => 306,
-        Key::F18 => 307,
-        Key::F19 => 308,
-        Key::F20 => 309,
-        Key::F21 => 310,
-        Key::F22 => 311,
-        Key::F23 => 312,
+        Key::Named(key) => match key {
+            NamedKey::Space => 32,
+            NamedKey::Escape => 256,
+            NamedKey::Enter => 257,
+            NamedKey::Tab => 258,
+            NamedKey::Insert => 260,
+            NamedKey::Delete => 261,
+            NamedKey::ArrowRight => 262,
+            NamedKey::ArrowLeft => 263,
+            NamedKey::ArrowDown => 264,
+            NamedKey::ArrowUp => 265,
+            NamedKey::PageUp => 266,
+            NamedKey::PageDown => 267,
+            NamedKey::Home => 268,
+            NamedKey::End => 269,
+            NamedKey::Pause => 284,
+            NamedKey::F1 => 290,
+            NamedKey::F2 => 291,
+            NamedKey::F3 => 292,
+            NamedKey::F4 => 293,
+            NamedKey::F5 => 294,
+            NamedKey::F6 => 295,
+            NamedKey::F7 => 296,
+            NamedKey::F8 => 297,
+            NamedKey::F9 => 298,
+            NamedKey::F10 => 299,
+            NamedKey::F11 => 300,
+            NamedKey::F12 => 301,
+            NamedKey::F13 => 302,
+            NamedKey::F14 => 303,
+            NamedKey::F15 => 304,
+            NamedKey::F16 => 305,
+            NamedKey::F17 => 306,
+            NamedKey::F18 => 307,
+            NamedKey::F19 => 308,
+            NamedKey::F20 => 309,
+            NamedKey::F21 => 310,
+            NamedKey::F22 => 311,
+            NamedKey::F23 => 312,
+            _ => return None,
+        },
+        Key::Character(key) => match key.as_str() {
+            "'" => 39,
+            "," => 44,
+            "-" => 45,
+            "." => 46,
+            "/" => 47,
+            ";" => 59,
+            "=" => 61,
+            "[" => 91,
+            "\\" => 92,
+            "]" => 93,
+            "`" => 96,
+            _ => return None,
+        },
         _ => return None,
     };
     Some(code)

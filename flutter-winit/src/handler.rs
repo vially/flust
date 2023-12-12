@@ -1,4 +1,4 @@
-use crate::context::Context;
+use crate::context::{Context, ResourceContext};
 use crate::window::FlutterEvent;
 use copypasta::nop_clipboard::NopClipboardContext;
 use copypasta::ClipboardProvider;
@@ -7,13 +7,13 @@ use flutter_engine::FlutterOpenGLHandler;
 use flutter_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
 use flutter_plugins::textinput::TextInputHandler;
 use flutter_plugins::window::{PositionParams, WindowHandler};
-use glutin::event_loop::EventLoopProxy;
 use parking_lot::Mutex;
 use std::error::Error;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use winit::event_loop::EventLoopProxy;
 
 // TODO: Investigate removing mutex
 pub struct WinitPlatformTaskHandler {
@@ -39,11 +39,14 @@ impl TaskRunnerHandler for WinitPlatformTaskHandler {
 
 pub struct WinitOpenGLHandler {
     context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<Context>>,
+    resource_context: Arc<Mutex<ResourceContext>>,
 }
 
 impl WinitOpenGLHandler {
-    pub fn new(context: Arc<Mutex<Context>>, resource_context: Arc<Mutex<Context>>) -> Self {
+    pub fn new(
+        context: Arc<Mutex<Context>>,
+        resource_context: Arc<Mutex<ResourceContext>>,
+    ) -> Self {
         Self {
             context,
             resource_context,
@@ -57,11 +60,11 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
     }
 
     fn make_current(&self) -> bool {
-        unsafe { self.context.lock().make_current() }
+        self.context.lock().make_current()
     }
 
     fn clear_current(&self) -> bool {
-        unsafe { self.context.lock().make_not_current() }
+        self.context.lock().make_not_current()
     }
 
     fn fbo_callback(&self) -> u32 {
@@ -69,15 +72,13 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
     }
 
     fn make_resource_current(&self) -> bool {
-        unsafe { self.resource_context.lock().make_current() }
+        self.resource_context.lock().make_current()
     }
 
     fn gl_proc_resolver(&self, proc: *const c_char) -> *mut c_void {
         unsafe {
-            if let Ok(proc) = CStr::from_ptr(proc).to_str() {
-                return self.context.lock().get_proc_address(proc) as _;
-            }
-            std::ptr::null_mut()
+            let proc = CStr::from_ptr(proc);
+            return self.context.lock().get_proc_address(proc) as _;
         }
     }
 }

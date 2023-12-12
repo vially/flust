@@ -1,4 +1,5 @@
-use crate::context::Context;
+use crate::context::{Context, ResourceContext};
+use crate::egl::create_window_contexts;
 use crate::handler::{
     WinitOpenGLHandler, WinitPlatformHandler, WinitPlatformTaskHandler, WinitTextInputHandler,
     WinitWindowHandler,
@@ -20,19 +21,19 @@ use flutter_plugins::settings::SettingsPlugin;
 use flutter_plugins::system::SystemPlugin;
 use flutter_plugins::textinput::TextInputPlugin;
 use flutter_plugins::window::WindowPlugin;
-use glutin::event::{
-    ElementState, Event, KeyboardInput, MouseScrollDelta, Touch, VirtualKeyCode, WindowEvent,
-};
-use glutin::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
-use glutin::window::WindowBuilder;
-use glutin::ContextBuilder;
 use parking_lot::{Mutex, RwLock};
 use std::error::Error;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use sys_locale::get_locale;
+use winit::dpi::PhysicalSize;
+use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
+use winit::keyboard::{Key, NamedKey};
+use winit::window::WindowBuilder;
 
 pub enum FlutterEvent {
     WakePlatformThread,
@@ -42,7 +43,7 @@ pub enum FlutterEvent {
 pub struct FlutterWindow {
     event_loop: EventLoop<FlutterEvent>,
     context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<Context>>,
+    resource_context: Arc<Mutex<ResourceContext>>,
     engine: FlutterEngine,
     close: Arc<AtomicBool>,
     plugins: Rc<RwLock<PluginRegistrar>>,
@@ -54,12 +55,12 @@ impl FlutterWindow {
         assets_path: PathBuf,
         arguments: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
-        let event_loop = EventLoopBuilder::with_user_event().build();
+        let event_loop = EventLoopBuilder::with_user_event().build()?;
         let proxy = event_loop.create_proxy();
 
-        let context = ContextBuilder::new().build_windowed(window, &event_loop)?;
-        let context = Arc::new(Mutex::new(Context::from_context(context)));
-        let resource_context = Arc::new(Mutex::new(Context::empty()));
+        let (context, resource_context) = create_window_contexts(window, &event_loop)?;
+        let context = Arc::new(Mutex::new(context));
+        let resource_context = Arc::new(Mutex::new(resource_context));
 
         let platform_task_handler = Arc::new(WinitPlatformTaskHandler::new(proxy));
 
@@ -107,23 +108,24 @@ impl FlutterWindow {
         })
     }
 
-    pub fn with_resource_context(self) -> Result<Self, Box<dyn Error>> {
-        {
-            let window = WindowBuilder::new().with_visible(false);
-            let context = self.context.lock();
-            let resource_context = ContextBuilder::new()
-                .with_shared_lists(context.context().unwrap())
-                .build_windowed(window, &self.event_loop)?;
+    // TODO(vially): bring back `with_resource_context` method
+    //pub fn with_resource_context(self) -> Result<Self, Box<dyn Error>> {
+    //    {
+    //        let window = WindowBuilder::new().with_visible(false);
+    //        let context = self.context.lock();
+    //        let resource_context = ContextBuilder::new()
+    //            .with_shared_lists(context.context().unwrap())
+    //            .build_windowed(window, &self.event_loop)?;
 
-            let resource_context = unsafe { resource_context.make_current().unwrap() };
-            gl::load_with(|s| resource_context.get_proc_address(s));
-            let resource_context = unsafe { resource_context.make_not_current().unwrap() };
+    //        let resource_context = unsafe { resource_context.make_current().unwrap() };
+    //        gl::load_with(|s| resource_context.get_proc_address(s));
+    //        let resource_context = unsafe { resource_context.make_not_current().unwrap() };
 
-            let mut guard = self.resource_context.lock();
-            *guard = Context::from_context(resource_context);
-        }
-        Ok(self)
-    }
+    //        let mut guard = self.resource_context.lock();
+    //        *guard = Context::from_context(resource_context);
+    //    }
+    //    Ok(self)
+    //}
 
     pub fn engine(&self) -> FlutterEngine {
         self.engine.clone()
@@ -133,7 +135,7 @@ impl FlutterWindow {
         self.context.clone()
     }
 
-    pub fn resource_context(&self) -> Arc<Mutex<Context>> {
+    pub fn resource_context(&self) -> Arc<Mutex<ResourceContext>> {
         self.resource_context.clone()
     }
 
@@ -180,7 +182,7 @@ impl FlutterWindow {
         self.engine.run()
     }
 
-    pub fn run(self) -> ! {
+    pub fn run(self) -> Result<(), winit::error::EventLoopError> {
         let engine = self.engine.clone();
         let context = self.context.clone();
         let plugins = self.plugins.clone();
@@ -194,158 +196,150 @@ impl FlutterWindow {
         });
 
         let mut pointers = Pointers::new(engine.clone());
-        self.event_loop
-            .run(move |event, _, control_flow| match event {
-                Event::WindowEvent { event, .. } => {
-                    match event {
-                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(_) => resize(&engine, &context),
-                        WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &context),
-                        WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
-                        WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
-                        WindowEvent::CursorMoved {
-                            device_id,
-                            position,
-                            ..
-                        } => {
-                            pointers.moved(device_id, position.into());
-                        }
-                        WindowEvent::MouseInput {
-                            device_id,
-                            state,
-                            button,
-                            ..
-                        } => {
-                            pointers.input(device_id, state, button);
-                        }
-                        WindowEvent::MouseWheel {
-                            device_id, delta, ..
-                        } => {
-                            let delta = match delta {
-                                MouseScrollDelta::LineDelta(_, _) => (0.0, 0.0), // TODO
-                                MouseScrollDelta::PixelDelta(position) => {
-                                    let (dx, dy): (f64, f64) = position.into();
-                                    (-dx, dy)
-                                }
-                            };
-                            pointers.wheel(device_id, delta);
-                        }
-                        WindowEvent::Touch(Touch {
-                            device_id,
-                            phase,
-                            location,
-                            ..
-                        }) => {
-                            pointers.touch(device_id, phase, location.into());
-                        }
-                        WindowEvent::ReceivedCharacter(ch) => {
-                            if !ch.is_control() {
+        self.event_loop.run(move |event, elwt| match event {
+            Event::WindowEvent { event, .. } => {
+                match event {
+                    WindowEvent::CloseRequested => elwt.exit(),
+                    WindowEvent::Resized(_) => resize(&engine, &context),
+                    WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &context),
+                    WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
+                    WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
+                    WindowEvent::CursorMoved {
+                        device_id,
+                        position,
+                        ..
+                    } => {
+                        pointers.moved(device_id, position.into());
+                    }
+                    WindowEvent::MouseInput {
+                        device_id,
+                        state,
+                        button,
+                        ..
+                    } => {
+                        pointers.input(device_id, state, button);
+                    }
+                    WindowEvent::MouseWheel {
+                        device_id, delta, ..
+                    } => {
+                        let delta = match delta {
+                            MouseScrollDelta::LineDelta(_, _) => (0.0, 0.0), // TODO
+                            MouseScrollDelta::PixelDelta(position) => {
+                                let (dx, dy): (f64, f64) = position.into();
+                                (-dx, dy)
+                            }
+                        };
+                        pointers.wheel(device_id, delta);
+                    }
+                    WindowEvent::Touch(Touch {
+                        device_id,
+                        phase,
+                        location,
+                        ..
+                    }) => {
+                        pointers.touch(device_id, phase, location.into());
+                    }
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                state, logical_key, ..
+                            },
+                        ..
+                    } => {
+                        let Some(raw_key) = raw_key(logical_key.clone()) else {
+                            return;
+                        };
+
+                        // TODO(vially): Bring back modifiers
+                        //let shift: u32 = modifiers.shift().into();
+                        //let ctrl: u32 = modifiers.ctrl().into();
+                        //let alt: u32 = modifiers.alt().into();
+                        //let logo: u32 = modifiers.logo().into();
+                        //let raw_modifiers = shift | ctrl << 1 | alt << 2 | logo << 3;
+                        let raw_modifiers = 0;
+
+                        match state {
+                            ElementState::Pressed => {
                                 plugins.write().with_plugin_mut(
-                                    |text_input: &mut TextInputPlugin| {
-                                        text_input.with_state(|state| {
-                                            state.add_characters(&ch.to_string());
-                                        });
-                                        text_input.notify_changes();
+                                    // TODO(vially): Fix text input logic to handle *all* named keys
+                                    |text_input: &mut TextInputPlugin| match logical_key {
+                                        Key::Named(key) => match key {
+                                            NamedKey::Enter => {
+                                                text_input.with_state(|state| {
+                                                    state.add_characters("\n");
+                                                });
+                                                text_input.notify_changes();
+                                            }
+                                            NamedKey::Backspace => {
+                                                text_input.with_state(|state| {
+                                                    state.backspace();
+                                                });
+                                                text_input.notify_changes();
+                                            }
+                                            _ => {}
+                                        },
+                                        Key::Character(ch) => {
+                                            text_input.with_state(|state| {
+                                                state.add_characters(&ch.to_string());
+                                            });
+                                            text_input.notify_changes();
+                                        }
+                                        _ => {}
                                     },
                                 );
+
+                                plugins
+                                    .write()
+                                    .with_plugin_mut(|keyevent: &mut KeyEventPlugin| {
+                                        keyevent.key_action(KeyAction {
+                                            toolkit: "glfw".to_string(),
+                                            key_code: raw_key as _,
+                                            // TODO(vially): Fix scan code
+                                            scan_code: 0,
+                                            modifiers: raw_modifiers as _,
+                                            keymap: "linux".to_string(),
+                                            _type: KeyActionType::Keydown,
+                                        });
+                                    });
+                            }
+                            ElementState::Released => {
+                                plugins
+                                    .write()
+                                    .with_plugin_mut(|keyevent: &mut KeyEventPlugin| {
+                                        keyevent.key_action(KeyAction {
+                                            toolkit: "glfw".to_string(),
+                                            key_code: raw_key as _,
+                                            // TODO(vially): Fix scan code
+                                            scan_code: 0,
+                                            modifiers: raw_modifiers as _,
+                                            keymap: "linux".to_string(),
+                                            _type: KeyActionType::Keyup,
+                                        });
+                                    });
                             }
                         }
-                        WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state,
-                                    virtual_keycode,
-                                    scancode,
-                                    ..
-                                },
-                            ..
-                        } => {
-                            let raw_key = if let Some(raw_key) = raw_key(virtual_keycode) {
-                                raw_key
-                            } else {
-                                return;
-                            };
-
-                            // TODO(vially): Bring back modifiers
-                            //let shift: u32 = modifiers.shift().into();
-                            //let ctrl: u32 = modifiers.ctrl().into();
-                            //let alt: u32 = modifiers.alt().into();
-                            //let logo: u32 = modifiers.logo().into();
-                            //let raw_modifiers = shift | ctrl << 1 | alt << 2 | logo << 3;
-                            let raw_modifiers = 0;
-
-                            match state {
-                                ElementState::Pressed => {
-                                    if let Some(key) = virtual_keycode {
-                                        plugins.write().with_plugin_mut(
-                                            |text_input: &mut TextInputPlugin| match key {
-                                                VirtualKeyCode::Return => {
-                                                    text_input.with_state(|state| {
-                                                        state.add_characters("\n");
-                                                    });
-                                                    text_input.notify_changes();
-                                                }
-                                                VirtualKeyCode::Back => {
-                                                    text_input.with_state(|state| {
-                                                        state.backspace();
-                                                    });
-                                                    text_input.notify_changes();
-                                                }
-                                                _ => {}
-                                            },
-                                        );
-                                    }
-
-                                    plugins.write().with_plugin_mut(
-                                        |keyevent: &mut KeyEventPlugin| {
-                                            keyevent.key_action(KeyAction {
-                                                toolkit: "glfw".to_string(),
-                                                key_code: raw_key as _,
-                                                scan_code: scancode as _,
-                                                modifiers: raw_modifiers as _,
-                                                keymap: "linux".to_string(),
-                                                _type: KeyActionType::Keydown,
-                                            });
-                                        },
-                                    );
-                                }
-                                ElementState::Released => {
-                                    plugins.write().with_plugin_mut(
-                                        |keyevent: &mut KeyEventPlugin| {
-                                            keyevent.key_action(KeyAction {
-                                                toolkit: "glfw".to_string(),
-                                                key_code: raw_key as _,
-                                                scan_code: scancode as _,
-                                                modifiers: raw_modifiers as _,
-                                                keymap: "linux".to_string(),
-                                                _type: KeyActionType::Keyup,
-                                            });
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                        _ => {}
                     }
+                    _ => {}
                 }
-                Event::LoopDestroyed => {
-                    engine.shutdown();
+            }
+            Event::LoopExiting => {
+                engine.shutdown();
+            }
+            _ => {
+                if close.load(Ordering::Relaxed) {
+                    elwt.exit();
+                    return;
                 }
-                _ => {
-                    if close.load(Ordering::Relaxed) {
-                        *control_flow = ControlFlow::Exit;
-                        return;
-                    }
 
-                    let next_task_time = engine.execute_platform_tasks();
+                let next_task_time = engine.execute_platform_tasks();
 
-                    if let Some(next_task_time) = next_task_time {
-                        *control_flow = ControlFlow::WaitUntil(next_task_time)
-                    } else {
-                        *control_flow = ControlFlow::Wait
-                    }
+                if let Some(next_task_time) = next_task_time {
+                    elwt.set_control_flow(ControlFlow::WaitUntil(next_task_time))
+                } else {
+                    elwt.set_control_flow(ControlFlow::Wait)
                 }
-            });
+            }
+        })
     }
 }
 
@@ -359,6 +353,10 @@ fn resize(engine: &FlutterEngine, context: &Arc<Mutex<Context>>) {
         size.height,
         dpi
     );
-    context.resize(size);
+    let context_size = PhysicalSize::new(
+        NonZeroU32::new(size.width).expect("Resize width needs to be higher than 0"),
+        NonZeroU32::new(size.height).expect("Resize height needs to be higher than 0"),
+    );
+    context.resize(context_size);
     engine.send_window_metrics_event(size.width as usize, size.height as usize, dpi);
 }

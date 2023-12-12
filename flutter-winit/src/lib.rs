@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 mod context;
+mod egl;
 mod handler;
 mod keyboard;
 mod pointer;

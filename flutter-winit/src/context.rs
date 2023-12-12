@@ -1,76 +1,80 @@
-use glutin::dpi::PhysicalSize;
-use glutin::window::Window;
-use glutin::{ContextWrapper, NotCurrent};
-use std::ffi::c_void;
+use glutin::{
+    api::egl,
+    context::PossiblyCurrentContext,
+    display::Display,
+    prelude::{GlDisplay, NotCurrentGlContext, PossiblyCurrentGlContext},
+    surface::{GlSurface, Surface, WindowSurface},
+};
+use std::{
+    ffi::{c_void, CStr},
+    num::NonZeroU32,
+};
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
 
-pub struct Context(Option<ContextWrapper<NotCurrent, Window>>);
+pub struct Context {
+    window: Window,
+    display: Display,
+    surface: Surface<WindowSurface>,
+    context: Option<PossiblyCurrentContext>,
+}
 
 impl Context {
-    pub fn from_context(ctx: ContextWrapper<NotCurrent, Window>) -> Self {
-        Self(Some(ctx))
-    }
-
-    pub fn empty() -> Self {
-        Self(None)
-    }
-
-    pub fn context(&self) -> Option<&ContextWrapper<NotCurrent, Window>> {
-        self.0.as_ref()
-    }
-
-    pub unsafe fn make_current(&mut self) -> bool {
-        if let Some(ctx) = self.0.take() {
-            if let Ok(ctx) = ctx.make_current() {
-                self.0 = Some(ctx.treat_as_not_current());
-                return true;
-            }
+    pub fn new(
+        window: Window,
+        display: Display,
+        surface: Surface<WindowSurface>,
+        context: PossiblyCurrentContext,
+    ) -> Self {
+        Self {
+            window,
+            display,
+            surface,
+            context: Some(context),
         }
-        false
     }
 
-    pub unsafe fn make_not_current(&mut self) -> bool {
-        if let Some(ctx) = self.0.take() {
-            if let Ok(ctx) = ctx.make_not_current() {
-                self.0 = Some(ctx);
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn get_proc_address(&mut self, proc: &str) -> *const c_void {
-        if let Some(ctx) = self.0.take() {
-            let ctx = unsafe { ctx.treat_as_current() };
-            let result = ctx.get_proc_address(proc);
-            let ctx = unsafe { ctx.treat_as_not_current() };
-            self.0 = Some(ctx);
+    pub fn make_current(&mut self) -> bool {
+        if let Some(ctx) = self.context.take() {
+            let result = ctx.make_current(&self.surface).is_ok();
+            self.context = Some(ctx);
             return result;
         }
-        std::ptr::null()
+        false
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        if let Some(ctx) = self.0.take() {
-            let ctx = unsafe { ctx.treat_as_current() };
-            ctx.resize(size);
-            let ctx = unsafe { ctx.treat_as_not_current() };
-            self.0 = Some(ctx);
+    pub fn make_not_current(&mut self) -> bool {
+        if let Some(ctx) = self.context.take() {
+            if let Ok(ctx) = ctx.make_not_current() {
+                self.context = Some(ctx.treat_as_possibly_current());
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_proc_address(&mut self, proc: &CStr) -> *const c_void {
+        self.display.get_proc_address(proc)
+    }
+
+    pub fn resize(&mut self, size: PhysicalSize<NonZeroU32>) {
+        if let Some(ctx) = self.context.take() {
+            self.surface.resize(&ctx, size.width, size.height);
+            self.context = Some(ctx);
         }
     }
 
     pub fn present(&mut self) -> bool {
-        if let Some(ctx) = self.0.take() {
-            let ctx = unsafe { ctx.treat_as_current() };
-            let result = ctx.swap_buffers().is_ok();
-            let ctx = unsafe { ctx.treat_as_not_current() };
-            self.0 = Some(ctx);
+        if let Some(ctx) = self.context.take() {
+            let result = self.surface.swap_buffers(&ctx).is_ok();
+            self.context = Some(ctx);
             return result;
         }
         false
     }
 
     pub fn window(&self) -> &Window {
-        self.0.as_ref().unwrap().window()
+        &self.window
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
@@ -81,3 +85,34 @@ impl Context {
         self.window().scale_factor()
     }
 }
+
+// `Context` is only `Send` as long as it's used correctly by the engine (e.g.:
+// `make_current`/`make_not_current` are *always* called in the correct order
+// and on the correct thread). Therefore, just mark it as `Send` until a better
+// solution is found.
+//
+// TODO: Find a solution that better leverages Rust's type system
+unsafe impl Send for Context {}
+
+pub struct ResourceContext {
+    context: Option<egl::context::PossiblyCurrentContext>,
+}
+
+impl ResourceContext {
+    pub fn new(context: egl::context::PossiblyCurrentContext) -> Self {
+        Self {
+            context: Some(context),
+        }
+    }
+
+    pub fn make_current(&mut self) -> bool {
+        if let Some(ctx) = self.context.take() {
+            let result = ctx.make_current_surfaceless().is_ok();
+            self.context = Some(ctx);
+            return result;
+        }
+        false
+    }
+}
+
+unsafe impl Send for ResourceContext {}
