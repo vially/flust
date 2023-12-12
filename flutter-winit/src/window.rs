@@ -23,7 +23,7 @@ use flutter_plugins::window::WindowPlugin;
 use glutin::event::{
     ElementState, Event, KeyboardInput, MouseScrollDelta, Touch, VirtualKeyCode, WindowEvent,
 };
-use glutin::event_loop::{ControlFlow, EventLoop};
+use glutin::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 use glutin::window::WindowBuilder;
 use glutin::ContextBuilder;
 use parking_lot::{Mutex, RwLock};
@@ -54,7 +54,7 @@ impl FlutterWindow {
         assets_path: PathBuf,
         arguments: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
-        let event_loop = EventLoop::with_user_event();
+        let event_loop = EventLoopBuilder::with_user_event().build();
         let proxy = event_loop.create_proxy();
 
         let context = ContextBuilder::new().build_windowed(window, &event_loop)?;
@@ -224,9 +224,7 @@ impl FlutterWindow {
                             let delta = match delta {
                                 MouseScrollDelta::LineDelta(_, _) => (0.0, 0.0), // TODO
                                 MouseScrollDelta::PixelDelta(position) => {
-                                    let dpi = { context.lock().hidpi_factor() };
-                                    let (dx, dy): (f64, f64) =
-                                        position.to_physical::<f64>(dpi).into();
+                                    let (dx, dy): (f64, f64) = position.into();
                                     (-dx, dy)
                                 }
                             };

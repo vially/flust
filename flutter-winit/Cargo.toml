@@ -14,7 +14,7 @@ flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
 flutter-plugins = { path = "../flutter-plugins" }
 gl = "0.14.0"
-glutin = "0.22.1"
+glutin = "0.29.1"
 log = "0.4.20"
 parking_lot = "0.12.1"
 sys-locale = "0.3.1"
