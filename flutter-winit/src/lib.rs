@@ -1,4 +1,3 @@
-//#![deny(missing_docs)]
 #![deny(warnings)]
 
 mod context;
@@ -11,9 +10,6 @@ pub use window::FlutterWindow;
 
 #[cfg(test)]
 mod tests {
-    #[allow(unused)]
-    use flutter_engine;
-
     #[test]
     fn test_link() {
         println!("Linking worked");

@@ -1,4 +1,4 @@
-use glutin::dpi::{LogicalSize, PhysicalSize};
+use glutin::dpi::PhysicalSize;
 use glutin::window::Window;
 use glutin::{ContextWrapper, NotCurrent};
 use std::ffi::c_void;
@@ -49,7 +49,7 @@ impl Context {
         std::ptr::null()
     }
 
-    pub fn resize(&mut self, size: PhysicalSize) {
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
         if let Some(ctx) = self.0.take() {
             let ctx = unsafe { ctx.treat_as_current() };
             ctx.resize(size);
@@ -73,11 +73,11 @@ impl Context {
         self.0.as_ref().unwrap().window()
     }
 
-    pub fn size(&self) -> LogicalSize {
+    pub fn size(&self) -> PhysicalSize<u32> {
         self.window().inner_size()
     }
 
     pub fn hidpi_factor(&self) -> f64 {
-        self.window().hidpi_factor()
+        self.window().scale_factor()
     }
 }

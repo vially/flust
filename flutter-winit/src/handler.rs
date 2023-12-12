@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::window::FlutterEvent;
-use copypasta::{ClipboardContext, ClipboardProvider};
+use copypasta::nop_clipboard::NopClipboardContext;
+use copypasta::ClipboardProvider;
 use flutter_engine::tasks::TaskRunnerHandler;
 use flutter_engine::FlutterOpenGLHandler;
 use flutter_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
@@ -82,14 +83,15 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
 }
 
 pub struct WinitPlatformHandler {
-    clipboard: ClipboardContext,
+    // TODO(vially): Bring back clipboard context implementation
+    clipboard: NopClipboardContext,
     context: Arc<Mutex<Context>>,
 }
 
 impl WinitPlatformHandler {
     pub fn new(context: Arc<Mutex<Context>>) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            clipboard: ClipboardContext::new()?,
+            clipboard: NopClipboardContext,
             context,
         })
     }
@@ -186,13 +188,8 @@ impl WindowHandler for WinitWindowHandler {
     fn end_drag(&mut self) {}
 }
 
+#[derive(Default)]
 pub struct WinitTextInputHandler {}
-
-impl Default for WinitTextInputHandler {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl TextInputHandler for WinitTextInputHandler {
     fn show(&mut self) {}
