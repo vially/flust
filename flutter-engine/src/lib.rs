@@ -121,13 +121,12 @@ pub trait FlutterOpenGLHandler {
 impl FlutterEngine {
     pub(crate) fn new(builder: FlutterEngineBuilder) -> Result<Self, CreateError> {
         // Convert arguments into flutter compatible
-        let mut args = Vec::with_capacity(builder.args.len() + 2);
+        //
+        // FlutterProjectArgs expects a full argv, so when processing it for flags
+        // the first item is treated as the executable and ignored. Add a dummy value
+        // so that all switches are used.
+        let mut args = Vec::with_capacity(builder.args.len() + 1);
         args.push(CString::new("flutter-rs").unwrap().into_raw());
-        args.push(
-            CString::new("--icu-symbol-prefix=gIcudtl")
-                .unwrap()
-                .into_raw(),
-        );
         for arg in builder.args.iter() {
             args.push(CString::new(arg.as_str()).unwrap().into_raw());
         }
