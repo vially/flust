@@ -48,6 +48,7 @@ struct FlutterEngineInner {
     platform_sender: Sender<MainThreadCallback>,
     texture_registry: TextureRegistry,
     assets: PathBuf,
+    icu_data: PathBuf,
     arguments: Vec<String>,
 }
 
@@ -148,6 +149,7 @@ impl FlutterEngine {
                 platform_sender: main_tx,
                 texture_registry: TextureRegistry::new(),
                 assets: builder.assets,
+                icu_data: builder.icu_data,
                 arguments: builder.args,
             }),
         };
@@ -211,7 +213,7 @@ impl FlutterEngine {
             assets_path: path_to_cstring(&inner.assets).into_raw(),
             main_path__unused__: std::ptr::null(),
             packages_path__unused__: std::ptr::null(),
-            icu_data_path: std::ptr::null(),
+            icu_data_path: path_to_cstring(&inner.icu_data).into_raw(),
             command_line_argc: args.len() as i32,
             command_line_argv: args.as_mut_ptr() as _,
             platform_message_callback: Some(flutter_callbacks::platform_message_callback),

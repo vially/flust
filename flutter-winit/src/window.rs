@@ -53,6 +53,7 @@ impl FlutterWindow {
     pub fn new(
         window: WindowBuilder,
         assets_path: PathBuf,
+        icu_data_path: PathBuf,
         arguments: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let event_loop = EventLoopBuilder::with_user_event().build()?;
@@ -70,6 +71,7 @@ impl FlutterWindow {
             .with_platform_handler(platform_task_handler)
             .with_opengl(opengl_handler)
             .with_asset_path(assets_path)
+            .with_icu_data_path(icu_data_path)
             .with_args(arguments)
             .build()
             .expect("Failed to create engine");
