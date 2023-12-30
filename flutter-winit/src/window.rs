@@ -290,34 +290,30 @@ impl FlutterWindow {
                                     },
                                 );
 
-                                plugins
-                                    .write()
-                                    .with_plugin_mut(|keyevent: &mut KeyEventPlugin| {
-                                        keyevent.key_action(KeyAction {
-                                            toolkit: "glfw".to_string(),
-                                            key_code: raw_key as _,
-                                            // TODO(vially): Fix scan code
-                                            scan_code: 0,
-                                            modifiers: raw_modifiers as _,
-                                            keymap: "linux".to_string(),
-                                            _type: KeyActionType::Keydown,
-                                        });
+                                plugins.write().with_plugin(|keyevent: &KeyEventPlugin| {
+                                    keyevent.key_action(KeyAction {
+                                        toolkit: "glfw".to_string(),
+                                        key_code: raw_key as _,
+                                        // TODO(vially): Fix scan code
+                                        scan_code: 0,
+                                        modifiers: raw_modifiers as _,
+                                        keymap: "linux".to_string(),
+                                        _type: KeyActionType::Keydown,
                                     });
+                                });
                             }
                             ElementState::Released => {
-                                plugins
-                                    .write()
-                                    .with_plugin_mut(|keyevent: &mut KeyEventPlugin| {
-                                        keyevent.key_action(KeyAction {
-                                            toolkit: "glfw".to_string(),
-                                            key_code: raw_key as _,
-                                            // TODO(vially): Fix scan code
-                                            scan_code: 0,
-                                            modifiers: raw_modifiers as _,
-                                            keymap: "linux".to_string(),
-                                            _type: KeyActionType::Keyup,
-                                        });
+                                plugins.write().with_plugin(|keyevent: &KeyEventPlugin| {
+                                    keyevent.key_action(KeyAction {
+                                        toolkit: "glfw".to_string(),
+                                        key_code: raw_key as _,
+                                        // TODO(vially): Fix scan code
+                                        scan_code: 0,
+                                        modifiers: raw_modifiers as _,
+                                        keymap: "linux".to_string(),
+                                        _type: KeyActionType::Keyup,
                                     });
+                                });
                             }
                         }
                     }
