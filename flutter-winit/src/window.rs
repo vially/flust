@@ -330,12 +330,8 @@ impl FlutterWindow {
                 }
 
                 let next_task_time = engine.execute_platform_tasks();
-
-                if let Some(next_task_time) = next_task_time {
-                    elwt.set_control_flow(ControlFlow::WaitUntil(next_task_time))
-                } else {
-                    elwt.set_control_flow(ControlFlow::Wait)
-                }
+                let control_flow = next_task_time.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
+                elwt.set_control_flow(control_flow)
             }
         })
     }
