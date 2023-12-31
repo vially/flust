@@ -6,6 +6,8 @@ use crate::handler::{
 };
 use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
+use ashpd::desktop::settings::{ColorScheme, Settings};
+use async_executor::LocalExecutor;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
@@ -17,10 +19,11 @@ use flutter_plugins::lifecycle::LifecyclePlugin;
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::navigation::NavigationPlugin;
 use flutter_plugins::platform::PlatformPlugin;
-use flutter_plugins::settings::SettingsPlugin;
+use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
 use flutter_plugins::system::SystemPlugin;
 use flutter_plugins::textinput::TextInputPlugin;
 use flutter_plugins::window::WindowPlugin;
+use futures_lite::future;
 use parking_lot::{Mutex, RwLock};
 use std::error::Error;
 use std::num::NonZeroU32;
@@ -195,6 +198,28 @@ impl FlutterWindow {
         self.with_plugin(|localization: &LocalizationPlugin| {
             let locale = get_locale().unwrap_or_else(|| String::from("en-US"));
             localization.send_locale(locale);
+        });
+
+        // TODO: Add support for monitoring `PlatformBrightness` changes and disable
+        // this logic on non-Linux platforms.
+        self.with_plugin(|settings: &SettingsPlugin| {
+            let color_scheme = future::block_on(
+                LocalExecutor::new().run(async { Settings::new().await?.color_scheme().await }),
+            )
+            .unwrap_or(ColorScheme::NoPreference);
+
+            let platform_brightness = match color_scheme {
+                ColorScheme::PreferDark => PlatformBrightness::Dark,
+                ColorScheme::PreferLight => PlatformBrightness::Light,
+                ColorScheme::NoPreference => PlatformBrightness::Light,
+            };
+
+            settings
+                .start_message()
+                .set_platform_brightness(platform_brightness)
+                .set_use_24_hour_format(true)
+                .set_text_scale_factor(1.0)
+                .send();
         });
 
         let mut pointers = Pointers::new(engine.clone());
