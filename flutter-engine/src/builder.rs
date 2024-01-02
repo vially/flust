@@ -1,11 +1,12 @@
 use crate::tasks::TaskRunnerHandler;
-use crate::{CreateError, FlutterEngine, FlutterOpenGLHandler};
+use crate::{CreateError, FlutterEngine, FlutterOpenGLHandler, FlutterVsyncHandler};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) opengl_handler: Option<Box<dyn FlutterOpenGLHandler + Send>>,
+    pub(crate) vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
     pub(crate) assets: PathBuf,
     pub(crate) icu_data: PathBuf,
     pub(crate) args: Vec<String>,
@@ -17,6 +18,7 @@ impl FlutterEngineBuilder {
         Self {
             platform_handler: None,
             opengl_handler: None,
+            vsync_handler: None,
             assets: Default::default(),
             icu_data: Default::default(),
             args: vec![],
@@ -36,6 +38,14 @@ impl FlutterEngineBuilder {
         H: FlutterOpenGLHandler + Send + 'static,
     {
         self.opengl_handler = Some(Box::new(handler));
+        self
+    }
+
+    pub fn with_vsync_handler<H>(mut self, handler: H) -> Self
+    where
+        H: FlutterVsyncHandler + Send + 'static,
+    {
+        self.vsync_handler = Some(Box::new(handler));
         self
     }
 

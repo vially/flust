@@ -52,6 +52,20 @@ pub extern "C" fn gl_proc_resolver(user_data: *mut c_void, proc: *const c_char) 
     }
 }
 
+pub extern "C" fn vsync_callback(user_data: *mut c_void, baton: isize) {
+    trace!("vsync_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+        // `vsync_callback` will only be called when `vsync_handler` is not empty,
+        // so using `unwrap()` should be safe in here.
+        engine
+            .vsync_handler
+            .as_ref()
+            .unwrap()
+            .request_frame_callback(baton);
+    }
+}
+
 pub extern "C" fn platform_message_callback(
     platform_message: *const flutter_engine_sys::FlutterPlatformMessage,
     user_data: *mut c_void,

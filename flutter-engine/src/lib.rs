@@ -20,7 +20,7 @@ use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseH
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use flutter_engine_sys::{FlutterEngineResult, FlutterTask};
+use flutter_engine_sys::{FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
 use parking_lot::RwLock;
 use std::ffi::CString;
@@ -41,6 +41,7 @@ pub(crate) enum MainThreadCallback {
 
 struct FlutterEngineInner {
     opengl_handler: Box<dyn FlutterOpenGLHandler + Send>,
+    vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
     engine_ptr: flutter_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
     platform_runner: TaskRunner,
@@ -118,6 +119,10 @@ pub trait FlutterOpenGLHandler {
     fn gl_proc_resolver(&self, proc: *const c_char) -> *mut c_void;
 }
 
+pub trait FlutterVsyncHandler {
+    fn request_frame_callback(&self, baton: isize);
+}
+
 impl FlutterEngine {
     pub(crate) fn new(builder: FlutterEngineBuilder) -> Result<Self, CreateError> {
         // Convert arguments into flutter compatible
@@ -139,6 +144,7 @@ impl FlutterEngine {
                 opengl_handler: builder
                     .opengl_handler
                     .expect("Only opengl is supported (for now)"),
+                vsync_handler: builder.vsync_handler,
                 engine_ptr: ptr::null_mut(),
                 channel_registry: RwLock::new(ChannelRegistry::new()),
                 platform_runner: TaskRunner::new(
@@ -206,6 +212,11 @@ impl FlutterEngine {
             thread_priority_setter: None,
         };
 
+        let vsync_callback: VsyncCallback = match inner.vsync_handler {
+            Some(_) => Some(flutter_callbacks::vsync_callback),
+            None => None,
+        };
+
         // Configure engine
         let project_args = flutter_engine_sys::FlutterProjectArgs {
             struct_size: std::mem::size_of::<flutter_engine_sys::FlutterProjectArgs>(),
@@ -229,7 +240,7 @@ impl FlutterEngine {
             update_semantics_custom_action_callback: None,
             persistent_cache_path: std::ptr::null(),
             is_persistent_cache_read_only: false,
-            vsync_callback: None,
+            vsync_callback,
             custom_dart_entrypoint: std::ptr::null(),
             custom_task_runners: &custom_task_runners
                 as *const flutter_engine_sys::FlutterCustomTaskRunners,
@@ -362,6 +373,26 @@ impl FlutterEngine {
         // } else {
         self.post_platform_callback(MainThreadCallback::RenderThread(Box::new(f)));
         // }
+    }
+
+    pub fn on_vsync(
+        &self,
+        baton: isize,
+        frame_start_time_nanos: u64,
+        frame_target_time_nanos: u64,
+    ) {
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        unsafe {
+            flutter_engine_sys::FlutterEngineOnVsync(
+                self.engine_ptr(),
+                baton,
+                frame_start_time_nanos,
+                frame_target_time_nanos,
+            );
+        }
     }
 
     pub fn send_window_metrics_event(&self, width: usize, height: usize, pixel_ratio: f64) {
