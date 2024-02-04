@@ -732,6 +732,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
+name = "dpi"
+version = "0.1.0"
+
+[[package]]
 name = "either"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -860,6 +864,18 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "flutter-runner"
+version = "0.1.0"
+dependencies = [
+ "dpi",
+ "flutter-engine",
+ "flutter-engine-sys",
+ "flutter-plugins",
+ "flutter-winit",
+ "thiserror",
 ]
 
 [[package]]

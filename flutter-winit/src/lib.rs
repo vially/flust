@@ -8,6 +8,10 @@ mod pointer;
 mod window;
 
 pub use window::FlutterWindow;
+pub use winit::{
+    dpi::*, error::EventLoopError, platform::wayland::WindowBuilderExtWayland,
+    window::WindowBuilder,
+};
 
 #[cfg(test)]
 mod tests {

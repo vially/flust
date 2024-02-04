@@ -1,0 +1,15 @@
+[package]
+name = "flutter-runner"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["flutter-winit"]
+
+[dependencies]
+dpi = { path = "../../dpi" }
+flutter-engine-sys = { path = "../flutter-engine-sys" }
+flutter-engine = { path = "../flutter-engine" }
+flutter-plugins = { path = "../flutter-plugins" }
+flutter-winit = { path = "../flutter-winit", optional = true }
+thiserror = "1.0.50"
