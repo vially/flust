@@ -57,12 +57,6 @@ impl FlutterWindow {
         let context = Arc::new(Mutex::new(context));
         let resource_context = Arc::new(Mutex::new(resource_context));
 
-        #[allow(deprecated)]
-        engine.replace_opengl_handler(Box::new(WinitOpenGLHandler::new(
-            context.clone(),
-            resource_context.clone(),
-        )));
-
         let proxy = event_loop.create_proxy();
         let isolate_cb = move || {
             proxy.send_event(FlutterEvent::IsolateCreated).ok();
@@ -112,6 +106,10 @@ impl FlutterWindow {
 
     pub fn resource_context(&self) -> Arc<Mutex<ResourceContext>> {
         self.resource_context.clone()
+    }
+
+    pub fn create_opengl_handler(&self) -> WinitOpenGLHandler {
+        WinitOpenGLHandler::new(self.context.clone(), self.resource_context.clone())
     }
 
     pub fn create_texture(&self) -> Option<Texture> {

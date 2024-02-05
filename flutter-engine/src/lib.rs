@@ -6,6 +6,7 @@ pub mod ffi;
 mod flutter_callbacks;
 pub mod plugins;
 pub mod tasks;
+pub mod view;
 
 pub mod texture_registry;
 
@@ -30,6 +31,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{mem, ptr};
 use thiserror::Error;
+use view::{FlutterView, ViewRegistry};
 
 pub(crate) type MainThreadEngineFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
 pub(crate) type MainThreadRenderThreadFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
@@ -40,7 +42,7 @@ pub(crate) enum MainThreadCallback {
 }
 
 struct FlutterEngineInner {
-    opengl_handler: RwLock<Option<Box<dyn FlutterOpenGLHandler + Send>>>,
+    view_registry: RwLock<ViewRegistry>,
     vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
     engine_ptr: flutter_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
@@ -51,6 +53,12 @@ struct FlutterEngineInner {
     assets: PathBuf,
     icu_data: PathBuf,
     arguments: Vec<String>,
+}
+
+impl FlutterEngineInner {
+    fn implicit_view_opengl_handler(&self) -> Option<Arc<dyn FlutterOpenGLHandler>> {
+        self.view_registry.read().implicit_view_opengl_handler()
+    }
 }
 
 pub struct FlutterEngineWeakRef {
@@ -141,7 +149,7 @@ impl FlutterEngine {
         let engine = Self {
             #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(FlutterEngineInner {
-                opengl_handler: RwLock::new(builder.opengl_handler),
+                view_registry: RwLock::new(ViewRegistry::default()),
                 vsync_handler: builder.vsync_handler,
                 engine_ptr: ptr::null_mut(),
                 channel_registry: RwLock::new(ChannelRegistry::new()),
@@ -282,13 +290,6 @@ impl FlutterEngine {
         self.inner.engine_ptr
     }
 
-    #[deprecated(
-        note = "This method is used as a temporary hack until `FlutterView`s are implemented"
-    )]
-    pub fn replace_opengl_handler(&self, opengl_handler: Box<dyn FlutterOpenGLHandler + Send>) {
-        self.inner.opengl_handler.write().replace(opengl_handler);
-    }
-
     pub fn register_channel<C>(&self, channel: C) -> Weak<C>
     where
         C: Channel + 'static,
@@ -345,6 +346,14 @@ impl FlutterEngine {
                 FlutterEngineResult::kInternalInconsistency => Err(RunError::InternalInconsistency),
             }
         }
+    }
+
+    pub fn add_view(&self, view: FlutterView) {
+        self.inner.view_registry.write().add_view(view);
+    }
+
+    pub fn remove_view(&self, view_id: u32) {
+        self.inner.view_registry.write().remove_view(view_id);
     }
 
     pub(crate) fn post_platform_callback(&self, callback: MainThreadCallback) {

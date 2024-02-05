@@ -6,6 +6,7 @@ mod egl;
 mod handler;
 mod keyboard;
 mod pointer;
+mod view;
 mod window;
 
 pub use application::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
@@ -16,6 +17,8 @@ pub use winit::{
     dpi::*, error::EventLoopError, platform::wayland::WindowBuilderExtWayland,
     window::WindowBuilder,
 };
+
+pub use view::*;
 
 #[cfg(test)]
 mod tests {

@@ -9,9 +9,7 @@ pub extern "C" fn present(user_data: *mut c_void) -> bool {
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .swap_buffers()
     }
@@ -22,9 +20,7 @@ pub extern "C" fn make_current(user_data: *mut c_void) -> bool {
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .make_current()
     }
@@ -35,9 +31,7 @@ pub extern "C" fn clear_current(user_data: *mut c_void) -> bool {
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .clear_current()
     }
@@ -48,9 +42,7 @@ pub extern "C" fn fbo_callback(user_data: *mut c_void) -> c_uint {
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .fbo_callback()
     }
@@ -61,9 +53,7 @@ pub extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .make_resource_current()
     }
@@ -74,9 +64,7 @@ pub extern "C" fn gl_proc_resolver(user_data: *mut c_void, proc: *const c_char) 
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .opengl_handler
-            .read()
-            .as_ref()
+            .implicit_view_opengl_handler()
             .unwrap()
             .gl_proc_resolver(proc)
     }

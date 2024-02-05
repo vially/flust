@@ -1,5 +1,3 @@
-use std::{error::Error as StdError, sync::Arc};
-
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
 use flutter_engine::builder::FlutterEngineBuilder;
@@ -8,6 +6,7 @@ use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
 use flutter_runner_api::ApplicationAttributes;
 use futures_lite::future;
+use std::sync::Arc;
 use sys_locale::get_locale;
 use thiserror::Error;
 use winit::dpi::PhysicalSize;
@@ -19,12 +18,13 @@ use winit::platform::wayland::WindowBuilderExtWayland;
 use winit::window::WindowBuilder;
 
 use crate::pointer::Pointers;
+use crate::view::WinitControllerError;
 use crate::window::{resize, FlutterEvent};
-use crate::{FlutterWindow, WinitPlatformTaskHandler};
+use crate::{FlutterViewWinit, WinitPlatformTaskHandler};
 
 pub struct WinitApplication {
     event_loop: EventLoop<FlutterEvent>,
-    window: FlutterWindow,
+    implicit_view: FlutterViewWinit,
     engine: FlutterEngine,
 }
 
@@ -60,11 +60,13 @@ impl WinitApplication {
             .with_args(attributes.args)
             .build()?;
 
-        let window = FlutterWindow::new(&event_loop, engine.clone(), builder)?;
+        let implicit_view = FlutterViewWinit::new_implicit(&event_loop, engine.clone(), builder)?;
+
+        engine.add_view(implicit_view.create_flutter_view());
 
         Ok(WinitApplication {
             event_loop,
-            window,
+            implicit_view,
             engine,
         })
     }
@@ -76,7 +78,7 @@ impl WinitApplication {
         // `FlutterEngineRun` comment in `embedder.h` for additional context.
         self.engine.run()?;
 
-        let window = &self.window;
+        let window = self.implicit_view.window();
         let context = window.context();
 
         resize(&self.engine, &context);
@@ -137,7 +139,7 @@ pub enum WinitApplicationBuildError {
     CreateEngineError(#[from] CreateError),
 
     #[error(transparent)]
-    WindowBuildFailure(#[from] Box<dyn StdError>),
+    WindowBuildFailure(#[from] WinitControllerError),
 
     #[error(transparent)]
     InvalidEventError(#[from] EventLoopError),
