@@ -290,6 +290,7 @@ impl FlutterEngine {
     where
         C: Channel + 'static,
     {
+        trace!("register channel: {}", channel.name());
         self.inner
             .channel_registry
             .write()
@@ -297,6 +298,7 @@ impl FlutterEngine {
     }
 
     pub fn remove_channel(&self, channel_name: &str) -> Option<Arc<dyn Channel>> {
+        trace!("remove channel: {}", channel_name);
         self.inner
             .channel_registry
             .write()
@@ -343,6 +345,7 @@ impl FlutterEngine {
     }
 
     pub(crate) fn post_platform_callback(&self, callback: MainThreadCallback) {
+        trace!("post_platform_callback");
         self.inner.platform_sender.send(callback).unwrap();
         self.inner.platform_runner.wake();
     }
@@ -356,6 +359,7 @@ impl FlutterEngine {
     where
         F: FnOnce(&FlutterEngine) + 'static + Send,
     {
+        trace!("run_on_platform_thread");
         if self.is_platform_thread() {
             f(self);
         } else {
@@ -367,6 +371,7 @@ impl FlutterEngine {
     where
         F: FnOnce(&FlutterEngine) + 'static + Send,
     {
+        trace!("run_on_render_thread");
         // TODO: Reimplement render thread
         // if self.is_platform_thread() {
         //     f(self);
@@ -381,6 +386,7 @@ impl FlutterEngine {
         frame_start_time_nanos: u64,
         frame_target_time_nanos: u64,
     ) {
+        trace!("on_vsync");
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
@@ -396,6 +402,7 @@ impl FlutterEngine {
     }
 
     pub fn send_window_metrics_event(&self, width: usize, height: usize, pixel_ratio: f64) {
+        trace!("send_window_metrics_event");
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
@@ -498,6 +505,7 @@ impl FlutterEngine {
     }
 
     pub fn shutdown(&self) {
+        trace!("shutdown");
         if !self.is_platform_thread() {
             panic!("Not on platform thread")
         }
@@ -535,6 +543,7 @@ impl FlutterEngine {
     }
 
     pub(crate) fn run_task(&self, task: &FlutterTask) {
+        trace!("run_task");
         unsafe {
             flutter_engine_sys::FlutterEngineRunTask(self.engine_ptr(), task as *const FlutterTask);
         }
@@ -544,6 +553,7 @@ impl FlutterEngine {
     where
         F: FnOnce() + 'static,
     {
+        trace!("post_render_thread_task");
         unsafe {
             let cbk = CallbackBox { cbk: Box::new(f) };
             let b = Box::new(cbk);
