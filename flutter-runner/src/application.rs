@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 
 use dpi::Size;
-use flutter_engine::RunError;
+use flutter_engine::{FlutterEngine, RunError};
 use flutter_winit::{EventLoopError, PhysicalSize};
 use thiserror::Error;
 
@@ -17,6 +17,7 @@ pub enum Application {
 #[cfg(feature = "flutter-winit")]
 pub struct WinitApplication {
     window: Option<FlutterWindow>,
+    engine: FlutterEngine,
 }
 
 impl WinitApplication {
@@ -39,7 +40,7 @@ impl WinitApplication {
             ))
         });
 
-        let window = FlutterWindow::new(
+        let (window, engine) = FlutterWindow::new(
             builder,
             attributes.assets_path,
             attributes.icu_data_path,
@@ -48,6 +49,7 @@ impl WinitApplication {
 
         Ok(WinitApplication {
             window: Some(window),
+            engine,
         })
     }
 
@@ -56,7 +58,7 @@ impl WinitApplication {
             return Err(RunError::InternalInconsistency.into());
         };
 
-        window.start_engine()?;
+        self.engine.run()?;
         window.run()?;
 
         Ok(())

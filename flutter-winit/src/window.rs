@@ -12,7 +12,7 @@ use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
-use flutter_engine::{FlutterEngine, RunError};
+use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
 use flutter_plugins::isolate::IsolatePlugin;
 use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
 use flutter_plugins::lifecycle::LifecyclePlugin;
@@ -47,7 +47,7 @@ pub struct FlutterWindow {
     event_loop: EventLoop<FlutterEvent>,
     context: Arc<Mutex<Context>>,
     resource_context: Arc<Mutex<ResourceContext>>,
-    engine: FlutterEngine,
+    engine: FlutterEngineWeakRef,
     close: Arc<AtomicBool>,
     plugins: Rc<RwLock<PluginRegistrar>>,
 }
@@ -58,7 +58,7 @@ impl FlutterWindow {
         assets_path: PathBuf,
         icu_data_path: PathBuf,
         arguments: Vec<String>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<(Self, FlutterEngine), Box<dyn Error>> {
         let event_loop = EventLoopBuilder::with_user_event().build()?;
         let proxy = event_loop.create_proxy();
 
@@ -103,14 +103,17 @@ impl FlutterWindow {
         plugins.add_plugin(&engine, TextInputPlugin::new(textinput_handler));
         plugins.add_plugin(&engine, WindowPlugin::new(window_handler));
 
-        Ok(Self {
-            event_loop,
-            context,
-            resource_context,
+        Ok((
+            Self {
+                event_loop,
+                context,
+                resource_context,
+                engine: engine.downgrade(),
+                close,
+                plugins: Rc::new(RwLock::new(plugins)),
+            },
             engine,
-            close,
-            plugins: Rc::new(RwLock::new(plugins)),
-        })
+        ))
     }
 
     // TODO(vially): bring back `with_resource_context` method
@@ -132,7 +135,7 @@ impl FlutterWindow {
     //    Ok(self)
     //}
 
-    pub fn engine(&self) -> FlutterEngine {
+    pub fn engine(&self) -> FlutterEngineWeakRef {
         self.engine.clone()
     }
 
@@ -144,15 +147,18 @@ impl FlutterWindow {
         self.resource_context.clone()
     }
 
-    pub fn create_texture(&self) -> Texture {
-        self.engine.create_texture()
+    pub fn create_texture(&self) -> Option<Texture> {
+        let engine = self.engine.upgrade()?;
+        Some(engine.create_texture())
     }
 
     pub fn add_plugin<P>(&self, plugin: P) -> &Self
     where
         P: Plugin + 'static,
     {
-        self.plugins.write().add_plugin(&self.engine, plugin);
+        if let Some(engine) = self.engine.upgrade() {
+            self.plugins.write().add_plugin(&engine, plugin);
+        }
         self
     }
 
@@ -173,22 +179,24 @@ impl FlutterWindow {
     }
 
     pub fn remove_channel(&self, channel_name: &str) -> Option<Arc<dyn Channel>> {
-        self.engine.remove_channel(channel_name)
+        self.engine.upgrade()?.remove_channel(channel_name)
     }
 
     pub fn with_channel<F>(&self, channel_name: &str, f: F)
     where
         F: FnMut(&dyn Channel),
     {
-        self.engine.with_channel(channel_name, f)
-    }
-
-    pub fn start_engine(&self) -> Result<(), RunError> {
-        self.engine.run()
+        if let Some(engine) = self.engine.upgrade() {
+            engine.with_channel(channel_name, f)
+        }
     }
 
     pub fn run(self) -> Result<(), winit::error::EventLoopError> {
-        let engine = self.engine.clone();
+        let Some(engine) = self.engine.upgrade() else {
+            return Err(winit::error::EventLoopError::ExitFailure(
+                ExitFailureErrorCode::EngineUpgradeError as i32,
+            ));
+        };
         let context = self.context.clone();
         let plugins = self.plugins.clone();
         let close = self.close.clone();
@@ -360,6 +368,11 @@ impl FlutterWindow {
             }
         })
     }
+}
+
+#[repr(i32)]
+pub enum ExitFailureErrorCode {
+    EngineUpgradeError = 10050,
 }
 
 fn resize(engine: &FlutterEngine, context: &Arc<Mutex<Context>>) {
