@@ -1,13 +1,16 @@
-use std::error::Error as StdError;
 use std::path::PathBuf;
+use std::{error::Error as StdError, sync::Arc};
 
 use dpi::Size;
-use flutter_engine::{FlutterEngine, RunError};
-use flutter_winit::{EventLoopError, PhysicalSize};
+use flutter_engine::builder::FlutterEngineBuilder;
+use flutter_engine::{CreateError, FlutterEngine, RunError};
 use thiserror::Error;
 
 #[cfg(feature = "flutter-winit")]
-use flutter_winit::{FlutterWindow, WindowBuilder, WindowBuilderExtWayland};
+use flutter_winit::{
+    EventLoopBuilder, EventLoopError, FlutterWindow, PhysicalSize, WindowBuilder,
+    WindowBuilderExtWayland, WinitPlatformTaskHandler,
+};
 
 pub enum Application {
     #[cfg(feature = "flutter-winit")]
@@ -24,6 +27,8 @@ impl WinitApplication {
     pub fn new(
         attributes: ApplicationAttributes,
     ) -> Result<WinitApplication, ApplicationBuildError> {
+        let event_loop = EventLoopBuilder::with_user_event().build()?;
+
         let builder = WindowBuilder::new();
         let builder = attributes
             .title
@@ -40,12 +45,17 @@ impl WinitApplication {
             ))
         });
 
-        let (window, engine) = FlutterWindow::new(
-            builder,
-            attributes.assets_path,
-            attributes.icu_data_path,
-            attributes.args,
-        )?;
+        let platform_task_handler =
+            Arc::new(WinitPlatformTaskHandler::new(event_loop.create_proxy()));
+
+        let engine = FlutterEngineBuilder::new()
+            .with_platform_handler(platform_task_handler)
+            .with_asset_path(attributes.assets_path)
+            .with_icu_data_path(attributes.icu_data_path)
+            .with_args(attributes.args)
+            .build()?;
+
+        let window = FlutterWindow::new(event_loop, engine.clone(), builder)?;
 
         Ok(WinitApplication {
             window: Some(window),
@@ -164,8 +174,14 @@ impl ApplicationBuilder {
 
 #[derive(Error, Debug)]
 pub enum ApplicationBuildError {
+    #[error(transparent)]
+    EngineCreateError(#[from] CreateError),
+
     #[cfg_attr(feature = "flutter-winit", error(transparent))]
     WinitWindowBuildError(#[from] Box<dyn StdError>),
+
+    #[cfg_attr(feature = "flutter-winit", error(transparent))]
+    WinitEventLoopError(#[from] EventLoopError),
 }
 
 #[derive(Error, Debug)]

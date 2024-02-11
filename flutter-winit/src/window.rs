@@ -1,14 +1,12 @@
 use crate::context::{Context, ResourceContext};
 use crate::egl::create_window_contexts;
 use crate::handler::{
-    WinitOpenGLHandler, WinitPlatformHandler, WinitPlatformTaskHandler, WinitTextInputHandler,
-    WinitWindowHandler,
+    WinitOpenGLHandler, WinitPlatformHandler, WinitTextInputHandler, WinitWindowHandler,
 };
 use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
-use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
@@ -27,14 +25,13 @@ use futures_lite::future;
 use parking_lot::{Mutex, RwLock};
 use std::error::Error;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use sys_locale::get_locale;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 
@@ -54,30 +51,19 @@ pub struct FlutterWindow {
 
 impl FlutterWindow {
     pub fn new(
+        event_loop: EventLoop<FlutterEvent>,
+        engine: FlutterEngine,
         window: WindowBuilder,
-        assets_path: PathBuf,
-        icu_data_path: PathBuf,
-        arguments: Vec<String>,
-    ) -> Result<(Self, FlutterEngine), Box<dyn Error>> {
-        let event_loop = EventLoopBuilder::with_user_event().build()?;
-        let proxy = event_loop.create_proxy();
-
+    ) -> Result<Self, Box<dyn Error>> {
         let (context, resource_context) = create_window_contexts(window, &event_loop)?;
         let context = Arc::new(Mutex::new(context));
         let resource_context = Arc::new(Mutex::new(resource_context));
 
-        let platform_task_handler = Arc::new(WinitPlatformTaskHandler::new(proxy));
-
-        let opengl_handler = WinitOpenGLHandler::new(context.clone(), resource_context.clone());
-
-        let engine = FlutterEngineBuilder::new()
-            .with_platform_handler(platform_task_handler)
-            .with_opengl(opengl_handler)
-            .with_asset_path(assets_path)
-            .with_icu_data_path(icu_data_path)
-            .with_args(arguments)
-            .build()
-            .expect("Failed to create engine");
+        #[allow(deprecated)]
+        engine.replace_opengl_handler(Box::new(WinitOpenGLHandler::new(
+            context.clone(),
+            resource_context.clone(),
+        )));
 
         let proxy = event_loop.create_proxy();
         let isolate_cb = move || {
@@ -103,17 +89,14 @@ impl FlutterWindow {
         plugins.add_plugin(&engine, TextInputPlugin::new(textinput_handler));
         plugins.add_plugin(&engine, WindowPlugin::new(window_handler));
 
-        Ok((
-            Self {
-                event_loop,
-                context,
-                resource_context,
-                engine: engine.downgrade(),
-                close,
-                plugins: Rc::new(RwLock::new(plugins)),
-            },
-            engine,
-        ))
+        Ok(Self {
+            event_loop,
+            context,
+            resource_context,
+            engine: engine.downgrade(),
+            close,
+            plugins: Rc::new(RwLock::new(plugins)),
+        })
     }
 
     // TODO(vially): bring back `with_resource_context` method
