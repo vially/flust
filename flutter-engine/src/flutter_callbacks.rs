@@ -8,7 +8,12 @@ pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.swap_buffers()
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .swap_buffers()
     }
 }
 
@@ -16,7 +21,12 @@ pub extern "C" fn make_current(user_data: *mut c_void) -> bool {
     trace!("make_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.make_current()
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .make_current()
     }
 }
 
@@ -24,7 +34,12 @@ pub extern "C" fn clear_current(user_data: *mut c_void) -> bool {
     trace!("clear_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.clear_current()
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .clear_current()
     }
 }
 
@@ -32,7 +47,12 @@ pub extern "C" fn fbo_callback(user_data: *mut c_void) -> c_uint {
     trace!("fbo_callback");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.fbo_callback()
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .fbo_callback()
     }
 }
 
@@ -40,7 +60,12 @@ pub extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
     trace!("make_resource_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.make_resource_current()
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .make_resource_current()
     }
 }
 
@@ -48,7 +73,12 @@ pub extern "C" fn gl_proc_resolver(user_data: *mut c_void, proc: *const c_char) 
     trace!("gl_proc_resolver");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.opengl_handler.gl_proc_resolver(proc)
+        engine
+            .opengl_handler
+            .read()
+            .as_ref()
+            .unwrap()
+            .gl_proc_resolver(proc)
     }
 }
 

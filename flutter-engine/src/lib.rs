@@ -40,7 +40,7 @@ pub(crate) enum MainThreadCallback {
 }
 
 struct FlutterEngineInner {
-    opengl_handler: Box<dyn FlutterOpenGLHandler + Send>,
+    opengl_handler: RwLock<Option<Box<dyn FlutterOpenGLHandler + Send>>>,
     vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
     engine_ptr: flutter_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
@@ -141,9 +141,7 @@ impl FlutterEngine {
         let engine = Self {
             #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(FlutterEngineInner {
-                opengl_handler: builder
-                    .opengl_handler
-                    .expect("Only opengl is supported (for now)"),
+                opengl_handler: RwLock::new(builder.opengl_handler),
                 vsync_handler: builder.vsync_handler,
                 engine_ptr: ptr::null_mut(),
                 channel_registry: RwLock::new(ChannelRegistry::new()),
@@ -282,6 +280,13 @@ impl FlutterEngine {
     #[inline]
     pub fn engine_ptr(&self) -> flutter_engine_sys::FlutterEngine {
         self.inner.engine_ptr
+    }
+
+    #[deprecated(
+        note = "This method is used as a temporary hack until `FlutterView`s are implemented"
+    )]
+    pub fn replace_opengl_handler(&self, opengl_handler: Box<dyn FlutterOpenGLHandler + Send>) {
+        self.inner.opengl_handler.write().replace(opengl_handler);
     }
 
     pub fn register_channel<C>(&self, channel: C) -> Weak<C>
