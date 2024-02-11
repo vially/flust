@@ -99,25 +99,6 @@ impl FlutterWindow {
         })
     }
 
-    // TODO(vially): bring back `with_resource_context` method
-    //pub fn with_resource_context(self) -> Result<Self, Box<dyn Error>> {
-    //    {
-    //        let window = WindowBuilder::new().with_visible(false);
-    //        let context = self.context.lock();
-    //        let resource_context = ContextBuilder::new()
-    //            .with_shared_lists(context.context().unwrap())
-    //            .build_windowed(window, &self.event_loop)?;
-
-    //        let resource_context = unsafe { resource_context.make_current().unwrap() };
-    //        gl::load_with(|s| resource_context.get_proc_address(s));
-    //        let resource_context = unsafe { resource_context.make_not_current().unwrap() };
-
-    //        let mut guard = self.resource_context.lock();
-    //        *guard = Context::from_context(resource_context);
-    //    }
-    //    Ok(self)
-    //}
-
     pub fn engine(&self) -> FlutterEngineWeakRef {
         self.engine.clone()
     }
