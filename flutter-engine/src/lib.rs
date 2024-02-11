@@ -189,10 +189,9 @@ impl FlutterEngine {
         };
 
         // Configure engine threads
-        // TODO: Should be downgraded to a weak once weak::into_raw lands in stable
         let runner_ptr = {
             let arc = inner.platform_runner.clone().inner;
-            Arc::into_raw(arc) as *mut std::ffi::c_void
+            Weak::into_raw(Arc::downgrade(&arc)) as *mut std::ffi::c_void
         };
 
         let platform_task_runner = flutter_engine_sys::FlutterTaskRunnerDescription {
@@ -261,8 +260,7 @@ impl FlutterEngine {
 
         // Initialise engine
         unsafe {
-            // TODO: Should be downgraded to a weak once weak::into_raw lands in stable
-            let inner_ptr = Arc::into_raw(inner.clone()) as *mut std::ffi::c_void;
+            let inner_ptr = Weak::into_raw(Arc::downgrade(inner)) as *mut std::ffi::c_void;
 
             if flutter_engine_sys::FlutterEngineInitialize(
                 1,
