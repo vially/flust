@@ -50,7 +50,13 @@ impl LocalizationPlugin {
                     languages.push(loc.id.language.as_str().to_owned());
                     languages.push(region.as_str().to_owned());
                     languages.push(script.as_str().to_owned());
-                    languages.push(loc.id.variants.get(0).map_or("", |v| v.as_str()).to_owned());
+                    languages.push(
+                        loc.id
+                            .variants
+                            .first()
+                            .map_or("", |v| v.as_str())
+                            .to_owned(),
+                    );
                 } else {
                     warn!("Failed to unwrap locale region and/or script: {}", locale);
                 }
