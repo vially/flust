@@ -24,7 +24,7 @@ impl Application {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), ApplicationRunError> {
+    pub fn run(self) -> Result<(), ApplicationRunError> {
         match self {
             #[cfg(feature = "flutter-winit")]
             Self::Winit(app) => Ok(app.run()?),
