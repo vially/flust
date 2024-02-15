@@ -11,5 +11,6 @@ dpi = { path = "../../dpi" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
 flutter-plugins = { path = "../flutter-plugins" }
+flutter-runner-api = { path = "../flutter-runner-api" }
 flutter-winit = { path = "../flutter-winit", optional = true }
 thiserror = "1.0.50"

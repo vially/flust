@@ -874,8 +874,17 @@ dependencies = [
  "flutter-engine",
  "flutter-engine-sys",
  "flutter-plugins",
+ "flutter-runner-api",
  "flutter-winit",
  "thiserror",
+]
+
+[[package]]
+name = "flutter-runner-api"
+version = "0.1.0"
+dependencies = [
+ "dpi",
+ "flutter-engine",
 ]
 
 [[package]]

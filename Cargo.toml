@@ -5,7 +5,7 @@ members = [
     "flutter-engine",
     "flutter-engine-sys",
     "flutter-plugins",
-    "flutter-runner",
+    "flutter-runner", "flutter-runner-api",
     "flutter-winit",
     #"flutter-glfw",
     #"flutter-tools"

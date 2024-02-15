@@ -4,6 +4,7 @@ use std::{error::Error as StdError, sync::Arc};
 use dpi::Size;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::{CreateError, FlutterEngine, RunError};
+use flutter_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
 
 #[cfg(feature = "flutter-winit")]
@@ -93,24 +94,6 @@ impl Application {
             Self::Winit(app) => app.run(),
         }
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum Backend {
-    #[cfg_attr(feature = "flutter-winit", default)]
-    Winit,
-}
-
-/// Attributes used when creating an application.
-#[derive(Debug, Clone, Default)]
-pub struct ApplicationAttributes {
-    pub(crate) backend: Backend,
-    pub(crate) inner_size: Option<Size>,
-    pub(crate) title: Option<String>,
-    pub(crate) app_id: Option<String>,
-    pub(crate) args: Vec<String>,
-    pub(crate) assets_path: PathBuf,
-    pub(crate) icu_data_path: PathBuf,
 }
 
 /// Configure application before creation.
