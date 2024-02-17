@@ -3,12 +3,14 @@ use crate::egl::create_window_contexts;
 use crate::handler::{
     WinitOpenGLHandler, WinitPlatformHandler, WinitTextInputHandler, WinitWindowHandler,
 };
+use crate::keyboard::raw_key;
+use crate::pointer::Pointers;
 use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
 use flutter_plugins::isolate::IsolatePlugin;
-use flutter_plugins::keyevent::KeyEventPlugin;
+use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
 use flutter_plugins::lifecycle::LifecyclePlugin;
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::navigation::NavigationPlugin;
@@ -24,15 +26,20 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
-use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::event::{ElementState, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
+use winit::event_loop::{EventLoop, EventLoopProxy};
+use winit::keyboard::{Key, NamedKey};
+use winit::window::{WindowBuilder, WindowId};
 
 pub enum FlutterEvent {
     WakePlatformThread,
     IsolateCreated,
+    WindowCloseRequested(WindowId),
 }
 
 pub struct FlutterWindow {
+    event_loop: EventLoopProxy<FlutterEvent>,
+    window_id: WindowId,
     context: Arc<Mutex<Context>>,
     resource_context: Arc<Mutex<ResourceContext>>,
     engine: FlutterEngineWeakRef,
@@ -46,7 +53,7 @@ impl FlutterWindow {
         engine: FlutterEngine,
         window: WindowBuilder,
     ) -> Result<Self, Box<dyn Error>> {
-        let (context, resource_context) = create_window_contexts(window, event_loop)?;
+        let (window_id, context, resource_context) = create_window_contexts(window, event_loop)?;
         let context = Arc::new(Mutex::new(context));
         let resource_context = Arc::new(Mutex::new(resource_context));
 
@@ -81,6 +88,8 @@ impl FlutterWindow {
         plugins.add_plugin(&engine, WindowPlugin::new(window_handler));
 
         Ok(Self {
+            event_loop: event_loop.create_proxy(),
+            window_id,
             context,
             resource_context,
             engine: engine.downgrade(),
@@ -147,6 +156,132 @@ impl FlutterWindow {
         if let Some(engine) = self.engine.upgrade() {
             engine.with_channel(channel_name, f)
         }
+    }
+
+    pub fn handle_event(&self, event: WindowEvent, pointers: &mut Pointers) {
+        let engine = self.engine.upgrade().unwrap();
+        match event {
+            WindowEvent::CloseRequested => {
+                let _ = self
+                    .event_loop
+                    .send_event(FlutterEvent::WindowCloseRequested(self.window_id));
+            }
+            WindowEvent::Resized(_) => resize(&engine, &self.context),
+            WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &self.context),
+            WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
+            WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+                ..
+            } => {
+                pointers.moved(device_id, position.into());
+            }
+            WindowEvent::MouseInput {
+                device_id,
+                state,
+                button,
+                ..
+            } => {
+                pointers.input(device_id, state, button);
+            }
+            WindowEvent::MouseWheel {
+                device_id, delta, ..
+            } => {
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_, _) => (0.0, 0.0), // TODO
+                    MouseScrollDelta::PixelDelta(position) => {
+                        let (dx, dy): (f64, f64) = position.into();
+                        (-dx, dy)
+                    }
+                };
+                pointers.wheel(device_id, delta);
+            }
+            WindowEvent::Touch(Touch {
+                device_id,
+                phase,
+                location,
+                ..
+            }) => {
+                pointers.touch(device_id, phase, location.into());
+            }
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    state, logical_key, ..
+                },
+                ..
+            } => {
+                let Some(raw_key) = raw_key(logical_key.clone()) else {
+                    return;
+                };
+
+                // TODO(vially): Bring back modifiers
+                //let shift: u32 = modifiers.shift().into();
+                //let ctrl: u32 = modifiers.ctrl().into();
+                //let alt: u32 = modifiers.alt().into();
+                //let logo: u32 = modifiers.logo().into();
+                //let raw_modifiers = shift | ctrl << 1 | alt << 2 | logo << 3;
+                let raw_modifiers = 0;
+
+                match state {
+                    ElementState::Pressed => {
+                        self.with_plugin_mut(
+                            // TODO(vially): Fix text input logic to handle *all* named keys
+                            |text_input: &mut TextInputPlugin| match logical_key {
+                                Key::Named(key) => match key {
+                                    NamedKey::Enter => {
+                                        text_input.with_state(|state| {
+                                            state.add_characters("\n");
+                                        });
+                                        text_input.notify_changes();
+                                    }
+                                    NamedKey::Backspace => {
+                                        text_input.with_state(|state| {
+                                            state.backspace();
+                                        });
+                                        text_input.notify_changes();
+                                    }
+                                    _ => {}
+                                },
+                                Key::Character(ch) => {
+                                    text_input.with_state(|state| {
+                                        state.add_characters(&ch.to_string());
+                                    });
+                                    text_input.notify_changes();
+                                }
+                                _ => {}
+                            },
+                        );
+
+                        self.with_plugin(|keyevent: &KeyEventPlugin| {
+                            keyevent.key_action(KeyAction {
+                                toolkit: "glfw".to_string(),
+                                key_code: raw_key as _,
+                                // TODO(vially): Fix scan code
+                                scan_code: 0,
+                                modifiers: raw_modifiers as _,
+                                keymap: "linux".to_string(),
+                                _type: KeyActionType::Keydown,
+                            });
+                        });
+                    }
+                    ElementState::Released => {
+                        self.with_plugin(|keyevent: &KeyEventPlugin| {
+                            keyevent.key_action(KeyAction {
+                                toolkit: "glfw".to_string(),
+                                key_code: raw_key as _,
+                                // TODO(vially): Fix scan code
+                                scan_code: 0,
+                                modifiers: raw_modifiers as _,
+                                keymap: "linux".to_string(),
+                                _type: KeyActionType::Keyup,
+                            });
+                        });
+                    }
+                }
+            }
+            _ => {}
+        };
     }
 }
 

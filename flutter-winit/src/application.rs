@@ -4,24 +4,20 @@ use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::{CreateError, FlutterEngine, RunError};
-use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
-use flutter_plugins::textinput::TextInputPlugin;
 use flutter_runner_api::ApplicationAttributes;
 use futures_lite::future;
 use sys_locale::get_locale;
 use thiserror::Error;
 use winit::dpi::PhysicalSize;
 use winit::error::EventLoopError;
-use winit::event::{ElementState, Event, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
+use winit::event::Event;
 use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
 use winit::platform::wayland::WindowBuilderExtWayland;
 use winit::window::WindowBuilder;
 
-use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
 use crate::window::{resize, FlutterEvent};
 use crate::{FlutterWindow, WinitPlatformTaskHandler};
@@ -115,129 +111,12 @@ impl WinitApplication {
         let mut pointers = Pointers::new(self.engine.clone());
         Ok(self.event_loop.run(move |event, elwt| match event {
             Event::WindowEvent { event, .. } => {
-                match event {
-                    WindowEvent::CloseRequested => elwt.exit(),
-                    WindowEvent::Resized(_) => resize(&self.engine, &context),
-                    WindowEvent::ScaleFactorChanged { .. } => resize(&self.engine, &context),
-                    WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
-                    WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
-                    WindowEvent::CursorMoved {
-                        device_id,
-                        position,
-                        ..
-                    } => {
-                        pointers.moved(device_id, position.into());
-                    }
-                    WindowEvent::MouseInput {
-                        device_id,
-                        state,
-                        button,
-                        ..
-                    } => {
-                        pointers.input(device_id, state, button);
-                    }
-                    WindowEvent::MouseWheel {
-                        device_id, delta, ..
-                    } => {
-                        let delta = match delta {
-                            MouseScrollDelta::LineDelta(_, _) => (0.0, 0.0), // TODO
-                            MouseScrollDelta::PixelDelta(position) => {
-                                let (dx, dy): (f64, f64) = position.into();
-                                (-dx, dy)
-                            }
-                        };
-                        pointers.wheel(device_id, delta);
-                    }
-                    WindowEvent::Touch(Touch {
-                        device_id,
-                        phase,
-                        location,
-                        ..
-                    }) => {
-                        pointers.touch(device_id, phase, location.into());
-                    }
-                    WindowEvent::KeyboardInput {
-                        event:
-                            KeyEvent {
-                                state, logical_key, ..
-                            },
-                        ..
-                    } => {
-                        let Some(raw_key) = raw_key(logical_key.clone()) else {
-                            return;
-                        };
-
-                        // TODO(vially): Bring back modifiers
-                        //let shift: u32 = modifiers.shift().into();
-                        //let ctrl: u32 = modifiers.ctrl().into();
-                        //let alt: u32 = modifiers.alt().into();
-                        //let logo: u32 = modifiers.logo().into();
-                        //let raw_modifiers = shift | ctrl << 1 | alt << 2 | logo << 3;
-                        let raw_modifiers = 0;
-
-                        match state {
-                            ElementState::Pressed => {
-                                window.with_plugin_mut(
-                                    // TODO(vially): Fix text input logic to handle *all* named keys
-                                    |text_input: &mut TextInputPlugin| match logical_key {
-                                        Key::Named(key) => match key {
-                                            NamedKey::Enter => {
-                                                text_input.with_state(|state| {
-                                                    state.add_characters("\n");
-                                                });
-                                                text_input.notify_changes();
-                                            }
-                                            NamedKey::Backspace => {
-                                                text_input.with_state(|state| {
-                                                    state.backspace();
-                                                });
-                                                text_input.notify_changes();
-                                            }
-                                            _ => {}
-                                        },
-                                        Key::Character(ch) => {
-                                            text_input.with_state(|state| {
-                                                state.add_characters(&ch.to_string());
-                                            });
-                                            text_input.notify_changes();
-                                        }
-                                        _ => {}
-                                    },
-                                );
-
-                                window.with_plugin(|keyevent: &KeyEventPlugin| {
-                                    keyevent.key_action(KeyAction {
-                                        toolkit: "glfw".to_string(),
-                                        key_code: raw_key as _,
-                                        // TODO(vially): Fix scan code
-                                        scan_code: 0,
-                                        modifiers: raw_modifiers as _,
-                                        keymap: "linux".to_string(),
-                                        _type: KeyActionType::Keydown,
-                                    });
-                                });
-                            }
-                            ElementState::Released => {
-                                window.with_plugin(|keyevent: &KeyEventPlugin| {
-                                    keyevent.key_action(KeyAction {
-                                        toolkit: "glfw".to_string(),
-                                        key_code: raw_key as _,
-                                        // TODO(vially): Fix scan code
-                                        scan_code: 0,
-                                        modifiers: raw_modifiers as _,
-                                        keymap: "linux".to_string(),
-                                        _type: KeyActionType::Keyup,
-                                    });
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                window.handle_event(event, &mut pointers);
             }
             Event::LoopExiting => {
                 self.engine.shutdown();
             }
+            Event::UserEvent(FlutterEvent::WindowCloseRequested(_)) => elwt.exit(),
             _ => {
                 if window.is_closing() {
                     elwt.exit();

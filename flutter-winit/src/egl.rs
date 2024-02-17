@@ -9,7 +9,10 @@ use glutin::{
 use glutin_winit::{ApiPreference, DisplayBuilder, GlWindow};
 use raw_window_handle::HasRawWindowHandle;
 use thiserror::Error;
-use winit::{event_loop::EventLoop, window::WindowBuilder};
+use winit::{
+    event_loop::EventLoop,
+    window::{WindowBuilder, WindowId},
+};
 
 use crate::{
     context::{Context, ResourceContext},
@@ -19,7 +22,7 @@ use crate::{
 pub(crate) fn create_window_contexts(
     window_builder: WindowBuilder,
     event_loop: &EventLoop<FlutterEvent>,
-) -> Result<(Context, ResourceContext), Box<dyn Error>> {
+) -> Result<(WindowId, Context, ResourceContext), Box<dyn Error>> {
     let template_builder = ConfigTemplateBuilder::new();
 
     let (window, config) = DisplayBuilder::new()
@@ -61,7 +64,7 @@ pub(crate) fn create_window_contexts(
 
     let resource_context = ResourceContext::new(resource_context.treat_as_possibly_current());
 
-    Ok((context, resource_context))
+    Ok((context.window().id(), context, resource_context))
 }
 
 #[derive(Error, Debug)]
