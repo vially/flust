@@ -76,14 +76,6 @@ impl Context {
     pub fn window(&self) -> &Window {
         &self.window
     }
-
-    pub fn size(&self) -> PhysicalSize<u32> {
-        self.window().inner_size()
-    }
-
-    pub fn hidpi_factor(&self) -> f64 {
-        self.window().scale_factor()
-    }
 }
 
 // `Context` is only `Send` as long as it's used correctly by the engine (e.g.:

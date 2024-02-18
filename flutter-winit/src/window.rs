@@ -285,8 +285,8 @@ impl FlutterWindow {
 
 pub(crate) fn resize(engine: &FlutterEngine, context: &Arc<Mutex<Context>>) {
     let mut context = context.lock();
-    let dpi = context.hidpi_factor();
-    let size = context.size();
+    let dpi = context.window().scale_factor();
+    let size = context.window().inner_size();
     log::trace!(
         "resize width: {} height: {} scale {}",
         size.width,
