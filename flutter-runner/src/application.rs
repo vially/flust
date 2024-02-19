@@ -4,10 +4,18 @@ use dpi::Size;
 use flutter_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
 
+#[cfg(feature = "flutter-sctk")]
+use flutter_sctk::application::{
+    SctkApplication, SctkApplicationCreateError, SctkApplicationRunError,
+};
+
 #[cfg(feature = "flutter-winit")]
 use flutter_winit::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
 
 pub enum Application {
+    #[cfg(feature = "flutter-sctk")]
+    Sctk(SctkApplication),
+
     #[cfg(feature = "flutter-winit")]
     Winit(WinitApplication),
 }
@@ -20,12 +28,18 @@ impl Application {
     pub fn new(attributes: ApplicationAttributes) -> Result<Application, ApplicationBuildError> {
         match attributes.backend {
             #[cfg(feature = "flutter-winit")]
+            Backend::Sctk => Ok(Application::Sctk(SctkApplication::new(attributes)?)),
+
+            #[cfg(feature = "flutter-winit")]
             Backend::Winit => Ok(Application::Winit(WinitApplication::new(attributes)?)),
         }
     }
 
     pub fn run(self) -> Result<(), ApplicationRunError> {
         match self {
+            #[cfg(feature = "flutter-sctk")]
+            Self::Sctk(app) => Ok(app.run()?),
+
             #[cfg(feature = "flutter-winit")]
             Self::Winit(app) => Ok(app.run()?),
         }
@@ -93,12 +107,18 @@ impl ApplicationBuilder {
 
 #[derive(Error, Debug)]
 pub enum ApplicationBuildError {
+    #[cfg_attr(feature = "flutter-sctk", error(transparent))]
+    SctkApplicationCreateError(#[from] SctkApplicationCreateError),
+
     #[cfg_attr(feature = "flutter-winit", error(transparent))]
     WinitApplicationBuildError(#[from] WinitApplicationBuildError),
 }
 
 #[derive(Error, Debug)]
 pub enum ApplicationRunError {
+    #[cfg_attr(feature = "flutter-sctk", error(transparent))]
+    SctkApplicationRunError(#[from] SctkApplicationRunError),
+
     #[cfg_attr(feature = "flutter-winit", error(transparent))]
     WinitApplicationRunError(#[from] WinitApplicationRunError),
 }

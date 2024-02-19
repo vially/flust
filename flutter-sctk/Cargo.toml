@@ -1,0 +1,17 @@
+[package]
+name = "flutter-sctk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flutter-engine = { path = "../flutter-engine" }
+flutter-engine-sys = { path = "../flutter-engine-sys" }
+flutter-glutin = { path = "../flutter-glutin" }
+flutter-runner-api = { path = "../flutter-runner-api" }
+glutin = "0.31.3"
+log = "0.4.20"
+raw-window-handle = "0.5.2"
+smithay-client-toolkit = { git = "https://github.com/Smithay/client-toolkit.git" }
+thiserror = "1.0.50"
+wayland-backend = { version = "0.3.2", features = ["client_system"] }
+wayland-client = "0.31.1"

@@ -5,6 +5,7 @@ use dpi::Size;
 #[derive(Debug, Clone, Default)]
 pub enum Backend {
     #[default]
+    Sctk,
     Winit,
 }
 

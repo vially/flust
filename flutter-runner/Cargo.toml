@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["flutter-winit"]
+default = ["flutter-winit", "flutter-sctk"]
 
 [dependencies]
 dpi = "0.1.0"
@@ -12,5 +12,6 @@ flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
 flutter-plugins = { path = "../flutter-plugins" }
 flutter-runner-api = { path = "../flutter-runner-api" }
+flutter-sctk = { path = "../flutter-sctk", optional = true }
 flutter-winit = { path = "../flutter-winit", optional = true }
 thiserror = "1.0.50"
