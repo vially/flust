@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 dpi = { path = "../../dpi" }
-glutin = "0.31.1"
+glutin = "0.31.3"
