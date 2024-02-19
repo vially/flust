@@ -1,7 +1,6 @@
 #![deny(warnings)]
 
 mod application;
-mod context;
 mod egl;
 mod handler;
 mod keyboard;

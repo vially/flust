@@ -855,6 +855,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "flutter-glutin"
+version = "0.1.0"
+dependencies = [
+ "dpi",
+ "glutin",
+]
+
+[[package]]
 name = "flutter-plugins"
 version = "0.4.0"
 dependencies = [
@@ -897,6 +905,7 @@ dependencies = [
  "dpi",
  "flutter-engine",
  "flutter-engine-sys",
+ "flutter-glutin",
  "flutter-plugins",
  "flutter-runner-api",
  "futures-lite 2.1.0",

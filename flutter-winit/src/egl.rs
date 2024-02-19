@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use flutter_glutin::context::{Context, ResourceContext};
 use glutin::{
     config::ConfigTemplateBuilder,
     context::{ContextAttributesBuilder, NotCurrentContext, NotCurrentGlContext},
@@ -14,10 +15,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::{
-    context::{Context, ResourceContext},
-    window::FlutterEvent,
-};
+use crate::window::FlutterEvent;
 
 pub(crate) fn create_window_contexts(
     window_builder: WindowBuilder,

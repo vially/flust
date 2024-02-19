@@ -4,8 +4,10 @@ resolver = "2"
 members = [
     "flutter-engine",
     "flutter-engine-sys",
+    "flutter-glutin",
     "flutter-plugins",
-    "flutter-runner", "flutter-runner-api",
+    "flutter-runner",
+    "flutter-runner-api",
     "flutter-winit",
     #"flutter-glfw",
     #"flutter-tools"

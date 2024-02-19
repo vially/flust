@@ -1,4 +1,3 @@
-use crate::context::{Context, ResourceContext};
 use crate::egl::create_window_contexts;
 use crate::handler::{
     WinitOpenGLHandler, WinitPlatformHandler, WinitTextInputHandler, WinitWindowHandler,
@@ -10,6 +9,7 @@ use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
+use flutter_glutin::context::{Context, ResourceContext};
 use flutter_plugins::isolate::IsolatePlugin;
 use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
 use flutter_plugins::lifecycle::LifecyclePlugin;

@@ -1,0 +1,8 @@
+[package]
+name = "flutter-glutin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dpi = { path = "../../dpi" }
+glutin = "0.31.1"
