@@ -81,7 +81,7 @@ impl WinitApplication {
         let window = self.implicit_view.window();
         let context = window.context();
 
-        resize(&self.engine, &context);
+        resize(&self.engine, &context, &window.window());
 
         window.with_plugin(|localization: &LocalizationPlugin| {
             let locale = get_locale().unwrap_or_else(|| String::from("en-US"));

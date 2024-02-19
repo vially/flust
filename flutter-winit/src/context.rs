@@ -1,3 +1,4 @@
+use dpi::PhysicalSize;
 use glutin::{
     api::egl,
     context::PossiblyCurrentContext,
@@ -9,11 +10,8 @@ use std::{
     ffi::{c_void, CStr},
     num::NonZeroU32,
 };
-use winit::dpi::PhysicalSize;
-use winit::window::Window;
 
 pub struct Context {
-    window: Window,
     display: Display,
     surface: Surface<WindowSurface>,
     context: Option<PossiblyCurrentContext>,
@@ -21,13 +19,11 @@ pub struct Context {
 
 impl Context {
     pub fn new(
-        window: Window,
         display: Display,
         surface: Surface<WindowSurface>,
         context: PossiblyCurrentContext,
     ) -> Self {
         Self {
-            window,
             display,
             surface,
             context: Some(context),
@@ -71,10 +67,6 @@ impl Context {
             return result;
         }
         false
-    }
-
-    pub fn window(&self) -> &Window {
-        &self.window
     }
 }
 

@@ -5,6 +5,7 @@ use crate::handler::{
 };
 use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
+use dpi::PhysicalSize;
 use flutter_engine::channel::Channel;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
@@ -25,11 +26,10 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{WindowBuilder, WindowId};
+use winit::window::{Window, WindowBuilder, WindowId};
 
 pub enum FlutterEvent {
     WakePlatformThread,
@@ -39,7 +39,7 @@ pub enum FlutterEvent {
 
 pub struct FlutterWindow {
     event_loop: EventLoopProxy<FlutterEvent>,
-    window_id: WindowId,
+    window: Arc<Mutex<Window>>,
     context: Arc<Mutex<Context>>,
     resource_context: Arc<Mutex<ResourceContext>>,
     engine: FlutterEngineWeakRef,
@@ -53,18 +53,19 @@ impl FlutterWindow {
         engine: FlutterEngine,
         window: WindowBuilder,
     ) -> Result<Self, Box<dyn Error>> {
-        let (window_id, context, resource_context) = create_window_contexts(window, event_loop)?;
+        let (window, context, resource_context) = create_window_contexts(window, event_loop)?;
         let context = Arc::new(Mutex::new(context));
         let resource_context = Arc::new(Mutex::new(resource_context));
+        let window = Arc::new(Mutex::new(window));
 
         let proxy = event_loop.create_proxy();
         let isolate_cb = move || {
             proxy.send_event(FlutterEvent::IsolateCreated).ok();
         };
-        let platform_handler = Arc::new(Mutex::new(WinitPlatformHandler::new(context.clone())?));
+        let platform_handler = Arc::new(Mutex::new(WinitPlatformHandler::new(window.clone())?));
         let close = Arc::new(AtomicBool::new(false));
         let window_handler = Arc::new(Mutex::new(WinitWindowHandler::new(
-            context.clone(),
+            window.clone(),
             close.clone(),
         )));
         let textinput_handler = Arc::new(Mutex::new(WinitTextInputHandler::default()));
@@ -83,7 +84,7 @@ impl FlutterWindow {
 
         Ok(Self {
             event_loop: event_loop.create_proxy(),
-            window_id,
+            window,
             context,
             resource_context,
             engine: engine.downgrade(),
@@ -98,6 +99,14 @@ impl FlutterWindow {
 
     pub fn context(&self) -> Arc<Mutex<Context>> {
         self.context.clone()
+    }
+
+    pub fn window(&self) -> Arc<Mutex<Window>> {
+        self.window.clone()
+    }
+
+    pub fn window_id(&self) -> WindowId {
+        self.window.lock().id()
     }
 
     pub fn is_closing(&self) -> bool {
@@ -162,10 +171,10 @@ impl FlutterWindow {
             WindowEvent::CloseRequested => {
                 let _ = self
                     .event_loop
-                    .send_event(FlutterEvent::WindowCloseRequested(self.window_id));
+                    .send_event(FlutterEvent::WindowCloseRequested(self.window_id()));
             }
-            WindowEvent::Resized(_) => resize(&engine, &self.context),
-            WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &self.context),
+            WindowEvent::Resized(_) => resize(&engine, &self.context, &self.window),
+            WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &self.context, &self.window),
             WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
             WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
             WindowEvent::CursorMoved {
@@ -283,10 +292,16 @@ impl FlutterWindow {
     }
 }
 
-pub(crate) fn resize(engine: &FlutterEngine, context: &Arc<Mutex<Context>>) {
+pub(crate) fn resize(
+    engine: &FlutterEngine,
+    context: &Arc<Mutex<Context>>,
+    window: &Arc<Mutex<Window>>,
+) {
     let mut context = context.lock();
-    let dpi = context.window().scale_factor();
-    let size = context.window().inner_size();
+    let (dpi, size) = {
+        let window = window.lock();
+        (window.scale_factor(), window.inner_size())
+    };
     log::trace!(
         "resize width: {} height: {} scale {}",
         size.width,

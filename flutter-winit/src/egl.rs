@@ -11,7 +11,7 @@ use raw_window_handle::HasRawWindowHandle;
 use thiserror::Error;
 use winit::{
     event_loop::EventLoop,
-    window::{WindowBuilder, WindowId},
+    window::{Window, WindowBuilder},
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
 pub(crate) fn create_window_contexts(
     window_builder: WindowBuilder,
     event_loop: &EventLoop<FlutterEvent>,
-) -> Result<(WindowId, Context, ResourceContext), Box<dyn Error>> {
+) -> Result<(Window, Context, ResourceContext), Box<dyn Error>> {
     let template_builder = ConfigTemplateBuilder::new();
 
     let (window, config) = DisplayBuilder::new()
@@ -51,12 +51,7 @@ pub(crate) fn create_window_contexts(
     let surface_attributes = window.build_surface_attributes(SurfaceAttributesBuilder::new());
     let surface = unsafe { display.create_window_surface(&config, &surface_attributes)? };
 
-    let context = Context::new(
-        window,
-        display,
-        surface,
-        render_context.treat_as_possibly_current(),
-    );
+    let context = Context::new(display, surface, render_context.treat_as_possibly_current());
 
     let NotCurrentContext::Egl(resource_context) = resource_context else {
         return Err(ContextError::InvalidEGLContext.into());
@@ -64,7 +59,7 @@ pub(crate) fn create_window_contexts(
 
     let resource_context = ResourceContext::new(resource_context.treat_as_possibly_current());
 
-    Ok((context.window().id(), context, resource_context))
+    Ok((window, context, resource_context))
 }
 
 #[derive(Error, Debug)]

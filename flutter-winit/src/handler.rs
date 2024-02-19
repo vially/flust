@@ -14,6 +14,7 @@ use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 // TODO: Investigate removing mutex
 pub struct WinitPlatformTaskHandler {
@@ -86,21 +87,21 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
 pub struct WinitPlatformHandler {
     // TODO(vially): Bring back clipboard context implementation
     clipboard: NopClipboardContext,
-    context: Arc<Mutex<Context>>,
+    window: Arc<Mutex<Window>>,
 }
 
 impl WinitPlatformHandler {
-    pub fn new(context: Arc<Mutex<Context>>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(window: Arc<Mutex<Window>>) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             clipboard: NopClipboardContext,
-            context,
+            window,
         })
     }
 }
 
 impl PlatformHandler for WinitPlatformHandler {
     fn set_application_switcher_description(&mut self, description: AppSwitcherDescription) {
-        self.context.lock().window().set_title(&description.label);
+        self.window.lock().set_title(&description.label);
     }
 
     fn set_clipboard_data(&mut self, text: String) {
@@ -122,16 +123,16 @@ impl PlatformHandler for WinitPlatformHandler {
 }
 
 pub struct WinitWindowHandler {
-    context: Arc<Mutex<Context>>,
+    window: Arc<Mutex<Window>>,
     maximized: bool,
     visible: bool,
     close: Arc<AtomicBool>,
 }
 
 impl WinitWindowHandler {
-    pub fn new(context: Arc<Mutex<Context>>, close: Arc<AtomicBool>) -> Self {
+    pub fn new(window: Arc<Mutex<Window>>, close: Arc<AtomicBool>) -> Self {
         Self {
-            context,
+            window,
             maximized: false,
             visible: false,
             close,
@@ -146,12 +147,12 @@ impl WindowHandler for WinitWindowHandler {
 
     fn show(&mut self) {
         self.visible = true;
-        self.context.lock().window().set_visible(self.visible);
+        self.window.lock().set_visible(self.visible);
     }
 
     fn hide(&mut self) {
         self.visible = false;
-        self.context.lock().window().set_visible(self.visible);
+        self.window.lock().set_visible(self.visible);
     }
 
     fn is_visible(&mut self) -> bool {
@@ -160,12 +161,12 @@ impl WindowHandler for WinitWindowHandler {
 
     fn maximize(&mut self) {
         self.maximized = true;
-        self.context.lock().window().set_maximized(self.maximized);
+        self.window.lock().set_maximized(self.maximized);
     }
 
     fn restore(&mut self) {
         self.maximized = false;
-        self.context.lock().window().set_maximized(self.maximized);
+        self.window.lock().set_maximized(self.maximized);
     }
 
     fn is_maximized(&mut self) -> bool {
