@@ -2,8 +2,7 @@ use crate::FlutterEngine;
 use flutter_engine_sys::{FlutterPlatformMessage, FlutterPlatformMessageResponseHandle};
 use log::error;
 use std::borrow::Cow;
-use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
+use std::ffi::{c_void, CStr, CString};
 use std::{mem, ptr};
 
 #[derive(Debug)]

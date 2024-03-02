@@ -2,7 +2,7 @@ use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use log::trace;
 use parking_lot::Mutex;
-use std::os::raw::{c_char, c_uint, c_void};
+use std::ffi::{c_char, c_uint, c_void};
 
 pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
