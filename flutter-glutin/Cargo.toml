@@ -7,3 +7,5 @@ edition = "2021"
 dpi = { path = "../../dpi" }
 flutter-engine-api = { path = "../flutter-engine-api" }
 glutin = "0.31.3"
+raw-window-handle = "0.5.2"
+thiserror = "1.0.52"

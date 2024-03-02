@@ -866,6 +866,8 @@ dependencies = [
  "dpi",
  "flutter-engine-api",
  "glutin",
+ "raw-window-handle 0.5.2",
+ "thiserror",
 ]
 
 [[package]]
