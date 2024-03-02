@@ -79,23 +79,16 @@ impl Context {
 unsafe impl Send for Context {}
 
 pub struct ResourceContext {
-    context: Option<egl::context::PossiblyCurrentContext>,
+    context: egl::context::PossiblyCurrentContext,
 }
 
 impl ResourceContext {
     pub fn new(context: egl::context::PossiblyCurrentContext) -> Self {
-        Self {
-            context: Some(context),
-        }
+        Self { context }
     }
 
     pub fn make_current(&mut self) -> bool {
-        if let Some(ctx) = self.context.take() {
-            let result = ctx.make_current_surfaceless().is_ok();
-            self.context = Some(ctx);
-            return result;
-        }
-        false
+        self.context.make_current_surfaceless().is_ok()
     }
 }
 
