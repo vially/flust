@@ -21,10 +21,11 @@ use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseH
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
 use parking_lot::RwLock;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -110,20 +111,6 @@ impl Clone for FlutterEngine {
             inner: self.inner.clone(),
         }
     }
-}
-
-pub trait FlutterOpenGLHandler {
-    fn swap_buffers(&self) -> bool;
-
-    fn make_current(&self) -> bool;
-
-    fn clear_current(&self) -> bool;
-
-    fn fbo_callback(&self) -> u32;
-
-    fn make_resource_current(&self) -> bool;
-
-    fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void;
 }
 
 pub trait FlutterVsyncHandler {

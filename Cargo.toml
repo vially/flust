@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "flutter-engine",
+    "flutter-engine-api",
     "flutter-engine-sys",
     "flutter-glutin",
     "flutter-plugins",

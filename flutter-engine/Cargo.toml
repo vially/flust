@@ -10,6 +10,7 @@ license = "MIT"
 
 [dependencies]
 crossbeam-channel = "0.5.8"
+flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 log = "0.4.20"
 parking_lot = "0.12.1"

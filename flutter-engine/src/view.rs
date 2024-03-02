@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::FlutterOpenGLHandler;
+use flutter_engine_api::FlutterOpenGLHandler;
 
 pub const IMPLICIT_VIEW_ID: u32 = 1;
 

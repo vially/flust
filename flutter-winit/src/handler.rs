@@ -2,7 +2,7 @@ use crate::window::FlutterEvent;
 use copypasta::nop_clipboard::NopClipboardContext;
 use copypasta::ClipboardProvider;
 use flutter_engine::tasks::TaskRunnerHandler;
-use flutter_engine::FlutterOpenGLHandler;
+use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_glutin::context::{Context, ResourceContext};
 use flutter_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
 use flutter_plugins::textinput::TextInputHandler;

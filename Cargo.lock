@@ -836,6 +836,7 @@ name = "flutter-engine"
 version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
+ "flutter-engine-api",
  "flutter-engine-sys",
  "log",
  "parking_lot",
@@ -844,6 +845,10 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
+
+[[package]]
+name = "flutter-engine-api"
+version = "0.1.0"
 
 [[package]]
 name = "flutter-engine-sys"
@@ -904,6 +909,7 @@ dependencies = [
  "copypasta",
  "dpi",
  "flutter-engine",
+ "flutter-engine-api",
  "flutter-engine-sys",
  "flutter-glutin",
  "flutter-plugins",
