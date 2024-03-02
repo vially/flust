@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 dpi = { path = "../../dpi" }
+flutter-engine-api = { path = "../flutter-engine-api" }
 glutin = "0.31.3"

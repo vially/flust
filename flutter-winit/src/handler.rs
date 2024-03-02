@@ -2,14 +2,11 @@ use crate::window::FlutterEvent;
 use copypasta::nop_clipboard::NopClipboardContext;
 use copypasta::ClipboardProvider;
 use flutter_engine::tasks::TaskRunnerHandler;
-use flutter_engine_api::FlutterOpenGLHandler;
-use flutter_glutin::context::{Context, ResourceContext};
 use flutter_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
 use flutter_plugins::textinput::TextInputHandler;
 use flutter_plugins::window::{PositionParams, WindowHandler};
 use parking_lot::Mutex;
 use std::error::Error;
-use std::ffi::{c_void, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
@@ -34,49 +31,6 @@ impl TaskRunnerHandler for WinitPlatformTaskHandler {
             .lock()
             .send_event(FlutterEvent::WakePlatformThread)
             .ok();
-    }
-}
-
-pub struct WinitOpenGLHandler {
-    context: Arc<std::sync::Mutex<Context>>,
-    resource_context: Arc<std::sync::Mutex<ResourceContext>>,
-}
-
-impl WinitOpenGLHandler {
-    pub fn new(
-        context: Arc<std::sync::Mutex<Context>>,
-        resource_context: Arc<std::sync::Mutex<ResourceContext>>,
-    ) -> Self {
-        Self {
-            context,
-            resource_context,
-        }
-    }
-}
-
-impl FlutterOpenGLHandler for WinitOpenGLHandler {
-    fn swap_buffers(&self) -> bool {
-        self.context.lock().unwrap().present()
-    }
-
-    fn make_current(&self) -> bool {
-        self.context.lock().unwrap().make_current()
-    }
-
-    fn clear_current(&self) -> bool {
-        self.context.lock().unwrap().make_not_current()
-    }
-
-    fn fbo_callback(&self) -> u32 {
-        0
-    }
-
-    fn make_resource_current(&self) -> bool {
-        self.resource_context.lock().unwrap().make_current()
-    }
-
-    fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void {
-        self.context.lock().unwrap().get_proc_address(proc) as _
     }
 }
 

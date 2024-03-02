@@ -1,7 +1,5 @@
 use crate::egl::create_window_contexts;
-use crate::handler::{
-    WinitOpenGLHandler, WinitPlatformHandler, WinitTextInputHandler, WinitWindowHandler,
-};
+use crate::handler::{WinitPlatformHandler, WinitTextInputHandler, WinitWindowHandler};
 use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
 use dpi::PhysicalSize;
@@ -10,6 +8,7 @@ use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
 use flutter_glutin::context::{Context, ResourceContext};
+use flutter_glutin::handler::GlutinOpenGLHandler;
 use flutter_plugins::isolate::IsolatePlugin;
 use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
 use flutter_plugins::lifecycle::LifecyclePlugin;
@@ -117,8 +116,8 @@ impl FlutterWindow {
         self.resource_context.clone()
     }
 
-    pub fn create_opengl_handler(&self) -> WinitOpenGLHandler {
-        WinitOpenGLHandler::new(self.context.clone(), self.resource_context.clone())
+    pub fn create_opengl_handler(&self) -> GlutinOpenGLHandler {
+        GlutinOpenGLHandler::new(self.context.clone(), self.resource_context.clone())
     }
 
     pub fn create_texture(&self) -> Option<Texture> {
