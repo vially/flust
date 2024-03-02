@@ -9,8 +9,7 @@ use flutter_plugins::textinput::TextInputHandler;
 use flutter_plugins::window::{PositionParams, WindowHandler};
 use parking_lot::Mutex;
 use std::error::Error;
-use std::ffi::CStr;
-use std::os::raw::{c_char, c_void};
+use std::ffi::{c_char, c_void, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
@@ -39,14 +38,14 @@ impl TaskRunnerHandler for WinitPlatformTaskHandler {
 }
 
 pub struct WinitOpenGLHandler {
-    context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<ResourceContext>>,
+    context: Arc<std::sync::Mutex<Context>>,
+    resource_context: Arc<std::sync::Mutex<ResourceContext>>,
 }
 
 impl WinitOpenGLHandler {
     pub fn new(
-        context: Arc<Mutex<Context>>,
-        resource_context: Arc<Mutex<ResourceContext>>,
+        context: Arc<std::sync::Mutex<Context>>,
+        resource_context: Arc<std::sync::Mutex<ResourceContext>>,
     ) -> Self {
         Self {
             context,
@@ -57,15 +56,15 @@ impl WinitOpenGLHandler {
 
 impl FlutterOpenGLHandler for WinitOpenGLHandler {
     fn swap_buffers(&self) -> bool {
-        self.context.lock().present()
+        self.context.lock().unwrap().present()
     }
 
     fn make_current(&self) -> bool {
-        self.context.lock().make_current()
+        self.context.lock().unwrap().make_current()
     }
 
     fn clear_current(&self) -> bool {
-        self.context.lock().make_not_current()
+        self.context.lock().unwrap().make_not_current()
     }
 
     fn fbo_callback(&self) -> u32 {
@@ -73,13 +72,13 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
     }
 
     fn make_resource_current(&self) -> bool {
-        self.resource_context.lock().make_current()
+        self.resource_context.lock().unwrap().make_current()
     }
 
     fn gl_proc_resolver(&self, proc: *const c_char) -> *mut c_void {
         unsafe {
             let proc = CStr::from_ptr(proc);
-            return self.context.lock().get_proc_address(proc) as _;
+            return self.context.lock().unwrap().get_proc_address(proc) as _;
         }
     }
 }

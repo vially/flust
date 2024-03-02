@@ -40,8 +40,8 @@ pub enum FlutterEvent {
 pub struct FlutterWindow {
     event_loop: EventLoopProxy<FlutterEvent>,
     window: Arc<Mutex<Window>>,
-    context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<ResourceContext>>,
+    context: Arc<std::sync::Mutex<Context>>,
+    resource_context: Arc<std::sync::Mutex<ResourceContext>>,
     engine: FlutterEngineWeakRef,
     close: Arc<AtomicBool>,
     plugins: Rc<RwLock<PluginRegistrar>>,
@@ -54,8 +54,8 @@ impl FlutterWindow {
         window: WindowBuilder,
     ) -> Result<Self, Box<dyn Error>> {
         let (window, context, resource_context) = create_window_contexts(window, event_loop)?;
-        let context = Arc::new(Mutex::new(context));
-        let resource_context = Arc::new(Mutex::new(resource_context));
+        let context = Arc::new(std::sync::Mutex::new(context));
+        let resource_context = Arc::new(std::sync::Mutex::new(resource_context));
         let window = Arc::new(Mutex::new(window));
 
         let proxy = event_loop.create_proxy();
@@ -97,7 +97,7 @@ impl FlutterWindow {
         self.engine.clone()
     }
 
-    pub fn context(&self) -> Arc<Mutex<Context>> {
+    pub fn context(&self) -> Arc<std::sync::Mutex<Context>> {
         self.context.clone()
     }
 
@@ -113,7 +113,7 @@ impl FlutterWindow {
         self.close.load(Ordering::Relaxed)
     }
 
-    pub fn resource_context(&self) -> Arc<Mutex<ResourceContext>> {
+    pub fn resource_context(&self) -> Arc<std::sync::Mutex<ResourceContext>> {
         self.resource_context.clone()
     }
 
@@ -294,10 +294,9 @@ impl FlutterWindow {
 
 pub(crate) fn resize(
     engine: &FlutterEngine,
-    context: &Arc<Mutex<Context>>,
+    context: &Arc<std::sync::Mutex<Context>>,
     window: &Arc<Mutex<Window>>,
 ) {
-    let mut context = context.lock();
     let (dpi, size) = {
         let window = window.lock();
         (window.scale_factor(), window.inner_size())
@@ -312,6 +311,6 @@ pub(crate) fn resize(
         NonZeroU32::new(size.width).expect("Resize width needs to be higher than 0"),
         NonZeroU32::new(size.height).expect("Resize height needs to be higher than 0"),
     );
-    context.resize(context_size);
+    context.lock().unwrap().resize(context_size);
     engine.send_window_metrics_event(size.width as usize, size.height as usize, dpi);
 }
