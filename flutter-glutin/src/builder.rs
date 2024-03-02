@@ -1,6 +1,6 @@
 use dpi::PhysicalSize;
 use glutin::{
-    config::Config,
+    config::{Api, Config, ConfigSurfaceTypes, ConfigTemplateBuilder},
     context::{ContextAttributesBuilder, NotCurrentContext},
     display::{Display, DisplayApiPreference, GetGlDisplay},
     prelude::{GlDisplay, NotCurrentGlContext},
@@ -39,24 +39,51 @@ impl ContextBuilder {
     }
 
     pub fn build(self) -> Result<FlutterEGLContext, ContextBuildError> {
-        let Some(raw_window_handle) = self.attributes.raw_window_handle else {
-            return Err(ContextBuildError::InvalidWindowHandle);
-        };
+        let raw_window_handle = self
+            .attributes
+            .raw_window_handle
+            .ok_or(ContextBuildError::InvalidWindowHandle)?;
 
-        let Some(display) = self.display() else {
-            return Err(ContextBuildError::InvalidDisplayHandle);
-        };
+        // Get display from `raw_display_handle` if present (`sctk`), or from `config` otherwise (`winit`).
+        let display = self
+            .attributes
+            .raw_display_handle
+            .map_or_else(
+                || {
+                    self.attributes
+                        .config
+                        .as_ref()
+                        .map(|config| config.display())
+                },
+                |raw_display_handle| unsafe {
+                    Display::new(raw_display_handle, DisplayApiPreference::Egl).ok()
+                },
+            )
+            .ok_or(ContextBuildError::InvalidDisplayHandle)?;
 
-        let Some(config) = self.attributes.config else {
-            return Err(ContextBuildError::MissingConfig);
-        };
+        let size = self.attributes.size.ok_or(ContextBuildError::InvalidSize)?;
 
-        let Some(size) = self.attributes.size else {
-            return Err(ContextBuildError::InvalidSize);
-        };
+        // Use config from attributes if present (`winit`), or build a default one otherwise (`sctk`).
+        let config = self
+            .attributes
+            .config
+            .map_or_else(|| new_default_config(&display, raw_window_handle), Ok)?;
 
-        let render_attributes = ContextAttributesBuilder::new().build(Some(raw_window_handle));
-        let render_context = unsafe { display.create_context(&config, &render_attributes)? };
+        let render_attributes_gl = ContextAttributesBuilder::new()
+            .with_context_api(glutin::context::ContextApi::OpenGl(None))
+            .build(Some(raw_window_handle));
+
+        let render_attributes_gles = ContextAttributesBuilder::new()
+            .with_context_api(glutin::context::ContextApi::Gles(None))
+            .build(Some(raw_window_handle));
+
+        // Create a context, trying OpenGL and then OpenGL ES.
+        let render_context = unsafe {
+            display
+                .create_context(&config, &render_attributes_gl)
+                .or_else(|_| display.create_context(&config, &render_attributes_gles))
+        }?;
+
         let surface_attributes = SurfaceAttributesBuilder::<WindowSurface>::default().build(
             raw_window_handle,
             size.width,
@@ -98,21 +125,6 @@ impl ContextBuilder {
         self.attributes.size = size;
         self
     }
-
-    /// Get display from `raw_display_handle` if present, or from `config` otherwise.
-    fn display(&self) -> Option<Display> {
-        self.attributes.raw_display_handle.map_or_else(
-            || {
-                self.attributes
-                    .config
-                    .as_ref()
-                    .map(|config| config.display())
-            },
-            |raw_display_handle| unsafe {
-                Display::new(raw_display_handle, DisplayApiPreference::Egl).ok()
-            },
-        )
-    }
 }
 
 #[derive(Error, Debug)]
@@ -123,8 +135,8 @@ pub enum ContextBuildError {
     #[error("Invalid display handle attribute")]
     InvalidDisplayHandle,
 
-    #[error("Missing config attribute")]
-    MissingConfig,
+    #[error("No available config was found")]
+    NoAvailableConfigFound,
 
     #[error("Invalid size attribute")]
     InvalidSize,
@@ -134,4 +146,19 @@ pub enum ContextBuildError {
 
     #[error(transparent)]
     GlutinError(#[from] glutin::error::Error),
+}
+
+fn new_default_config(
+    display: &Display,
+    raw_window_handle: RawWindowHandle,
+) -> Result<Config, ContextBuildError> {
+    let config_template = ConfigTemplateBuilder::new()
+        .compatible_with_native_window(raw_window_handle)
+        .with_surface_type(ConfigSurfaceTypes::WINDOW)
+        .with_api(Api::GLES2 | Api::GLES3 | Api::OPENGL)
+        .build();
+
+    unsafe { display.find_configs(config_template) }?
+        .next()
+        .ok_or(ContextBuildError::NoAvailableConfigFound)
 }
