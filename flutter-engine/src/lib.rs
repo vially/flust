@@ -24,7 +24,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use flutter_engine_sys::{FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
 use parking_lot::RwLock;
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -123,7 +123,7 @@ pub trait FlutterOpenGLHandler {
 
     fn make_resource_current(&self) -> bool;
 
-    fn gl_proc_resolver(&self, proc: *const c_char) -> *mut c_void;
+    fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void;
 }
 
 pub trait FlutterVsyncHandler {

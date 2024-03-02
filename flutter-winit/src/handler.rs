@@ -9,7 +9,7 @@ use flutter_plugins::textinput::TextInputHandler;
 use flutter_plugins::window::{PositionParams, WindowHandler};
 use parking_lot::Mutex;
 use std::error::Error;
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{c_void, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
@@ -75,11 +75,8 @@ impl FlutterOpenGLHandler for WinitOpenGLHandler {
         self.resource_context.lock().unwrap().make_current()
     }
 
-    fn gl_proc_resolver(&self, proc: *const c_char) -> *mut c_void {
-        unsafe {
-            let proc = CStr::from_ptr(proc);
-            return self.context.lock().unwrap().get_proc_address(proc) as _;
-        }
+    fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void {
+        self.context.lock().unwrap().get_proc_address(proc) as _
     }
 }
 

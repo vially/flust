@@ -2,7 +2,7 @@ use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use log::trace;
 use parking_lot::Mutex;
-use std::ffi::{c_char, c_uint, c_void};
+use std::ffi::{c_char, c_uint, c_void, CStr};
 
 pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
@@ -63,6 +63,7 @@ pub extern "C" fn gl_proc_resolver(user_data: *mut c_void, proc: *const c_char) 
     trace!("gl_proc_resolver");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
+        let proc = CStr::from_ptr(proc);
         engine
             .implicit_view_opengl_handler()
             .unwrap()
