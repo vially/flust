@@ -924,6 +924,7 @@ dependencies = [
 name = "flutter-sctk"
 version = "0.1.0"
 dependencies = [
+ "dpi",
  "flutter-engine",
  "flutter-engine-sys",
  "flutter-glutin",
