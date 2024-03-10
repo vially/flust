@@ -51,7 +51,7 @@ pub enum CreateWaylandContextError {
     ContextBuildError(#[from] ContextBuildError),
 }
 
-trait NonZeroU32PhysicalSize {
+pub trait NonZeroU32PhysicalSize {
     fn non_zero(self) -> Option<PhysicalSize<NonZeroU32>>;
 }
 

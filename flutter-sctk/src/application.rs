@@ -85,8 +85,13 @@ impl SctkApplication {
             .with_args(attributes.args.clone())
             .build()?;
 
-        let implicit_window =
-            SctkFlutterWindow::new(&qh, &compositor_state, &xdg_shell_state, attributes)?;
+        let implicit_window = SctkFlutterWindow::new(
+            engine.downgrade(),
+            &qh,
+            &compositor_state,
+            &xdg_shell_state,
+            attributes,
+        )?;
 
         engine.add_view(implicit_window.create_flutter_view());
 
