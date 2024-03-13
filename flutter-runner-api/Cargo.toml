@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dpi = { path = "../../dpi" }
+dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }

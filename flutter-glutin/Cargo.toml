@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dpi = { path = "../../dpi" }
+dpi = "0.1.0"
 flutter-engine-api = { path = "../flutter-engine-api" }
 glutin = "0.31.3"
 raw-window-handle = "0.5.2"

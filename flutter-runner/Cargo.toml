@@ -7,7 +7,7 @@ edition = "2021"
 default = ["flutter-winit"]
 
 [dependencies]
-dpi = { path = "../../dpi" }
+dpi = "0.1.0"
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
 flutter-plugins = { path = "../flutter-plugins" }

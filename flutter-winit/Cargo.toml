@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 copypasta = "0.10.0"
-dpi = { path = "../../dpi" }
+dpi = "0.1.0"
 flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
