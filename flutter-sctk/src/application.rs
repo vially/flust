@@ -116,13 +116,12 @@ impl SctkApplication {
         // once the event loop is running.
         //
         // https://github.com/flutter/engine/blob/7c2a56a44b414f2790af277783ec27181337a6d3/shell/platform/embedder/embedder.h#L2313-L2322
-        let _ =
-            self.state
-                .loop_handle
-                .insert_source(Timer::immediate(), |_event, _metadata, state| {
-                    state.engine.run().expect("Failed to run engine");
-                    TimeoutAction::Drop
-                });
+        self.state
+            .loop_handle
+            .insert_source(Timer::immediate(), |_event, _metadata, state| {
+                state.engine.run().expect("Failed to run engine");
+                TimeoutAction::Drop
+            })?;
 
         self.event_loop.run(None, &mut self.state, |state| {
             let next_task_timer = state
@@ -365,6 +364,9 @@ pub enum SctkApplicationCreateError {
 pub enum SctkApplicationRunError {
     #[error(transparent)]
     DispatchError(#[from] calloop::Error),
+
+    #[error(transparent)]
+    InsertError(#[from] calloop::InsertError<Timer>),
 }
 
 fn insert_timer_source<Data>(handle: &LoopHandle<'static, Data>, timer: Option<Timer>) {
