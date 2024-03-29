@@ -51,6 +51,7 @@ pub struct SctkApplication {
 }
 
 pub struct SctkApplicationState {
+    conn: Connection,
     loop_handle: LoopHandle<'static, SctkApplicationState>,
     loop_signal: LoopSignal,
     registry_state: RegistryState,
@@ -59,6 +60,7 @@ pub struct SctkApplicationState {
     engine: FlutterEngine,
     windows: HashMap<ObjectId, SctkFlutterWindow>,
     pointers: HashMap<ObjectId, WlPointer>,
+    startup_synchronizer: ImplicitWindowStartupSynchronizer,
 }
 
 impl SctkApplication {
@@ -96,6 +98,7 @@ impl SctkApplication {
         engine.add_view(implicit_window.create_flutter_view());
 
         let state = SctkApplicationState {
+            conn,
             loop_handle: event_loop.handle(),
             loop_signal: event_loop.get_signal(),
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
@@ -104,6 +107,7 @@ impl SctkApplication {
             output_state,
             seat_state,
             engine,
+            startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
         };
 
         Ok(Self { event_loop, state })
@@ -120,6 +124,9 @@ impl SctkApplication {
             .loop_handle
             .insert_source(Timer::immediate(), |_event, _metadata, state| {
                 state.engine.run().expect("Failed to run engine");
+
+                state.maybe_send_startup_pending_configure();
+
                 TimeoutAction::Drop
             })?;
 
@@ -148,6 +155,23 @@ impl SctkApplicationState {
                 None
             }
         })
+    }
+
+    fn get_implicit_window_mut(&mut self) -> Option<&mut SctkFlutterWindow> {
+        self.windows.iter_mut().last().map(|(_key, window)| window)
+    }
+
+    fn maybe_send_startup_pending_configure(&mut self) {
+        self.startup_synchronizer.is_engine_running = true;
+
+        let Some((configure, serial)) = self.startup_synchronizer.pending_configure.take() else {
+            return;
+        };
+
+        let conn = self.conn.clone();
+        if let Some(window) = self.get_implicit_window_mut() {
+            window.configure(&conn, configure, serial);
+        };
     }
 }
 
@@ -332,7 +356,13 @@ impl WindowHandler for SctkApplicationState {
             return;
         };
 
-        window.configure(conn, configure, serial);
+        if self.startup_synchronizer.is_engine_running {
+            window.configure(conn, configure, serial);
+        } else {
+            trace!("Skipped sending window metrics event because engine is not running yet");
+            self.startup_synchronizer
+                .set_pending_configure(configure, serial);
+        }
     }
 }
 
@@ -377,4 +407,35 @@ fn insert_timer_source<Data>(handle: &LoopHandle<'static, Data>, timer: Option<T
     handle
         .insert_source(timer, |_, _, _| TimeoutAction::Drop)
         .expect("Unable to insert timer source");
+}
+
+// Trying to send a `WindowMetricsEvent` before the engine is running results in
+// a `Vieport metrics were invalid` [embedder error][0]. This could happen when
+// the first `window.configure` event arrives before the engine is fully
+// running.
+//
+// The `ImplicitWindowStartupSynchronizer` is used as a way to synchronize the
+// engine startup events in order to make sure that the initial window metrics
+// event is only sent once a) the engine is running and b) the first configure
+// event has been received.
+//
+// TODO: Get rid of this hack once Flutter supports disabling the implicit view
+// as part of the [multi-view embedder APIs][1].
+//
+// [0]: https://github.com/flutter/engine/blob/e76c956498841e1ab458577d3892003e553e4f3c/shell/platform/embedder/embedder.cc#L2173-L2174
+// [1]: https://github.com/flutter/flutter/issues/144806
+#[derive(Default)]
+struct ImplicitWindowStartupSynchronizer {
+    pending_configure: Option<(WindowConfigure, u32)>,
+    is_engine_running: bool,
+}
+
+impl ImplicitWindowStartupSynchronizer {
+    fn new() -> Self {
+        Default::default()
+    }
+
+    fn set_pending_configure(&mut self, configure: WindowConfigure, serial: u32) {
+        self.pending_configure = Some((configure, serial));
+    }
 }

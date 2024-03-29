@@ -44,6 +44,7 @@ pub struct SctkFlutterWindow {
     resource_context: Arc<Mutex<ResourceContext>>,
     current_size: Option<Size>,
     current_scale_factor: f64,
+    default_size: Size,
 }
 
 impl SctkFlutterWindow {
@@ -68,13 +69,13 @@ impl SctkFlutterWindow {
         window.set_min_size(Some((256, 256)));
         window.commit();
 
-        let current_size = attributes
+        let default_size = attributes
             .inner_size
             .unwrap_or(Size::Logical(LogicalSize::<f64>::new(1280.0, 720.0)));
 
         let (context, resource_context) = FlutterEGLContext::new_wayland_context(
             window.wl_surface(),
-            current_size.to_physical::<u32>(1.0),
+            default_size.to_physical::<u32>(1.0),
         )?;
 
         Ok(Self {
@@ -83,8 +84,9 @@ impl SctkFlutterWindow {
             engine,
             context: Arc::new(Mutex::new(context)),
             resource_context: Arc::new(Mutex::new(resource_context)),
-            current_size: Some(current_size),
+            current_size: None,
             current_scale_factor: 1.0,
+            default_size,
         })
     }
 
@@ -141,10 +143,32 @@ impl SctkFlutterWindow {
     pub(crate) fn configure(
         &mut self,
         _conn: &Connection,
-        _configure: WindowConfigure,
+        configure: WindowConfigure,
         _serial: u32,
     ) {
-        warn!("`configure` handler not implemented for window");
+        let new_logical_size = WindowLogicalSize::try_from(configure.new_size)
+            .map(|size| size.into())
+            .unwrap_or(self.default_size);
+
+        self.current_size.replace(new_logical_size);
+
+        let Some(physical_size) = new_logical_size
+            .to_physical::<u32>(self.current_scale_factor)
+            .non_zero()
+        else {
+            error!("Unable to convert window configure event to a physical size");
+            return;
+        };
+
+        self.resize_egl_surface(physical_size);
+
+        if let Some(engine) = self.engine.upgrade() {
+            engine.send_window_metrics_event(
+                usize::try_from(physical_size.width.get()).unwrap(),
+                usize::try_from(physical_size.height.get()).unwrap(),
+                self.current_scale_factor,
+            );
+        }
     }
 
     pub(crate) fn pointer_event(
@@ -165,4 +189,32 @@ impl SctkFlutterWindow {
 pub enum SctkFlutterWindowCreateError {
     #[error("Failed to create Wayland EGL context")]
     CreateWaylandContextError(#[from] CreateWaylandContextError),
+}
+
+type ConfigureSize = (Option<NonZeroU32>, Option<NonZeroU32>);
+
+struct WindowLogicalSize(LogicalSize<u32>);
+
+impl TryFrom<ConfigureSize> for WindowLogicalSize {
+    type Error = SizeConversionError;
+
+    fn try_from(value: ConfigureSize) -> Result<Self, Self::Error> {
+        let (Some(width), Some(height)) = value else {
+            return Err(SizeConversionError::Invalid);
+        };
+
+        Ok(Self(LogicalSize::new(width.get(), height.get())))
+    }
+}
+
+impl From<WindowLogicalSize> for Size {
+    fn from(val: WindowLogicalSize) -> Self {
+        val.0.into()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum SizeConversionError {
+    #[error("Invalid size")]
+    Invalid,
 }
