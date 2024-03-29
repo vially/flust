@@ -1,10 +1,12 @@
 use std::{
+    collections::HashMap,
     num::NonZeroU32,
     sync::{Arc, Mutex},
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flutter_engine::{
+    ffi::FlutterPointerEvent,
     view::{FlutterView, IMPLICIT_VIEW_ID},
     FlutterEngineWeakRef,
 };
@@ -14,10 +16,10 @@ use flutter_glutin::{
     handler::GlutinOpenGLHandler,
 };
 use flutter_runner_api::ApplicationAttributes;
-use log::{error, warn};
+use log::error;
 use smithay_client_toolkit::{
     compositor::CompositorState,
-    seat::pointer::PointerEvent,
+    seat::pointer::{PointerEvent, PointerEventKind},
     shell::{
         xdg::{
             window::{Window, WindowConfigure, WindowDecorations},
@@ -33,8 +35,13 @@ use wayland_client::{
     Connection, Proxy, QueueHandle,
 };
 
-use crate::egl::{FlutterEGLContextWaylandExt, NonZeroU32PhysicalSize};
-use crate::{application::SctkApplicationState, egl::CreateWaylandContextError};
+use crate::{
+    application::SctkApplicationState, egl::CreateWaylandContextError, pointer::SctkPointerEvent,
+};
+use crate::{
+    egl::{FlutterEGLContextWaylandExt, NonZeroU32PhysicalSize},
+    pointer::Pointer,
+};
 
 pub struct SctkFlutterWindow {
     id: u32,
@@ -45,6 +52,7 @@ pub struct SctkFlutterWindow {
     current_size: Option<Size>,
     current_scale_factor: f64,
     default_size: Size,
+    pointers: HashMap<ObjectId, Pointer>,
 }
 
 impl SctkFlutterWindow {
@@ -87,6 +95,7 @@ impl SctkFlutterWindow {
             current_size: None,
             current_scale_factor: 1.0,
             default_size,
+            pointers: HashMap::new(),
         })
     }
 
@@ -174,10 +183,34 @@ impl SctkFlutterWindow {
     pub(crate) fn pointer_event(
         &mut self,
         _conn: &Connection,
-        _pointer: &WlPointer,
-        _event: &PointerEvent,
+        pointer: &WlPointer,
+        event: &PointerEvent,
     ) {
-        warn!("`pointer_event` not implemented for window");
+        let pointer = self
+            .pointers
+            .entry(pointer.id())
+            .or_insert_with(|| Pointer::new(pointer.id().protocol_id() as i32));
+
+        match event.kind {
+            PointerEventKind::Press { .. } => pointer.increment_pressed(),
+            PointerEventKind::Release { .. } => pointer.decrement_pressed(),
+            _ => {}
+        }
+
+        let sctk_pointer_event =
+            SctkPointerEvent::new(event.clone(), *pointer, self.current_scale_factor);
+
+        let Ok(event) = FlutterPointerEvent::try_from(sctk_pointer_event) else {
+            error!("Unable to convert wayland pointer event to flutter pointer event");
+            return;
+        };
+
+        let Some(engine) = self.engine.upgrade() else {
+            error!("Unable to upgrade weak engine while sending pointer event");
+            return;
+        };
+
+        engine.send_pointer_event(event);
     }
 
     fn resize_egl_surface(&self, size: PhysicalSize<NonZeroU32>) {

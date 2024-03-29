@@ -68,32 +68,17 @@ impl From<FlutterPointerSignalKind> for flutter_engine_sys::FlutterPointerSignal
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerMouseButtons {
-    Primary,
-    Secondary,
-    Middle,
-    Back,
-    Forward,
+    None = 0,
+    Primary = 1,
+    Secondary = 2,
+    Middle = 4,
+    Back = 8,
+    Forward = 16,
 }
 
-impl From<FlutterPointerMouseButtons> for flutter_engine_sys::FlutterPointerMouseButtons {
+impl From<FlutterPointerMouseButtons> for i64 {
     fn from(btn: FlutterPointerMouseButtons) -> Self {
-        match btn {
-            FlutterPointerMouseButtons::Primary => {
-                flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMousePrimary
-            }
-            FlutterPointerMouseButtons::Secondary => {
-                flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMouseSecondary
-            }
-            FlutterPointerMouseButtons::Middle => {
-                flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMouseMiddle
-            }
-            FlutterPointerMouseButtons::Back => {
-                flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMouseBack
-            }
-            FlutterPointerMouseButtons::Forward => {
-                flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMouseForward
-            }
-        }
+        btn as i64
     }
 }
 
@@ -140,7 +125,6 @@ impl FlutterPointerEvent {
 
 impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
     fn from(event: FlutterPointerEvent) -> Self {
-        let buttons: flutter_engine_sys::FlutterPointerMouseButtons = event.buttons.into();
         Self {
             struct_size: mem::size_of::<flutter_engine_sys::FlutterPointerEvent>(),
             timestamp: event.timestamp.as_micros() as usize,
@@ -152,7 +136,7 @@ impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
             scroll_delta_x: event.scroll_delta_x,
             scroll_delta_y: event.scroll_delta_y,
             device_kind: event.device_kind.into(),
-            buttons: buttons as i64,
+            buttons: event.buttons.into(),
             pan_x: 0.0,
             pan_y: 0.0,
             scale: 1.0,
