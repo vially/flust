@@ -1,3 +1,8 @@
+use std::{
+    mem,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerPhase {
     Cancel,
@@ -88,6 +93,74 @@ impl From<FlutterPointerMouseButtons> for flutter_engine_sys::FlutterPointerMous
             FlutterPointerMouseButtons::Forward => {
                 flutter_engine_sys::FlutterPointerMouseButtons::kFlutterPointerButtonMouseForward
             }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct FlutterPointerEvent {
+    timestamp: Duration,
+    device: i32,
+    phase: FlutterPointerPhase,
+    x: f64,
+    y: f64,
+    signal_kind: FlutterPointerSignalKind,
+    scroll_delta_x: f64,
+    scroll_delta_y: f64,
+    device_kind: FlutterPointerDeviceKind,
+    buttons: FlutterPointerMouseButtons,
+}
+
+impl FlutterPointerEvent {
+    pub fn new(
+        device: i32,
+        phase: FlutterPointerPhase,
+        (x, y): (f64, f64),
+        signal_kind: FlutterPointerSignalKind,
+        (scroll_delta_x, scroll_delta_y): (f64, f64),
+        device_kind: FlutterPointerDeviceKind,
+        buttons: FlutterPointerMouseButtons,
+    ) -> Self {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+        Self {
+            timestamp,
+            device,
+            phase,
+            x,
+            y,
+            signal_kind,
+            scroll_delta_x,
+            scroll_delta_y,
+            device_kind,
+            buttons,
+        }
+    }
+}
+
+impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
+    fn from(event: FlutterPointerEvent) -> Self {
+        let buttons: flutter_engine_sys::FlutterPointerMouseButtons = event.buttons.into();
+        Self {
+            struct_size: mem::size_of::<flutter_engine_sys::FlutterPointerEvent>(),
+            timestamp: event.timestamp.as_micros() as usize,
+            phase: event.phase.into(),
+            x: event.x,
+            y: event.y,
+            device: event.device,
+            signal_kind: event.signal_kind.into(),
+            scroll_delta_x: event.scroll_delta_x,
+            scroll_delta_y: event.scroll_delta_y,
+            device_kind: event.device_kind.into(),
+            buttons: buttons as i64,
+            pan_x: 0.0,
+            pan_y: 0.0,
+            scale: 1.0,
+            rotation: 0.0,
+            #[cfg(all(target_arch = "arm", target_os = "android"))]
+            __bindgen_padding_0: 0,
+            #[cfg(all(target_arch = "arm", target_os = "android"))]
+            __bindgen_padding_1: 0,
         }
     }
 }

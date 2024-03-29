@@ -12,24 +12,21 @@ pub mod texture_registry;
 
 use crate::builder::FlutterEngineBuilder;
 use crate::channel::{Channel, ChannelRegistry};
-use crate::ffi::{
-    FlutterPointerDeviceKind, FlutterPointerMouseButtons, FlutterPointerPhase,
-    FlutterPointerSignalKind,
-};
 
 use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseHandle};
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use ffi::FlutterPointerEvent;
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
 use parking_lot::RwLock;
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
+use std::ptr;
 use std::sync::{Arc, Weak};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{mem, ptr};
+use std::time::Instant;
 use thiserror::Error;
 use view::{FlutterView, ViewRegistry};
 
@@ -425,46 +422,13 @@ impl FlutterEngine {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn send_pointer_event(
-        &self,
-        device: i32,
-        phase: FlutterPointerPhase,
-        (x, y): (f64, f64),
-        signal_kind: FlutterPointerSignalKind,
-        (scroll_delta_x, scroll_delta_y): (f64, f64),
-        device_kind: FlutterPointerDeviceKind,
-        buttons: FlutterPointerMouseButtons,
-    ) {
+    pub fn send_pointer_event(&self, event: FlutterPointerEvent) {
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
 
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        let buttons: flutter_engine_sys::FlutterPointerMouseButtons = buttons.into();
-        let event = flutter_engine_sys::FlutterPointerEvent {
-            struct_size: mem::size_of::<flutter_engine_sys::FlutterPointerEvent>(),
-            timestamp: timestamp.as_micros() as usize,
-            phase: phase.into(),
-            x,
-            y,
-            device,
-            signal_kind: signal_kind.into(),
-            scroll_delta_x,
-            scroll_delta_y,
-            device_kind: device_kind.into(),
-            buttons: buttons as i64,
-            pan_x: 0.0,
-            pan_y: 0.0,
-            scale: 1.0,
-            rotation: 0.0,
-            #[cfg(all(target_arch = "arm", target_os = "android"))]
-            __bindgen_padding_0: 0,
-            #[cfg(all(target_arch = "arm", target_os = "android"))]
-            __bindgen_padding_1: 0,
-        };
         unsafe {
-            flutter_engine_sys::FlutterEngineSendPointerEvent(self.engine_ptr(), &event, 1);
+            flutter_engine_sys::FlutterEngineSendPointerEvent(self.engine_ptr(), &event.into(), 1);
         }
     }
 

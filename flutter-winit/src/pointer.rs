@@ -1,5 +1,5 @@
 use flutter_engine::ffi::{
-    FlutterPointerDeviceKind, FlutterPointerMouseButtons, FlutterPointerPhase,
+    FlutterPointerDeviceKind, FlutterPointerEvent, FlutterPointerMouseButtons, FlutterPointerPhase,
     FlutterPointerSignalKind,
 };
 use flutter_engine::FlutterEngine;
@@ -53,7 +53,7 @@ impl Pointers {
     pub fn enter(&mut self, device_id: DeviceId) {
         let device = self.index(device_id, false);
         let pointer = &self.pointers[device];
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             device as i32 + 10,
             FlutterPointerPhase::Add,
             pointer.position,
@@ -61,13 +61,13 @@ impl Pointers {
             (0.0, 0.0),
             FlutterPointerDeviceKind::Mouse,
             FlutterPointerMouseButtons::Primary,
-        );
+        ));
     }
 
     pub fn leave(&mut self, device_id: DeviceId) {
         let device = self.index(device_id, false);
         let pointer = &self.pointers[device];
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             device as i32 + 10,
             FlutterPointerPhase::Remove,
             pointer.position,
@@ -75,7 +75,7 @@ impl Pointers {
             (0.0, 0.0),
             FlutterPointerDeviceKind::Mouse,
             FlutterPointerMouseButtons::Primary,
-        );
+        ));
     }
 
     pub fn moved(&mut self, device_id: DeviceId, position: (f64, f64)) {
@@ -87,7 +87,7 @@ impl Pointers {
         } else {
             FlutterPointerPhase::Move
         };
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             device as i32 + 10,
             phase,
             pointer.position,
@@ -95,7 +95,7 @@ impl Pointers {
             (0.0, 0.0),
             FlutterPointerDeviceKind::Mouse,
             FlutterPointerMouseButtons::Primary,
-        );
+        ));
     }
 
     pub fn input(&mut self, device_id: DeviceId, state: ElementState, button: MouseButton) {
@@ -117,7 +117,7 @@ impl Pointers {
             MouseButton::Other(5) => FlutterPointerMouseButtons::Forward,
             _ => FlutterPointerMouseButtons::Primary,
         };
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             device as i32 + 10,
             phase,
             pointer.position,
@@ -125,7 +125,7 @@ impl Pointers {
             (0.0, 0.0),
             FlutterPointerDeviceKind::Mouse,
             button,
-        );
+        ));
     }
 
     pub fn wheel(&mut self, device_id: DeviceId, delta: (f64, f64)) {
@@ -136,7 +136,7 @@ impl Pointers {
         } else {
             FlutterPointerPhase::Move
         };
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             device as i32 + 10,
             phase,
             pointer.position,
@@ -144,7 +144,7 @@ impl Pointers {
             delta,
             FlutterPointerDeviceKind::Mouse,
             FlutterPointerMouseButtons::Primary,
-        );
+        ));
     }
 
     pub fn touch(&mut self, device_id: DeviceId, phase: TouchPhase, position: (f64, f64)) {
@@ -158,7 +158,7 @@ impl Pointers {
             TouchPhase::Ended => FlutterPointerPhase::Up,
             TouchPhase::Cancelled => FlutterPointerPhase::Cancel,
         };
-        self.engine.send_pointer_event(
+        self.engine.send_pointer_event(FlutterPointerEvent::new(
             self.pointers[device].pressed as i32 - 1,
             phase,
             position,
@@ -166,7 +166,7 @@ impl Pointers {
             (0.0, 0.0),
             FlutterPointerDeviceKind::Touch,
             FlutterPointerMouseButtons::Primary,
-        );
+        ));
         if phase == FlutterPointerPhase::Up || phase == FlutterPointerPhase::Cancel {
             self.pointers[device].pressed -= 1;
         }
