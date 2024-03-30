@@ -2,6 +2,7 @@ pub mod isolate;
 pub mod keyevent;
 pub mod lifecycle;
 pub mod localization;
+pub mod mousecursor;
 pub mod navigation;
 pub mod platform;
 pub mod settings;
