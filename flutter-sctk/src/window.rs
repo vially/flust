@@ -19,6 +19,7 @@ use flutter_runner_api::ApplicationAttributes;
 use log::error;
 use smithay_client_toolkit::{
     compositor::CompositorState,
+    reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
     seat::pointer::{PointerEvent, PointerEventKind},
     shell::{
         xdg::{
@@ -105,6 +106,10 @@ impl SctkFlutterWindow {
 
     pub fn wl_surface_id(&self) -> ObjectId {
         self.window.wl_surface().id()
+    }
+
+    pub fn xdg_toplevel(&self) -> XdgToplevel {
+        self.window.xdg_toplevel().clone()
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {

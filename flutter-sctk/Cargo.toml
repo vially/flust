@@ -8,9 +8,11 @@ dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-glutin = { path = "../flutter-glutin" }
+flutter-plugins = { path = "../flutter-plugins" }
 flutter-runner-api = { path = "../flutter-runner-api" }
 glutin = "0.31.3"
 log = "0.4.20"
+parking_lot = "0.12.1"
 raw-window-handle = "0.5.2"
 smithay-client-toolkit = { git = "https://github.com/Smithay/client-toolkit.git" }
 thiserror = "1.0.50"

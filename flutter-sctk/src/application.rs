@@ -1,8 +1,21 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    rc::Rc,
+    sync::{Arc, RwLock},
+};
 
-use flutter_engine::{builder::FlutterEngineBuilder, CreateError, FlutterEngine};
+use flutter_engine::{
+    builder::FlutterEngineBuilder, plugins::PluginRegistrar, CreateError, FlutterEngine,
+};
+use flutter_plugins::{
+    isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
+    localization::LocalizationPlugin, navigation::NavigationPlugin, platform::PlatformPlugin,
+    settings::SettingsPlugin, system::SystemPlugin,
+};
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
+use parking_lot::Mutex;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
@@ -41,7 +54,7 @@ use wayland_client::{
 };
 
 use crate::{
-    handler::SctkPlatformTaskHandler,
+    handler::{SctkPlatformHandler, SctkPlatformTaskHandler},
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
 
@@ -61,6 +74,8 @@ pub struct SctkApplicationState {
     windows: HashMap<ObjectId, SctkFlutterWindow>,
     pointers: HashMap<ObjectId, WlPointer>,
     startup_synchronizer: ImplicitWindowStartupSynchronizer,
+    #[allow(dead_code)]
+    plugins: Rc<RwLock<PluginRegistrar>>,
 }
 
 impl SctkApplication {
@@ -97,6 +112,21 @@ impl SctkApplication {
 
         engine.add_view(implicit_window.create_flutter_view());
 
+        let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
+        let platform_handler = Arc::new(Mutex::new(SctkPlatformHandler::new(
+            implicit_window.xdg_toplevel(),
+        )));
+
+        let mut plugins = PluginRegistrar::new();
+        plugins.add_plugin(&engine, IsolatePlugin::new(noop_isolate_cb));
+        plugins.add_plugin(&engine, KeyEventPlugin::default());
+        plugins.add_plugin(&engine, LifecyclePlugin::default());
+        plugins.add_plugin(&engine, LocalizationPlugin::default());
+        plugins.add_plugin(&engine, NavigationPlugin::default());
+        plugins.add_plugin(&engine, PlatformPlugin::new(platform_handler));
+        plugins.add_plugin(&engine, SettingsPlugin::default());
+        plugins.add_plugin(&engine, SystemPlugin::default());
+
         let state = SctkApplicationState {
             conn,
             loop_handle: event_loop.handle(),
@@ -108,6 +138,7 @@ impl SctkApplication {
             seat_state,
             engine,
             startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
+            plugins: Rc::new(RwLock::new(plugins)),
         };
 
         Ok(Self { event_loop, state })
