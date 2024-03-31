@@ -1,25 +1,20 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    rc::Rc,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use flutter_engine::{
     builder::FlutterEngineBuilder, plugins::PluginRegistrar, CreateError, FlutterEngine,
 };
 use flutter_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
-    localization::LocalizationPlugin, navigation::NavigationPlugin, platform::PlatformPlugin,
-    settings::SettingsPlugin, system::SystemPlugin,
+    localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
+    platform::PlatformPlugin, settings::SettingsPlugin, system::SystemPlugin,
 };
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_xdg_shell, delegate_xdg_window,
+    delegate_shm, delegate_xdg_shell, delegate_xdg_window,
     output::{OutputHandler, OutputState},
     reexports::{
         calloop::{
@@ -32,13 +27,14 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
-        pointer::{PointerEvent, PointerHandler},
+        pointer::{PointerEvent, PointerHandler, ThemeSpec},
         Capability, SeatHandler, SeatState,
     },
     shell::xdg::{
         window::{Window, WindowConfigure, WindowHandler},
         XdgShell,
     },
+    shm::{Shm, ShmHandler},
 };
 use thiserror::Error;
 use wayland_backend::client::ObjectId;
@@ -54,7 +50,7 @@ use wayland_client::{
 };
 
 use crate::{
-    handler::{SctkPlatformHandler, SctkPlatformTaskHandler},
+    handler::{SctkMouseCursorHandler, SctkPlatformHandler, SctkPlatformTaskHandler},
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
 
@@ -68,6 +64,8 @@ pub struct SctkApplicationState {
     loop_handle: LoopHandle<'static, SctkApplicationState>,
     loop_signal: LoopSignal,
     registry_state: RegistryState,
+    compositor_state: CompositorState,
+    shm_state: Shm,
     output_state: OutputState,
     seat_state: SeatState,
     engine: FlutterEngine,
@@ -76,6 +74,7 @@ pub struct SctkApplicationState {
     startup_synchronizer: ImplicitWindowStartupSynchronizer,
     #[allow(dead_code)]
     plugins: Rc<RwLock<PluginRegistrar>>,
+    mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
 }
 
 impl SctkApplication {
@@ -92,6 +91,7 @@ impl SctkApplication {
         let seat_state = SeatState::new(&globals, &qh);
         let compositor_state = CompositorState::bind(&globals, &qh)?;
         let xdg_shell_state = XdgShell::bind(&globals, &qh)?;
+        let shm_state = Shm::bind(&globals, &qh)?;
 
         let platform_task_handler = Arc::new(SctkPlatformTaskHandler::new(event_loop.get_signal()));
 
@@ -116,6 +116,7 @@ impl SctkApplication {
         let platform_handler = Arc::new(Mutex::new(SctkPlatformHandler::new(
             implicit_window.xdg_toplevel(),
         )));
+        let mouse_cursor_handler = Arc::new(Mutex::new(SctkMouseCursorHandler::new(conn.clone())));
 
         let mut plugins = PluginRegistrar::new();
         plugins.add_plugin(&engine, IsolatePlugin::new(noop_isolate_cb));
@@ -126,6 +127,10 @@ impl SctkApplication {
         plugins.add_plugin(&engine, PlatformPlugin::new(platform_handler));
         plugins.add_plugin(&engine, SettingsPlugin::default());
         plugins.add_plugin(&engine, SystemPlugin::default());
+        plugins.add_plugin(
+            &engine,
+            MouseCursorPlugin::new(mouse_cursor_handler.clone()),
+        );
 
         let state = SctkApplicationState {
             conn,
@@ -133,12 +138,15 @@ impl SctkApplication {
             loop_signal: event_loop.get_signal(),
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
+            compositor_state,
+            shm_state,
             registry_state,
             output_state,
             seat_state,
             engine,
             startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
             plugins: Rc::new(RwLock::new(plugins)),
+            mouse_cursor_handler,
         };
 
         Ok(Self { event_loop, state })
@@ -208,6 +216,7 @@ impl SctkApplicationState {
 
 delegate_compositor!(SctkApplicationState);
 delegate_output!(SctkApplicationState);
+delegate_shm!(SctkApplicationState);
 
 delegate_xdg_shell!(SctkApplicationState);
 delegate_xdg_window!(SctkApplicationState);
@@ -275,6 +284,12 @@ impl CompositorHandler for SctkApplicationState {
     }
 }
 
+impl ShmHandler for SctkApplicationState {
+    fn shm_state(&mut self) -> &mut Shm {
+        &mut self.shm_state
+    }
+}
+
 impl PointerHandler for SctkApplicationState {
     fn pointer_frame(
         &mut self,
@@ -318,12 +333,32 @@ impl SeatHandler for SctkApplicationState {
         capability: Capability,
     ) {
         if capability == Capability::Pointer {
-            match self.seat_state.get_pointer(qh, &seat) {
-                Ok(pointer) => {
-                    self.pointers.insert(seat.id(), pointer);
-                }
-                _ => error!("Failed to create wayland pointer"),
+            let surface = self.compositor_state.create_surface(qh);
+            let themed_pointer = self
+                .seat_state
+                .get_pointer_with_theme(
+                    qh,
+                    &seat,
+                    self.shm_state.wl_shm(),
+                    surface,
+                    ThemeSpec::default(),
+                )
+                .ok();
+
+            let pointer = themed_pointer
+                .as_ref()
+                .map(|themed_pointer| themed_pointer.pointer().clone());
+
+            if let Some(pointer) = pointer {
+                self.pointers.insert(seat.id(), pointer);
+            } else {
+                error!("Failed to create themed wayland pointer");
+                self.pointers.remove(&seat.id());
             }
+
+            self.mouse_cursor_handler
+                .lock()
+                .set_themed_pointer(themed_pointer);
         }
     }
 
@@ -336,6 +371,10 @@ impl SeatHandler for SctkApplicationState {
     ) {
         if capability == Capability::Pointer {
             self.pointers.remove(&seat.id());
+
+            self.mouse_cursor_handler
+                .lock()
+                .remove_themed_pointer_for_seat(seat.id());
         }
     }
 }
