@@ -85,6 +85,7 @@ pub extern "C" fn vsync_callback(user_data: *mut c_void, baton: isize) {
             .vsync_handler
             .as_ref()
             .unwrap()
+            .lock()
             .request_frame_callback(baton);
     }
 }

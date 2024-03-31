@@ -23,7 +23,7 @@ use ffi::FlutterPointerEvent;
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{FlutterCompositor, FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
@@ -42,7 +42,7 @@ pub(crate) enum MainThreadCallback {
 
 struct FlutterEngineInner {
     view_registry: RwLock<ViewRegistry>,
-    vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
+    vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     engine_ptr: flutter_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
     platform_runner: TaskRunner,
