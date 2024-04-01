@@ -35,7 +35,7 @@ use wayland_client::{
 use crate::{
     application::SctkApplicationState,
     egl::CreateWaylandContextError,
-    handler::{SctkCompositorHandler, SctkOpenGLHandler},
+    handler::{SctkCompositorHandler, SctkOpenGLHandler, SctkVsyncHandler},
     pointer::SctkPointerEvent,
 };
 use crate::{
@@ -68,6 +68,7 @@ pub(crate) struct SctkFlutterWindowInner {
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     opengl_handler: SctkOpenGLHandler,
     compositor_handler: SctkCompositorHandler,
+    vsync_handler: Arc<parking_lot::Mutex<SctkVsyncHandler>>,
     resize_mutex: Mutex<()>,
     resize_status: RwLock<ResizeState>,
     pending_size: RwLock<Option<PhysicalSize<NonZeroU32>>>,
@@ -170,6 +171,8 @@ impl SctkFlutterWindowInner {
         trace!("window frame presented");
         let _resize_mutex = self.resize_mutex.lock().unwrap();
 
+        self.vsync_handler.lock().notify_present();
+
         let resize_status = self.load_resize_status();
         match resize_status {
             ResizeState::ResizeStarted => {
@@ -202,6 +205,7 @@ impl SctkFlutterWindow {
         qh: &QueueHandle<SctkApplicationState>,
         compositor_state: &CompositorState,
         xdg_shell_state: &XdgShell,
+        vsync_handler: Arc<parking_lot::Mutex<SctkVsyncHandler>>,
         attributes: ApplicationAttributes,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
         let surface = compositor_state.create_surface(qh);
@@ -240,6 +244,7 @@ impl SctkFlutterWindow {
                 resource_context,
             ),
             compositor_handler: SctkCompositorHandler::new(inner.clone(), context),
+            vsync_handler,
             resize_mutex: Default::default(),
             resize_status: Default::default(),
             pointers: Default::default(),
@@ -254,6 +259,10 @@ impl SctkFlutterWindow {
 
     pub fn xdg_toplevel_id(&self) -> ObjectId {
         self.inner.window.xdg_toplevel().id()
+    }
+
+    pub fn wl_surface(&self) -> WlSurface {
+        self.inner.window.wl_surface().clone()
     }
 
     pub fn wl_surface_id(&self) -> ObjectId {

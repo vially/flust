@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 
 use dpi::PhysicalSize;
 use flutter_glutin::builder::{ContextBuildError, ContextBuilder, FlutterEGLContext};
+use glutin::surface::SwapInterval;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
@@ -35,6 +36,7 @@ impl FlutterEGLContextWaylandExt for FlutterEGLContext {
         let (context, resource_context) = ContextBuilder::new()
             .with_raw_display_handle(raw_display_handle)
             .with_raw_window_handle(raw_window_handle)
+            .with_swap_interval(SwapInterval::DontWait)
             .with_size(size.non_zero())
             .build()?;
 

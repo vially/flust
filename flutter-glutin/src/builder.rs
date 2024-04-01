@@ -1,10 +1,10 @@
 use dpi::PhysicalSize;
 use glutin::{
     config::{Api, Config, ConfigSurfaceTypes, ConfigTemplateBuilder},
-    context::{ContextAttributesBuilder, NotCurrentContext},
+    context::{ContextAttributesBuilder, NotCurrentContext, PossiblyCurrentGlContext},
     display::{Display, DisplayApiPreference, GetGlDisplay},
     prelude::{GlDisplay, NotCurrentGlContext},
-    surface::{SurfaceAttributesBuilder, WindowSurface},
+    surface::{GlSurface, SurfaceAttributesBuilder, SwapInterval, WindowSurface},
 };
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use std::num::NonZeroU32;
@@ -20,6 +20,7 @@ pub struct ContextBuilderAttributes {
     pub raw_display_handle: Option<RawDisplayHandle>,
     pub config: Option<Config>,
     pub size: Option<PhysicalSize<NonZeroU32>>,
+    pub swap_interval: Option<SwapInterval>,
 }
 
 impl ContextBuilderAttributes {
@@ -91,6 +92,16 @@ impl ContextBuilder {
         );
         let surface = unsafe { display.create_window_surface(&config, &surface_attributes)? };
 
+        // Set EGL swap interval (if configured)
+        let render_context = match self.attributes.swap_interval.clone().take() {
+            Some(swap_interval) => {
+                let render_context = render_context.make_current(&surface)?;
+                surface.set_swap_interval(&render_context, swap_interval)?;
+                render_context.make_not_current()?
+            }
+            None => render_context,
+        };
+
         let resource_attributes = ContextAttributesBuilder::new()
             .with_sharing(&render_context)
             .build(Some(raw_window_handle));
@@ -121,6 +132,11 @@ impl ContextBuilder {
         self
     }
 
+    pub fn with_swap_interval(mut self, swap_interval: SwapInterval) -> Self {
+        self.attributes.swap_interval = Some(swap_interval);
+        self
+    }
+
     pub fn with_size(mut self, size: Option<PhysicalSize<NonZeroU32>>) -> Self {
         self.attributes.size = size;
         self
@@ -143,6 +159,9 @@ pub enum ContextBuildError {
 
     #[error("Unexpected resource context API (expected EGL)")]
     InvalidResourceContextApi,
+
+    #[error("Unable to set swap interval")]
+    SwapIntervalUpdateFailed,
 
     #[error(transparent)]
     GlutinError(#[from] glutin::error::Error),

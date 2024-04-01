@@ -12,7 +12,7 @@ use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler, CompositorState, SurfaceData},
     delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
     delegate_shm, delegate_xdg_shell, delegate_xdg_window,
     output::{OutputHandler, OutputState},
@@ -50,7 +50,10 @@ use wayland_client::{
 };
 
 use crate::{
-    handler::{SctkMouseCursorHandler, SctkPlatformHandler, SctkPlatformTaskHandler},
+    handler::{
+        get_flutter_frame_time_nanos, SctkMouseCursorHandler, SctkPlatformHandler,
+        SctkPlatformTaskHandler, SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
+    },
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
 
@@ -75,6 +78,7 @@ pub struct SctkApplicationState {
     #[allow(dead_code)]
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
+    vsync_handler: Arc<Mutex<SctkVsyncHandler>>,
 }
 
 impl SctkApplication {
@@ -94,9 +98,11 @@ impl SctkApplication {
         let shm_state = Shm::bind(&globals, &qh)?;
 
         let platform_task_handler = Arc::new(SctkPlatformTaskHandler::new(event_loop.get_signal()));
+        let vsync_handler = Arc::new(Mutex::new(SctkVsyncHandler::new(qh.clone())));
 
         let engine = FlutterEngineBuilder::new()
             .with_platform_handler(platform_task_handler)
+            .with_vsync_handler(vsync_handler.clone())
             .with_asset_path(attributes.assets_path.clone())
             .with_icu_data_path(attributes.icu_data_path.clone())
             .with_args(attributes.args.clone())
@@ -108,10 +114,15 @@ impl SctkApplication {
             &qh,
             &compositor_state,
             &xdg_shell_state,
+            vsync_handler.clone(),
             attributes,
         )?;
 
         engine.add_view(implicit_window.create_flutter_view());
+
+        vsync_handler
+            .lock()
+            .init(engine.downgrade(), implicit_window.wl_surface());
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
         let platform_handler = Arc::new(Mutex::new(SctkPlatformHandler::new(
@@ -148,6 +159,7 @@ impl SctkApplication {
             startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
+            vsync_handler,
         };
 
         Ok(Self { event_loop, state })
@@ -212,6 +224,34 @@ impl SctkApplicationState {
         if let Some(window) = self.get_implicit_window_mut() {
             window.configure(&conn, configure, serial);
         };
+    }
+
+    /// Find the maximum refresh rate from the surface current outputs.
+    fn get_surface_refresh_rate_in_mhz(&self, surface: &WlSurface) -> Option<i32> {
+        let data = surface.data::<SurfaceData>()?;
+
+        let refresh_rate = data
+            .outputs()
+            .filter_map(|output| {
+                let info = self.output_state.info(&output)?;
+                let current_mode = info.modes.iter().find(|mode| mode.current)?;
+                Some(current_mode.refresh_rate)
+            })
+            .max()?;
+
+        Some(refresh_rate)
+    }
+
+    fn get_surface_frame_interval_in_nanos(&self, surface: &WlSurface) -> Option<u64> {
+        let refresh_rate = self.get_surface_refresh_rate_in_mhz(surface)? as u64;
+
+        // Refresh rate could be zero if an output has no correct refresh rate,
+        // such as a virtual output.
+        if refresh_rate == 0 {
+            return None;
+        }
+
+        Some(1_000_000_000_000 / refresh_rate)
     }
 }
 
@@ -281,7 +321,23 @@ impl CompositorHandler for SctkApplicationState {
         surface: &WlSurface,
         time: u32,
     ) {
-        trace!("[{}] frame callback: {}", surface.id(), time,);
+        let baton = self.vsync_handler.lock().load_pending_baton();
+        trace!(
+            "[{} baton: {} time: {}] frame callback",
+            surface.id(),
+            baton,
+            time
+        );
+
+        let frame_interval = self
+            .get_surface_frame_interval_in_nanos(surface)
+            .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS);
+
+        let (frame_start_time_nanos, frame_target_time_nanos) =
+            get_flutter_frame_time_nanos(frame_interval);
+
+        self.engine
+            .on_vsync(baton, frame_start_time_nanos, frame_target_time_nanos);
     }
 }
 

@@ -1,7 +1,10 @@
 use std::{
     ffi::{c_void, CStr, CString},
     num::NonZeroU32,
-    sync::{Arc, Mutex, RwLock, Weak},
+    sync::{
+        atomic::{AtomicBool, AtomicIsize, Ordering},
+        Arc, Mutex, RwLock, Weak,
+    },
 };
 
 use dpi::PhysicalSize;
@@ -16,8 +19,10 @@ use flutter_engine::{
         FlutterPresentViewInfo,
     },
     tasks::TaskRunnerHandler,
+    FlutterEngineWeakRef, FlutterVsyncHandler,
 };
 use flutter_engine_api::FlutterOpenGLHandler;
+use flutter_engine_sys::FlutterEngineGetCurrentTime;
 use flutter_glutin::{
     context::{Context, ResourceContext},
     gl,
@@ -26,17 +31,21 @@ use flutter_plugins::{
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
 };
-use log::{error, warn};
+use log::{error, trace, warn};
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},
     seat::pointer::{CursorIcon, PointerData, PointerDataExt, ThemedPointer},
 };
 use wayland_backend::client::ObjectId;
-use wayland_client::{Connection, Proxy};
+use wayland_client::{protocol::wl_surface::WlSurface, Connection, Proxy, QueueHandle};
+
+use crate::application::SctkApplicationState;
 
 use crate::window::SctkFlutterWindowInner;
 
 const WINDOW_FRAMEBUFFER_ID: u32 = 0;
+
+pub(crate) const FRAME_INTERVAL_60_HZ_IN_NANOS: u64 = 1_000_000_000 / 60; // 60Hz per second in nanos
 
 #[derive(Clone)]
 pub(crate) struct SctkOpenGLHandler {
@@ -346,6 +355,91 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
     }
 }
 
+// TODO(multi-view): Add support for multi-view vsync once it is supported
+// upstream:
+// https://github.com/flutter/flutter/issues/142845#issuecomment-1955345110
+pub struct SctkVsyncHandler {
+    qh: QueueHandle<SctkApplicationState>,
+    engine: FlutterEngineWeakRef,
+    implicit_window_surface: Option<WlSurface>,
+    pending_baton: AtomicIsize,
+    can_schedule_frames: AtomicBool,
+}
+
+impl SctkVsyncHandler {
+    pub(crate) fn new(qh: QueueHandle<SctkApplicationState>) -> Self {
+        Self {
+            qh,
+            engine: Default::default(),
+            implicit_window_surface: Default::default(),
+            pending_baton: Default::default(),
+            can_schedule_frames: Default::default(),
+        }
+    }
+
+    pub(crate) fn init(&mut self, engine: FlutterEngineWeakRef, surface: WlSurface) {
+        if self.engine.upgrade().is_some() {
+            error!("Vsync handler engine was already initialized");
+        }
+        self.engine = engine;
+
+        if self.implicit_window_surface.is_some() {
+            error!("Vsync handler surface was already initialized");
+        }
+        self.implicit_window_surface = Some(surface)
+    }
+
+    pub(crate) fn load_pending_baton(&mut self) -> isize {
+        self.pending_baton.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn notify_present(&self) {
+        self.can_schedule_frames.store(true, Ordering::Relaxed);
+    }
+}
+
+impl FlutterVsyncHandler for SctkVsyncHandler {
+    // Note: This callback is executed on an internal engine-managed thread.
+    fn request_frame_callback(&self, baton: isize) {
+        trace!("[baton: {}] requesting frame callback", baton);
+
+        self.pending_baton.store(baton, Ordering::Relaxed);
+
+        let Some(engine) = self.engine.upgrade() else {
+            error!("Engine upgrade failed while requesting frame callback");
+            return;
+        };
+
+        // Note: Frame callbacks do not fire for unmapped surfaces on Wayland.
+        // Therefore, pass back the `baton` to `FlutterEngineOnVsync` directly
+        // until the surface is mapped (e.g.: until the first `present()`).
+        let can_schedule_frames = self.can_schedule_frames.load(Ordering::Relaxed);
+        if !can_schedule_frames {
+            engine.run_on_platform_thread(move |engine| {
+                // Once the surface is mapped, the `wl_output`'s refresh rate
+                // will be used for determining the frame interval. But until
+                // then, 60hz seems like a reasonable default.
+                let (frame_start_time_nanos, frame_target_time_nanos) =
+                    get_flutter_frame_time_nanos(FRAME_INTERVAL_60_HZ_IN_NANOS);
+                engine.on_vsync(baton, frame_start_time_nanos, frame_target_time_nanos);
+            });
+            return;
+        }
+
+        let Some(surface) = self.implicit_window_surface.clone() else {
+            error!("Missing window surface while requesting frame callback");
+            return;
+        };
+
+        let qh = self.qh.clone();
+
+        engine.run_on_platform_thread(move |_engine| {
+            surface.frame(&qh, surface.clone());
+            surface.commit();
+        });
+    }
+}
+
 pub struct SctkPlatformTaskHandler {
     signal: LoopSignal,
 }
@@ -497,4 +591,12 @@ impl From<SystemMouseCursor> for SctkMouseCursor {
 
         Self { icon }
     }
+}
+
+pub(crate) fn get_flutter_frame_time_nanos(frame_interval: u64) -> (u64, u64) {
+    let current_time = unsafe { FlutterEngineGetCurrentTime() };
+    let frame_start_time_nanos = current_time;
+    let frame_target_time_nanos = frame_start_time_nanos + frame_interval;
+
+    (frame_start_time_nanos, frame_target_time_nanos)
 }
