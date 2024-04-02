@@ -31,12 +31,10 @@ impl Context {
     }
 
     pub fn make_current(&mut self) -> bool {
-        if let Some(ctx) = self.context.take() {
-            let result = ctx.make_current(&self.surface).is_ok();
-            self.context = Some(ctx);
-            return result;
+        match self.context.as_ref() {
+            Some(ctx) => ctx.make_current(&self.surface).is_ok(),
+            None => false,
         }
-        false
     }
 
     pub fn make_not_current(&mut self) -> bool {
@@ -54,19 +52,16 @@ impl Context {
     }
 
     pub fn resize(&mut self, size: PhysicalSize<NonZeroU32>) {
-        if let Some(ctx) = self.context.take() {
-            self.surface.resize(&ctx, size.width, size.height);
-            self.context = Some(ctx);
+        if let Some(ctx) = self.context.as_ref() {
+            self.surface.resize(ctx, size.width, size.height);
         }
     }
 
     pub fn present(&mut self) -> bool {
-        if let Some(ctx) = self.context.take() {
-            let result = self.surface.swap_buffers(&ctx).is_ok();
-            self.context = Some(ctx);
-            return result;
+        match self.context.as_ref() {
+            Some(ctx) => self.surface.swap_buffers(ctx).is_ok(),
+            None => false,
         }
-        false
     }
 }
 
