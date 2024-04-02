@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr};
 
 pub trait FlutterOpenGLHandler {
-    fn swap_buffers(&self) -> bool;
+    fn present(&self) -> bool;
 
     fn make_current(&self) -> bool;
 

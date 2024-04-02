@@ -25,7 +25,7 @@ impl GlutinOpenGLHandler {
 }
 
 impl FlutterOpenGLHandler for GlutinOpenGLHandler {
-    fn swap_buffers(&self) -> bool {
+    fn present(&self) -> bool {
         self.context.lock().unwrap().present()
     }
 

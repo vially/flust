@@ -8,10 +8,7 @@ pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine
-            .implicit_view_opengl_handler()
-            .unwrap()
-            .swap_buffers()
+        engine.implicit_view_opengl_handler().unwrap().present()
     }
 }
 
