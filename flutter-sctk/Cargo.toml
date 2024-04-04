@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }
+flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-glutin = { path = "../flutter-glutin" }
 flutter-plugins = { path = "../flutter-plugins" }

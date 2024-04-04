@@ -1,4 +1,13 @@
+use std::{
+    ffi::{c_void, CStr},
+    num::NonZeroU32,
+    sync::{Arc, Mutex},
+};
+
+use dpi::PhysicalSize;
 use flutter_engine::tasks::TaskRunnerHandler;
+use flutter_engine_api::FlutterOpenGLHandler;
+use flutter_glutin::context::{Context, ResourceContext};
 use flutter_plugins::{
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
@@ -10,6 +19,52 @@ use smithay_client_toolkit::{
 };
 use wayland_backend::client::ObjectId;
 use wayland_client::{Connection, Proxy};
+
+#[derive(Clone)]
+pub(crate) struct SctkOpenGLHandler {
+    context: Arc<Mutex<Context>>,
+    resource_context: Arc<Mutex<ResourceContext>>,
+}
+
+impl SctkOpenGLHandler {
+    pub(crate) fn new(context: Context, resource_context: ResourceContext) -> Self {
+        Self {
+            context: Arc::new(Mutex::new(context)),
+            resource_context: Arc::new(Mutex::new(resource_context)),
+        }
+    }
+
+    pub(crate) fn resize(&self, size: PhysicalSize<NonZeroU32>) {
+        self.context.lock().unwrap().resize(size);
+    }
+}
+
+// Note: These callbacks are executed on the *render* thread.
+impl FlutterOpenGLHandler for SctkOpenGLHandler {
+    fn present(&self) -> bool {
+        self.context.lock().unwrap().present()
+    }
+
+    fn make_current(&self) -> bool {
+        self.context.lock().unwrap().make_current()
+    }
+
+    fn clear_current(&self) -> bool {
+        self.context.lock().unwrap().make_not_current()
+    }
+
+    fn fbo_callback(&self) -> u32 {
+        0
+    }
+
+    fn make_resource_current(&self) -> bool {
+        self.resource_context.lock().unwrap().make_current()
+    }
+
+    fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void {
+        self.context.lock().unwrap().get_proc_address(proc) as _
+    }
+}
 
 pub struct SctkPlatformTaskHandler {
     signal: LoopSignal,

@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
@@ -10,11 +10,7 @@ use flutter_engine::{
     view::{FlutterView, IMPLICIT_VIEW_ID},
     FlutterEngineWeakRef,
 };
-use flutter_glutin::{
-    builder::FlutterEGLContext,
-    context::{Context, ResourceContext},
-    handler::GlutinOpenGLHandler,
-};
+use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
 use log::error;
 use smithay_client_toolkit::{
@@ -37,7 +33,8 @@ use wayland_client::{
 };
 
 use crate::{
-    application::SctkApplicationState, egl::CreateWaylandContextError, pointer::SctkPointerEvent,
+    application::SctkApplicationState, egl::CreateWaylandContextError, handler::SctkOpenGLHandler,
+    pointer::SctkPointerEvent,
 };
 use crate::{
     egl::{FlutterEGLContextWaylandExt, NonZeroU32PhysicalSize},
@@ -48,12 +45,11 @@ pub struct SctkFlutterWindowInner {
     id: u32,
     window: Window,
     engine: FlutterEngineWeakRef,
-    context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<ResourceContext>>,
     current_size: RwLock<Option<Size>>,
     current_scale_factor: RwLock<f64>,
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
+    opengl_handler: SctkOpenGLHandler,
 }
 
 impl SctkFlutterWindowInner {
@@ -122,12 +118,13 @@ impl SctkFlutterWindow {
             default_size.to_physical::<u32>(1.0),
         )?;
 
+        let opengl_handler = SctkOpenGLHandler::new(context, resource_context);
+
         let inner = SctkFlutterWindowInner {
             id: IMPLICIT_VIEW_ID,
             window,
             engine,
-            context: Arc::new(Mutex::new(context)),
-            resource_context: Arc::new(Mutex::new(resource_context)),
+            opengl_handler,
             pointers: Default::default(),
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),
@@ -152,11 +149,7 @@ impl SctkFlutterWindow {
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
-        let opengl_handler = GlutinOpenGLHandler::new(
-            self.inner.context.clone(),
-            self.inner.resource_context.clone(),
-        );
-        FlutterView::new(self.inner.id, opengl_handler)
+        FlutterView::new(self.inner.id, self.inner.opengl_handler.clone())
     }
 
     pub(crate) fn scale_factor_changed(
@@ -172,7 +165,7 @@ impl SctkFlutterWindow {
             return;
         };
 
-        self.resize_egl_surface(physical_size);
+        self.inner.opengl_handler.resize(physical_size);
 
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
@@ -207,7 +200,7 @@ impl SctkFlutterWindow {
             return;
         };
 
-        self.resize_egl_surface(physical_size);
+        self.inner.opengl_handler.resize(physical_size);
 
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
@@ -251,10 +244,6 @@ impl SctkFlutterWindow {
         };
 
         engine.send_pointer_event(event);
-    }
-
-    fn resize_egl_surface(&self, size: PhysicalSize<NonZeroU32>) {
-        self.inner.context.lock().unwrap().resize(size);
     }
 }
 

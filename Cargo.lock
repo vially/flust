@@ -927,6 +927,7 @@ version = "0.1.0"
 dependencies = [
  "dpi",
  "flutter-engine",
+ "flutter-engine-api",
  "flutter-engine-sys",
  "flutter-glutin",
  "flutter-plugins",
