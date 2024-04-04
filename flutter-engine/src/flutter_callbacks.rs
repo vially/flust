@@ -1,3 +1,4 @@
+use crate::ffi::FlutterFrameInfo;
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use log::trace;
@@ -34,14 +35,18 @@ pub extern "C" fn clear_current(user_data: *mut c_void) -> bool {
     }
 }
 
-pub extern "C" fn fbo_callback(user_data: *mut c_void) -> c_uint {
-    trace!("fbo_callback");
+pub extern "C" fn fbo_with_frame_info_callback(
+    user_data: *mut c_void,
+    frame_info: *const flutter_engine_sys::FlutterFrameInfo,
+) -> c_uint {
+    trace!("fbo_with_frame_info_callback");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
+        let frame_info = FlutterFrameInfo::from(*frame_info);
         engine
             .implicit_view_opengl_handler()
             .unwrap()
-            .fbo_callback()
+            .fbo_with_frame_info_callback(frame_info.size)
     }
 }
 

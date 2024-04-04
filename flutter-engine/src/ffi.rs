@@ -3,6 +3,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use dpi::PhysicalSize;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerPhase {
     Cancel,
@@ -145,6 +147,18 @@ impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
             __bindgen_padding_0: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_1: 0,
+        }
+    }
+}
+
+pub struct FlutterFrameInfo {
+    pub size: PhysicalSize<u32>,
+}
+
+impl From<flutter_engine_sys::FlutterFrameInfo> for FlutterFrameInfo {
+    fn from(frame_info: flutter_engine_sys::FlutterFrameInfo) -> Self {
+        Self {
+            size: PhysicalSize::new(frame_info.size.width, frame_info.size.height),
         }
     }
 }

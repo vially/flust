@@ -162,7 +162,7 @@ impl FlutterEngine {
                     make_current: Some(flutter_callbacks::make_current),
                     clear_current: Some(flutter_callbacks::clear_current),
                     present: Some(flutter_callbacks::present),
-                    fbo_callback: Some(flutter_callbacks::fbo_callback),
+                    fbo_callback: None,
                     make_resource_current: Some(flutter_callbacks::make_resource_current),
                     fbo_reset_after_present: false,
                     surface_transformation: None,
@@ -170,7 +170,9 @@ impl FlutterEngine {
                     gl_external_texture_frame_callback: Some(
                         flutter_callbacks::gl_external_texture_frame,
                     ),
-                    fbo_with_frame_info_callback: None,
+                    fbo_with_frame_info_callback: Some(
+                        flutter_callbacks::fbo_with_frame_info_callback,
+                    ),
                     present_with_info: None,
                     populate_existing_damage: None,
                 },

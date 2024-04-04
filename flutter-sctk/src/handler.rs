@@ -53,7 +53,7 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
         self.context.lock().unwrap().make_not_current()
     }
 
-    fn fbo_callback(&self) -> u32 {
+    fn fbo_with_frame_info_callback(&self, _size: PhysicalSize<u32>) -> u32 {
         0
     }
 

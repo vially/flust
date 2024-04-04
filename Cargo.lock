@@ -852,6 +852,7 @@ name = "flutter-engine"
 version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
+ "dpi",
  "flutter-engine-api",
  "flutter-engine-sys",
  "log",
@@ -865,6 +866,9 @@ dependencies = [
 [[package]]
 name = "flutter-engine-api"
 version = "0.1.0"
+dependencies = [
+ "dpi",
+]
 
 [[package]]
 name = "flutter-engine-sys"

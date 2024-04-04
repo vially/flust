@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use dpi::PhysicalSize;
 use flutter_engine_api::FlutterOpenGLHandler;
 
 use crate::context::{Context, ResourceContext};
@@ -37,7 +38,7 @@ impl FlutterOpenGLHandler for GlutinOpenGLHandler {
         self.context.lock().unwrap().make_not_current()
     }
 
-    fn fbo_callback(&self) -> u32 {
+    fn fbo_with_frame_info_callback(&self, _size: PhysicalSize<u32>) -> u32 {
         0
     }
 
