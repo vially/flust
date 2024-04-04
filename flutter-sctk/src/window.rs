@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
@@ -44,16 +44,51 @@ use crate::{
     pointer::Pointer,
 };
 
-pub struct SctkFlutterWindow {
+pub struct SctkFlutterWindowInner {
     id: u32,
     window: Window,
     engine: FlutterEngineWeakRef,
     context: Arc<Mutex<Context>>,
     resource_context: Arc<Mutex<ResourceContext>>,
-    current_size: Option<Size>,
-    current_scale_factor: f64,
+    current_size: RwLock<Option<Size>>,
+    current_scale_factor: RwLock<f64>,
     default_size: Size,
-    pointers: HashMap<ObjectId, Pointer>,
+    pointers: RwLock<HashMap<ObjectId, Pointer>>,
+}
+
+impl SctkFlutterWindowInner {
+    pub(super) fn store_current_scale_factor(&self, new_scale_factor: f64) {
+        let mut current_scale_factor = self.current_scale_factor.write().unwrap();
+        *current_scale_factor = new_scale_factor;
+    }
+
+    pub(super) fn load_current_scale_factor(&self) -> f64 {
+        *self.current_scale_factor.read().unwrap()
+    }
+
+    pub(super) fn store_current_size(&self, new_size: Size) {
+        let mut current_size = self.current_size.write().unwrap();
+        *current_size = Some(new_size);
+    }
+
+    pub(super) fn scale_internal_size(&self, new_scale_factor: f64) {
+        self.store_current_scale_factor(new_scale_factor);
+
+        let mut current_size = self.current_size.write().unwrap();
+        *current_size = current_size.map(|size| size.to_logical::<u32>(new_scale_factor).into());
+    }
+
+    pub(super) fn non_zero_physical_size(&self) -> Option<PhysicalSize<NonZeroU32>> {
+        let scale_factor = self.current_scale_factor.read().unwrap();
+        self.current_size
+            .read()
+            .unwrap()
+            .and_then(|size| size.to_physical::<u32>(*scale_factor).non_zero())
+    }
+}
+
+pub struct SctkFlutterWindow {
+    inner: Arc<SctkFlutterWindowInner>,
 }
 
 impl SctkFlutterWindow {
@@ -87,35 +122,41 @@ impl SctkFlutterWindow {
             default_size.to_physical::<u32>(1.0),
         )?;
 
-        Ok(Self {
+        let inner = SctkFlutterWindowInner {
             id: IMPLICIT_VIEW_ID,
             window,
             engine,
             context: Arc::new(Mutex::new(context)),
             resource_context: Arc::new(Mutex::new(resource_context)),
-            current_size: None,
-            current_scale_factor: 1.0,
+            pointers: Default::default(),
+            current_size: Default::default(),
+            current_scale_factor: RwLock::new(1.0),
             default_size,
-            pointers: HashMap::new(),
+        };
+
+        Ok(Self {
+            inner: Arc::new(inner),
         })
     }
 
     pub fn xdg_toplevel_id(&self) -> ObjectId {
-        self.window.xdg_toplevel().id()
+        self.inner.window.xdg_toplevel().id()
     }
 
     pub fn wl_surface_id(&self) -> ObjectId {
-        self.window.wl_surface().id()
+        self.inner.window.wl_surface().id()
     }
 
     pub fn xdg_toplevel(&self) -> XdgToplevel {
-        self.window.xdg_toplevel().clone()
+        self.inner.window.xdg_toplevel().clone()
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
-        let opengl_handler =
-            GlutinOpenGLHandler::new(self.context.clone(), self.resource_context.clone());
-        FlutterView::new(self.id, opengl_handler)
+        let opengl_handler = GlutinOpenGLHandler::new(
+            self.inner.context.clone(),
+            self.inner.resource_context.clone(),
+        );
+        FlutterView::new(self.inner.id, opengl_handler)
     }
 
     pub(crate) fn scale_factor_changed(
@@ -124,23 +165,16 @@ impl SctkFlutterWindow {
         surface: &WlSurface,
         new_scale_factor: i32,
     ) {
-        self.current_scale_factor = new_scale_factor.into();
+        self.inner.scale_internal_size(new_scale_factor.into());
 
-        self.current_size = self
-            .current_size
-            .map(|size| Size::from(size.to_logical::<u32>(self.current_scale_factor)));
-
-        let Some(physical_size) = self.current_size.and_then(|size| {
-            size.to_physical::<u32>(self.current_scale_factor)
-                .non_zero()
-        }) else {
+        let Some(physical_size) = self.inner.non_zero_physical_size() else {
             error!("Invalid physical size while handling `scale_factor_changed` event");
             return;
         };
 
         self.resize_egl_surface(physical_size);
 
-        if let Some(engine) = self.engine.upgrade() {
+        if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
@@ -162,25 +196,24 @@ impl SctkFlutterWindow {
     ) {
         let new_logical_size = WindowLogicalSize::try_from(configure.new_size)
             .map(|size| size.into())
-            .unwrap_or(self.default_size);
+            .unwrap_or(self.inner.default_size);
 
-        self.current_size.replace(new_logical_size);
+        self.inner.store_current_size(new_logical_size);
 
-        let Some(physical_size) = new_logical_size
-            .to_physical::<u32>(self.current_scale_factor)
-            .non_zero()
-        else {
+        let scale_factor = self.inner.load_current_scale_factor();
+
+        let Some(physical_size) = new_logical_size.to_physical(scale_factor).non_zero() else {
             error!("Unable to convert window configure event to a physical size");
             return;
         };
 
         self.resize_egl_surface(physical_size);
 
-        if let Some(engine) = self.engine.upgrade() {
+        if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
-                self.current_scale_factor,
+                scale_factor,
             );
         }
     }
@@ -191,26 +224,28 @@ impl SctkFlutterWindow {
         pointer: &WlPointer,
         event: &PointerEvent,
     ) {
-        let pointer = self
-            .pointers
-            .entry(pointer.id())
-            .or_insert_with(|| Pointer::new(pointer.id().protocol_id() as i32));
+        let sctk_pointer_event = {
+            let mut pointers = self.inner.pointers.write().unwrap();
+            let pointer = pointers
+                .entry(pointer.id())
+                .or_insert_with(|| Pointer::new(pointer.id().protocol_id() as i32));
 
-        match event.kind {
-            PointerEventKind::Press { .. } => pointer.increment_pressed(),
-            PointerEventKind::Release { .. } => pointer.decrement_pressed(),
-            _ => {}
-        }
+            match event.kind {
+                PointerEventKind::Press { .. } => pointer.increment_pressed(),
+                PointerEventKind::Release { .. } => pointer.decrement_pressed(),
+                _ => {}
+            }
 
-        let sctk_pointer_event =
-            SctkPointerEvent::new(event.clone(), *pointer, self.current_scale_factor);
+            let scale_factor = self.inner.load_current_scale_factor();
+            SctkPointerEvent::new(event.clone(), *pointer, scale_factor)
+        };
 
         let Ok(event) = FlutterPointerEvent::try_from(sctk_pointer_event) else {
             error!("Unable to convert wayland pointer event to flutter pointer event");
             return;
         };
 
-        let Some(engine) = self.engine.upgrade() else {
+        let Some(engine) = self.inner.engine.upgrade() else {
             error!("Unable to upgrade weak engine while sending pointer event");
             return;
         };
@@ -219,7 +254,7 @@ impl SctkFlutterWindow {
     }
 
     fn resize_egl_surface(&self, size: PhysicalSize<NonZeroU32>) {
-        self.context.lock().unwrap().resize(size);
+        self.inner.context.lock().unwrap().resize(size);
     }
 }
 
