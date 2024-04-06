@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
@@ -12,7 +12,7 @@ use flutter_engine::{
 };
 use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
-use log::{error, trace};
+use log::{error, trace, warn};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
@@ -41,7 +41,22 @@ use crate::{
     pointer::Pointer,
 };
 
-pub struct SctkFlutterWindowInner {
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+/// States a resize event can be in.
+pub(crate) enum ResizeState {
+    /// Default state for when no resize is in progress. Also used to indicate
+    /// that during a resize event, a frame with the right size has been
+    /// rendered and the buffers have been swapped.
+    #[default]
+    Done,
+    /// When a resize event has started but is in progress.
+    ResizeStarted,
+    /// After a resize event starts and the framework has been notified to
+    /// generate a frame for the right size.
+    FrameGenerated,
+}
+
+pub(crate) struct SctkFlutterWindowInner {
     id: u32,
     window: Window,
     engine: FlutterEngineWeakRef,
@@ -50,6 +65,9 @@ pub struct SctkFlutterWindowInner {
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     opengl_handler: SctkOpenGLHandler,
+    resize_mutex: Mutex<()>,
+    resize_status: RwLock<ResizeState>,
+    pending_size: RwLock<Option<PhysicalSize<NonZeroU32>>>,
 }
 
 impl SctkFlutterWindowInner {
@@ -65,6 +83,24 @@ impl SctkFlutterWindowInner {
     pub(super) fn store_current_size(&self, new_size: Size) {
         let mut current_size = self.current_size.write().unwrap();
         *current_size = Some(new_size);
+    }
+
+    fn store_resize_status(&self, new_resize_status: ResizeState) {
+        let mut resize_status = self.resize_status.write().unwrap();
+        *resize_status = new_resize_status;
+    }
+
+    pub(super) fn load_resize_status(&self) -> ResizeState {
+        *self.resize_status.read().unwrap()
+    }
+
+    pub(super) fn store_pending_size(&self, new_pending_size: Option<PhysicalSize<NonZeroU32>>) {
+        let mut pending_size = self.pending_size.write().unwrap();
+        *pending_size = new_pending_size;
+    }
+
+    pub(super) fn load_pending_size(&self) -> Option<PhysicalSize<NonZeroU32>> {
+        *self.pending_size.read().unwrap()
     }
 
     pub(super) fn scale_internal_size(&self, new_scale_factor: f64) {
@@ -85,16 +121,57 @@ impl SctkFlutterWindowInner {
     // Note: This callback is executed on the *render* thread.
     pub(super) fn on_frame_generated(&self, size: PhysicalSize<u32>) -> bool {
         trace!("window frame generated: {}x{}", size.width, size.height);
+        let _resize_mutex = self.resize_mutex.lock().unwrap();
 
-        // not implemented
+        let resize_status = self.load_resize_status();
+        if resize_status != ResizeState::ResizeStarted {
+            return true;
+        }
+
+        let Some(pending_size) = self.load_pending_size() else {
+            error!("[on_frame_generated] Invalid resize state: pending size not found");
+            return false;
+        };
+
+        if size.width != pending_size.width.get() || size.height != pending_size.height.get() {
+            trace!(
+                "[on_frame_generated]: Frame size does not match expected size: {}x{} != {}x{}",
+                size.width,
+                size.height,
+                pending_size.width,
+                pending_size.height
+            );
+            return false;
+        }
+
+        self.store_resize_status(ResizeState::FrameGenerated);
         true
     }
 
     // Note: This callback is executed on the *render* thread.
     pub(super) fn on_frame_presented(&self) {
         trace!("window frame presented");
+        let _resize_mutex = self.resize_mutex.lock().unwrap();
 
-        // not implemented
+        let resize_status = self.load_resize_status();
+        match resize_status {
+            ResizeState::ResizeStarted => {
+                // The caller must first call `on_frame_generated` before
+                // calling this method. This indicates one of the following:
+                //
+                // 1. The caller did not call this method.
+                // 2. The caller ignored this method's result.
+                // 3. The platform thread started a resize after the caller
+                //    called these methods. We might have presented a frame of
+                //    the wrong size to the view.
+                warn!("A frame of the wrong size might have been presented after a resize was started");
+            }
+            ResizeState::FrameGenerated => {
+                // A frame was generated for a pending resize. Mark the resize as done.
+                self.store_resize_status(ResizeState::Done);
+            }
+            ResizeState::Done => {}
+        }
     }
 }
 
@@ -138,9 +215,12 @@ impl SctkFlutterWindow {
             window,
             engine,
             opengl_handler: SctkOpenGLHandler::new(inner.clone(), context, resource_context),
+            resize_mutex: Default::default(),
+            resize_status: Default::default(),
             pointers: Default::default(),
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),
+            pending_size: Default::default(),
             default_size,
         });
 
@@ -169,6 +249,8 @@ impl SctkFlutterWindow {
         surface: &WlSurface,
         new_scale_factor: i32,
     ) {
+        let _resize_mutex = self.inner.resize_mutex.lock().unwrap();
+
         self.inner.scale_internal_size(new_scale_factor.into());
 
         let Some(physical_size) = self.inner.non_zero_physical_size() else {
@@ -176,7 +258,13 @@ impl SctkFlutterWindow {
             return;
         };
 
+        self.inner.store_resize_status(ResizeState::ResizeStarted);
+        self.inner.store_pending_size(Some(physical_size));
+
+        // Note: Comment related to `opengl_handler.resize()` call from the
+        // `SctkFlutterWindow.configure()` method also applies here.
         self.inner.opengl_handler.resize(physical_size);
+        surface.set_buffer_scale(new_scale_factor);
 
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
@@ -185,19 +273,16 @@ impl SctkFlutterWindow {
                 new_scale_factor as f64,
             );
         }
-
-        // Warning: This can cause crashes until `FlutterResizeSynchronizer` is implemented
-        // TODO: Fix this by implementing proper synchronization logic
-        surface.set_buffer_scale(new_scale_factor);
     }
 
-    // TODO: Implement `FlutterResizeSynchronizer`
     pub(crate) fn configure(
         &mut self,
         _conn: &Connection,
         configure: WindowConfigure,
         _serial: u32,
     ) {
+        let _resize_mutex = self.inner.resize_mutex.lock().unwrap();
+
         let new_logical_size = WindowLogicalSize::try_from(configure.new_size)
             .map(|size| size.into())
             .unwrap_or(self.inner.default_size);
@@ -211,6 +296,25 @@ impl SctkFlutterWindow {
             return;
         };
 
+        self.inner.store_resize_status(ResizeState::ResizeStarted);
+        self.inner.store_pending_size(Some(physical_size));
+
+        // The resize logic is based on Flutter's Windows embedder
+        // implementation. However, one notable difference between the two is
+        // that the Windows implementation resizes the EGL surface *after*
+        // sending the window metrics event to the engine (e.g.: as part of the
+        // `CompositorOpenGL::Present` callback [0]), while flutter-sctk's
+        // implementation resizes it *prior* to sending the window metrics
+        // event.
+        //
+        // This change in flutter-sctk's implementation was done to avoid some
+        // visual glitches that were observed when the EGL surface was resized
+        // too late (e.g.: as part of the `on_frame_generated` callback).
+        //
+        // TODO: Investigate when is the *correct* time to resize the EGL
+        // surface and update the implementation if needed.
+        //
+        // [0]: https://github.com/flutter/engine/blob/605b3f3/shell/platform/windows/flutter_windows_view.cc#L701-L711
         self.inner.opengl_handler.resize(physical_size);
 
         if let Some(engine) = self.inner.engine.upgrade() {
