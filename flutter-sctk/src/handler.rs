@@ -1,7 +1,7 @@
 use std::{
     ffi::{c_void, CStr},
     num::NonZeroU32,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock, Weak},
 };
 
 use dpi::PhysicalSize;
@@ -20,29 +20,62 @@ use smithay_client_toolkit::{
 use wayland_backend::client::ObjectId;
 use wayland_client::{Connection, Proxy};
 
+use crate::window::SctkFlutterWindowInner;
+
 #[derive(Clone)]
 pub(crate) struct SctkOpenGLHandler {
+    window: Weak<SctkFlutterWindowInner>,
     context: Arc<Mutex<Context>>,
     resource_context: Arc<Mutex<ResourceContext>>,
+    current_frame_size: Arc<RwLock<PhysicalSize<u32>>>,
 }
 
 impl SctkOpenGLHandler {
-    pub(crate) fn new(context: Context, resource_context: ResourceContext) -> Self {
+    pub(crate) fn new(
+        window: Weak<SctkFlutterWindowInner>,
+        context: Context,
+        resource_context: ResourceContext,
+    ) -> Self {
         Self {
+            window,
             context: Arc::new(Mutex::new(context)),
             resource_context: Arc::new(Mutex::new(resource_context)),
+            current_frame_size: Default::default(),
         }
     }
 
+    // Note: This callback is executed on the *platform* thread.
     pub(crate) fn resize(&self, size: PhysicalSize<NonZeroU32>) {
         self.context.lock().unwrap().resize(size);
+    }
+
+    fn load_current_frame_size(&self) -> PhysicalSize<u32> {
+        *self.current_frame_size.read().unwrap()
     }
 }
 
 // Note: These callbacks are executed on the *render* thread.
 impl FlutterOpenGLHandler for SctkOpenGLHandler {
     fn present(&self) -> bool {
-        self.context.lock().unwrap().present()
+        let frame_size = self.load_current_frame_size();
+        // Check if this frame can be presented. This resizes the surface if a
+        // resize is pending and |frame_size| matches the target size.
+        if !self
+            .window
+            .upgrade()
+            .unwrap()
+            .on_frame_generated(frame_size)
+        {
+            return false;
+        }
+
+        if !self.context.lock().unwrap().present() {
+            return false;
+        }
+
+        self.window.upgrade().unwrap().on_frame_presented();
+
+        true
     }
 
     fn make_current(&self) -> bool {
@@ -53,7 +86,10 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
         self.context.lock().unwrap().make_not_current()
     }
 
-    fn fbo_with_frame_info_callback(&self, _size: PhysicalSize<u32>) -> u32 {
+    fn fbo_with_frame_info_callback(&self, size: PhysicalSize<u32>) -> u32 {
+        let mut current_frame_size = self.current_frame_size.write().unwrap();
+        *current_frame_size = size;
+
         0
     }
 

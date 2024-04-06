@@ -12,7 +12,7 @@ use flutter_engine::{
 };
 use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
-use log::error;
+use log::{error, trace};
 use smithay_client_toolkit::{
     compositor::CompositorState,
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
@@ -81,6 +81,21 @@ impl SctkFlutterWindowInner {
             .unwrap()
             .and_then(|size| size.to_physical::<u32>(*scale_factor).non_zero())
     }
+
+    // Note: This callback is executed on the *render* thread.
+    pub(super) fn on_frame_generated(&self, size: PhysicalSize<u32>) -> bool {
+        trace!("window frame generated: {}x{}", size.width, size.height);
+
+        // not implemented
+        true
+    }
+
+    // Note: This callback is executed on the *render* thread.
+    pub(super) fn on_frame_presented(&self) {
+        trace!("window frame presented");
+
+        // not implemented
+    }
 }
 
 pub struct SctkFlutterWindow {
@@ -118,22 +133,18 @@ impl SctkFlutterWindow {
             default_size.to_physical::<u32>(1.0),
         )?;
 
-        let opengl_handler = SctkOpenGLHandler::new(context, resource_context);
-
-        let inner = SctkFlutterWindowInner {
+        let inner = Arc::new_cyclic(|inner| SctkFlutterWindowInner {
             id: IMPLICIT_VIEW_ID,
             window,
             engine,
-            opengl_handler,
+            opengl_handler: SctkOpenGLHandler::new(inner.clone(), context, resource_context),
             pointers: Default::default(),
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),
             default_size,
-        };
+        });
 
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
+        Ok(Self { inner })
     }
 
     pub fn xdg_toplevel_id(&self) -> ObjectId {
