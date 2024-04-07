@@ -884,7 +884,9 @@ name = "flutter-glutin"
 version = "0.1.0"
 dependencies = [
  "dpi",
+ "flutter-engine",
  "flutter-engine-api",
+ "gl_generator",
  "glutin",
  "raw-window-handle 0.5.2",
  "thiserror",

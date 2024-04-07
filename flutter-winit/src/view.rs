@@ -33,7 +33,7 @@ impl FlutterViewWinit {
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
-        FlutterView::new(self.id, self.window.create_opengl_handler())
+        FlutterView::new_without_compositor(self.id, self.window.create_opengl_handler())
     }
 }
 

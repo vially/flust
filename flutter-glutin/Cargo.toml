@@ -5,7 +5,11 @@ edition = "2021"
 
 [dependencies]
 dpi = "0.1.0"
+flutter-engine = { path = "../flutter-engine" }
 flutter-engine-api = { path = "../flutter-engine-api" }
 glutin = "0.31.3"
 raw-window-handle = "0.5.2"
 thiserror = "1.0.52"
+
+[build-dependencies]
+gl_generator = "0.14.0"

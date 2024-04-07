@@ -100,6 +100,7 @@ impl SctkApplication {
             .with_asset_path(attributes.assets_path.clone())
             .with_icu_data_path(attributes.icu_data_path.clone())
             .with_args(attributes.args.clone())
+            .with_compositor_enabled(true)
             .build()?;
 
         let implicit_window = SctkFlutterWindow::new(

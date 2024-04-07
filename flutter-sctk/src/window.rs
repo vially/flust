@@ -33,7 +33,9 @@ use wayland_client::{
 };
 
 use crate::{
-    application::SctkApplicationState, egl::CreateWaylandContextError, handler::SctkOpenGLHandler,
+    application::SctkApplicationState,
+    egl::CreateWaylandContextError,
+    handler::{SctkCompositorHandler, SctkOpenGLHandler},
     pointer::SctkPointerEvent,
 };
 use crate::{
@@ -65,6 +67,7 @@ pub(crate) struct SctkFlutterWindowInner {
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     opengl_handler: SctkOpenGLHandler,
+    compositor_handler: SctkCompositorHandler,
     resize_mutex: Mutex<()>,
     resize_status: RwLock<ResizeState>,
     pending_size: RwLock<Option<PhysicalSize<NonZeroU32>>>,
@@ -149,6 +152,20 @@ impl SctkFlutterWindowInner {
     }
 
     // Note: This callback is executed on the *render* thread.
+    pub(super) fn on_empty_frame_generated(&self) -> bool {
+        trace!("window empty frame generated");
+        let _resize_mutex = self.resize_mutex.lock().unwrap();
+
+        let resize_status = self.load_resize_status();
+        if resize_status != ResizeState::ResizeStarted {
+            return true;
+        }
+
+        self.store_resize_status(ResizeState::FrameGenerated);
+        true
+    }
+
+    // Note: This callback is executed on the *render* thread.
     pub(super) fn on_frame_presented(&self) {
         trace!("window frame presented");
         let _resize_mutex = self.resize_mutex.lock().unwrap();
@@ -210,11 +227,19 @@ impl SctkFlutterWindow {
             default_size.to_physical::<u32>(1.0),
         )?;
 
+        let context = Arc::new(Mutex::new(context));
+        let resource_context = Arc::new(Mutex::new(resource_context));
+
         let inner = Arc::new_cyclic(|inner| SctkFlutterWindowInner {
             id: IMPLICIT_VIEW_ID,
             window,
             engine,
-            opengl_handler: SctkOpenGLHandler::new(inner.clone(), context, resource_context),
+            opengl_handler: SctkOpenGLHandler::new(
+                inner.clone(),
+                context.clone(),
+                resource_context,
+            ),
+            compositor_handler: SctkCompositorHandler::new(inner.clone(), context),
             resize_mutex: Default::default(),
             resize_status: Default::default(),
             pointers: Default::default(),
@@ -240,7 +265,11 @@ impl SctkFlutterWindow {
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
-        FlutterView::new(self.inner.id, self.inner.opengl_handler.clone())
+        FlutterView::new_with_compositor(
+            self.inner.id,
+            self.inner.opengl_handler.clone(),
+            self.inner.compositor_handler.clone(),
+        )
     }
 
     pub(crate) fn scale_factor_changed(

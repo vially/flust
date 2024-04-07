@@ -1,6 +1,8 @@
-use crate::ffi::FlutterFrameInfo;
+use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo};
 use crate::tasks::{TaskRunner, TaskRunnerInner};
+use crate::view::IMPLICIT_VIEW_ID;
 use crate::FlutterEngineInner;
+use core::slice;
 use log::trace;
 use parking_lot::Mutex;
 use std::ffi::{c_char, c_uint, c_void, CStr};
@@ -84,6 +86,65 @@ pub extern "C" fn vsync_callback(user_data: *mut c_void, baton: isize) {
             .as_ref()
             .unwrap()
             .request_frame_callback(baton);
+    }
+}
+
+pub extern "C" fn compositor_backing_store_create_callback(
+    config: *const flutter_engine_sys::FlutterBackingStoreConfig,
+    backing_store_out: *mut flutter_engine_sys::FlutterBackingStore,
+    user_data: *mut c_void,
+) -> bool {
+    trace!("compositor_backing_store_create_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+        if let Ok(backing_store) = engine
+            .implicit_view_compositor_handler()
+            .unwrap()
+            .create_backing_store((*config).into())
+        {
+            backing_store.into_ffi(&mut *backing_store_out);
+            return true;
+        };
+        false
+    }
+}
+
+pub extern "C" fn compositor_backing_store_collect_callback(
+    backing_store: *const flutter_engine_sys::FlutterBackingStore,
+    user_data: *mut c_void,
+) -> bool {
+    trace!("compositor_backing_store_collect_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+        engine
+            .implicit_view_compositor_handler()
+            .unwrap()
+            .collect_backing_store((*backing_store).into())
+            .is_ok()
+    }
+}
+
+pub extern "C" fn compositor_present_layers_callback(
+    layers: *mut *const flutter_engine_sys::FlutterLayer,
+    layers_count: usize,
+    user_data: *mut c_void,
+) -> bool {
+    trace!("compositor_present_layers_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+
+        let layers: Vec<FlutterLayer> = slice::from_raw_parts(*layers, layers_count)
+            .iter()
+            .map(|layer| (*layer).into())
+            .collect();
+
+        let info = FlutterPresentViewInfo::new(IMPLICIT_VIEW_ID.into(), layers);
+
+        engine
+            .implicit_view_compositor_handler()
+            .unwrap()
+            .present_view(info)
+            .is_ok()
     }
 }
 

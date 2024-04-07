@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod channel;
 pub mod codec;
+pub mod compositor;
 pub mod error;
 pub mod ffi;
 mod flutter_callbacks;
@@ -16,10 +17,11 @@ use crate::channel::{Channel, ChannelRegistry};
 use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseHandle};
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
+use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::FlutterPointerEvent;
 use flutter_engine_api::FlutterOpenGLHandler;
-use flutter_engine_sys::{FlutterEngineResult, FlutterTask, VsyncCallback};
+use flutter_engine_sys::{FlutterCompositor, FlutterEngineResult, FlutterTask, VsyncCallback};
 use log::trace;
 use parking_lot::RwLock;
 use std::ffi::{c_void, CString};
@@ -55,6 +57,10 @@ struct FlutterEngineInner {
 impl FlutterEngineInner {
     fn implicit_view_opengl_handler(&self) -> Option<Arc<dyn FlutterOpenGLHandler>> {
         self.view_registry.read().implicit_view_opengl_handler()
+    }
+
+    fn implicit_view_compositor_handler(&self) -> Option<Arc<dyn FlutterCompositorHandler>> {
+        self.view_registry.read().implicit_view_compositor_handler()
     }
 }
 
@@ -207,6 +213,24 @@ impl FlutterEngine {
             None => None,
         };
 
+        let compositor: *const FlutterCompositor = match builder.compositor_enabled {
+            false => std::ptr::null(),
+            true => &FlutterCompositor {
+                struct_size: std::mem::size_of::<FlutterCompositor>(),
+                user_data: Weak::into_raw(Arc::downgrade(inner)) as *mut std::ffi::c_void,
+                create_backing_store_callback: Some(
+                    flutter_callbacks::compositor_backing_store_create_callback,
+                ),
+                collect_backing_store_callback: Some(
+                    flutter_callbacks::compositor_backing_store_collect_callback,
+                ),
+                present_layers_callback: Some(
+                    flutter_callbacks::compositor_present_layers_callback,
+                ),
+                avoid_backing_store_cache: false,
+            } as *const FlutterCompositor,
+        };
+
         // Configure engine
         let project_args = flutter_engine_sys::FlutterProjectArgs {
             struct_size: std::mem::size_of::<flutter_engine_sys::FlutterProjectArgs>(),
@@ -235,7 +259,7 @@ impl FlutterEngine {
             custom_task_runners: &custom_task_runners
                 as *const flutter_engine_sys::FlutterCustomTaskRunners,
             shutdown_dart_vm_when_done: true,
-            compositor: std::ptr::null(),
+            compositor,
             dart_old_gen_heap_size: -1,
             aot_data: std::ptr::null_mut(),
             compute_platform_resolved_locale_callback: None,
