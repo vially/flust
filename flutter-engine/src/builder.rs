@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) vsync_handler: Option<Box<dyn FlutterVsyncHandler + Send>>,
+    pub(crate) compositor_enabled: bool,
     pub(crate) assets: PathBuf,
     pub(crate) icu_data: PathBuf,
     pub(crate) args: Vec<String>,
@@ -17,6 +18,7 @@ impl FlutterEngineBuilder {
         Self {
             platform_handler: None,
             vsync_handler: None,
+            compositor_enabled: false,
             assets: Default::default(),
             icu_data: Default::default(),
             args: vec![],
@@ -36,6 +38,11 @@ impl FlutterEngineBuilder {
         H: FlutterVsyncHandler + Send + 'static,
     {
         self.vsync_handler = Some(Box::new(handler));
+        self
+    }
+
+    pub fn with_compositor_enabled(mut self, enabled: bool) -> Self {
+        self.compositor_enabled = enabled;
         self
     }
 
