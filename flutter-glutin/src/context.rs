@@ -47,7 +47,7 @@ impl Context {
         false
     }
 
-    pub fn get_proc_address(&mut self, proc: &CStr) -> *const c_void {
+    pub fn get_proc_address(&self, proc: &CStr) -> *const c_void {
         self.display.get_proc_address(proc)
     }
 
