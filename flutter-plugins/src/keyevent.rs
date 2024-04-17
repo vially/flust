@@ -15,6 +15,7 @@ use flutter_engine::codec::Value;
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/keyevent";
 
+#[derive(Default)]
 pub struct KeyEventPlugin {
     channel: Weak<MessageChannel>,
 }
@@ -32,11 +33,9 @@ impl Plugin for KeyEventPlugin {
     }
 }
 
-impl Default for KeyEventPlugin {
-    fn default() -> Self {
-        Self {
-            channel: Weak::new(),
-        }
+impl KeyEventPlugin {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

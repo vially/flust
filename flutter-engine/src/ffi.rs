@@ -224,6 +224,7 @@ impl FlutterLogicalKey {
 /// key that has already been pressed according to the record. This is to ensure
 /// some `FlutterKeyEvent` arrives at the framework before raw key message. See
 /// https://github.com/flutter/flutter/issues/87230.
+#[derive(Clone, Debug)]
 pub struct FlutterKeyEvent {
     /// The timestamp at which the key event was generated. The timestamp should
     /// be specified in microseconds and the clock should be the same as that

@@ -7,14 +7,15 @@ use flutter_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
     localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
     platform::PlatformPlugin, settings::SettingsPlugin, system::SystemPlugin,
+    textinput::TextInputPlugin,
 };
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},
-    delegate_compositor, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_shm, delegate_xdg_shell, delegate_xdg_window,
+    delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
     output::{OutputHandler, OutputState},
     reexports::{
         calloop::{
@@ -27,6 +28,7 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
+        keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers},
         pointer::{PointerEvent, PointerHandler, ThemeSpec},
         Capability, SeatHandler, SeatState,
     },
@@ -41,6 +43,7 @@ use wayland_backend::client::ObjectId;
 use wayland_client::{
     globals::{registry_queue_init, BindError, GlobalError},
     protocol::{
+        wl_keyboard::WlKeyboard,
         wl_output::{Transform, WlOutput},
         wl_pointer::WlPointer,
         wl_seat::WlSeat,
@@ -52,7 +55,8 @@ use wayland_client::{
 use crate::{
     handler::{
         get_flutter_frame_time_nanos, SctkMouseCursorHandler, SctkPlatformHandler,
-        SctkPlatformTaskHandler, SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
+        FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
@@ -129,10 +133,12 @@ impl SctkApplication {
             implicit_window.xdg_toplevel(),
         )));
         let mouse_cursor_handler = Arc::new(Mutex::new(SctkMouseCursorHandler::new(conn.clone())));
+        let text_input_handler = Arc::new(Mutex::new(SctkTextInputHandler::new()));
 
         let mut plugins = PluginRegistrar::new();
         plugins.add_plugin(&engine, IsolatePlugin::new(noop_isolate_cb));
         plugins.add_plugin(&engine, KeyEventPlugin::default());
+        plugins.add_plugin(&engine, TextInputPlugin::new(text_input_handler.clone()));
         plugins.add_plugin(&engine, LifecyclePlugin::default());
         plugins.add_plugin(&engine, LocalizationPlugin::default());
         plugins.add_plugin(&engine, NavigationPlugin::default());
@@ -264,6 +270,7 @@ delegate_xdg_window!(SctkApplicationState);
 
 delegate_seat!(SctkApplicationState);
 delegate_pointer!(SctkApplicationState);
+delegate_keyboard!(SctkApplicationState);
 
 delegate_registry!(SctkApplicationState);
 
@@ -366,6 +373,66 @@ impl PointerHandler for SctkApplicationState {
 
             window.pointer_event(conn, pointer, event);
         }
+    }
+}
+
+impl KeyboardHandler for SctkApplicationState {
+    fn enter(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _surface: &WlSurface,
+        _serial: u32,
+        _raw: &[u32],
+        _keysyms: &[Keysym],
+    ) {
+        // not implemented
+    }
+
+    fn leave(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _surface: &WlSurface,
+        _serial: u32,
+    ) {
+        // not implemented
+    }
+
+    fn press_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _serial: u32,
+        _event: KeyEvent,
+    ) {
+        // not implemented
+    }
+
+    fn release_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _serial: u32,
+        _event: KeyEvent,
+    ) {
+        // not implemented
+    }
+
+    fn update_modifiers(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &WlKeyboard,
+        _serial: u32,
+        _modifiers: Modifiers,
+        _layout: u32,
+    ) {
+        // not implemented
     }
 }
 

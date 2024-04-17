@@ -30,6 +30,7 @@ use flutter_glutin::{
 use flutter_plugins::{
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
+    textinput::TextInputHandler,
 };
 use log::{error, trace, warn};
 use smithay_client_toolkit::{
@@ -591,6 +592,21 @@ impl From<SystemMouseCursor> for SctkMouseCursor {
 
         Self { icon }
     }
+}
+
+#[derive(Default)]
+pub struct SctkTextInputHandler {}
+
+impl SctkTextInputHandler {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl TextInputHandler for SctkTextInputHandler {
+    fn show(&mut self) {}
+
+    fn hide(&mut self) {}
 }
 
 pub(crate) fn get_flutter_frame_time_nanos(frame_interval: u64) -> (u64, u64) {
