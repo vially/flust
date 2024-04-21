@@ -21,14 +21,16 @@ use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::FlutterPointerEvent;
 use flutter_engine_api::FlutterOpenGLHandler;
-use flutter_engine_sys::{FlutterCompositor, FlutterEngineResult, FlutterTask, VsyncCallback};
+use flutter_engine_sys::{
+    FlutterCompositor, FlutterEngineGetCurrentTime, FlutterEngineResult, FlutterTask, VsyncCallback,
+};
 use log::trace;
 use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{Arc, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use view::{FlutterView, ViewRegistry};
 
@@ -292,6 +294,11 @@ impl FlutterEngine {
                 Ok(engine)
             }
         }
+    }
+
+    pub fn get_current_time_duration() -> Duration {
+        let current_time_nanos = unsafe { FlutterEngineGetCurrentTime() };
+        Duration::from_nanos(current_time_nanos)
     }
 
     #[inline]
