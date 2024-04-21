@@ -19,7 +19,7 @@ use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use ffi::FlutterPointerEvent;
+use ffi::{FlutterKeyEvent, FlutterPointerEvent};
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
     FlutterCompositor, FlutterEngineGetCurrentTime, FlutterEngineResult, FlutterTask, VsyncCallback,
@@ -462,6 +462,22 @@ impl FlutterEngine {
 
         unsafe {
             flutter_engine_sys::FlutterEngineSendPointerEvent(self.engine_ptr(), &event.into(), 1);
+        }
+    }
+
+    // TODO: Add support for key event callbacks
+    pub fn send_key_event(&self, event: FlutterKeyEvent) {
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        unsafe {
+            flutter_engine_sys::FlutterEngineSendKeyEvent(
+                self.engine_ptr(),
+                &event.as_ptr(),
+                None,
+                ptr::null_mut(),
+            );
         }
     }
 

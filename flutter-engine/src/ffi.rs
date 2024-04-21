@@ -1,5 +1,6 @@
 use std::{
-    mem, slice,
+    ffi::CString,
+    mem, ptr, slice,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -148,6 +149,160 @@ impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
             __bindgen_padding_0: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_1: 0,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum FlutterKeyEventType {
+    Up,
+    Down,
+    Repeat,
+}
+
+impl From<FlutterKeyEventType> for flutter_engine_sys::FlutterKeyEventType {
+    fn from(value: FlutterKeyEventType) -> Self {
+        match value {
+            FlutterKeyEventType::Up => {
+                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeUp
+            }
+            FlutterKeyEventType::Down => {
+                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeDown
+            }
+            FlutterKeyEventType::Repeat => {
+                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeRepeat
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FlutterPhysicalKey(u64);
+
+impl FlutterPhysicalKey {
+    pub const fn new(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FlutterLogicalKey(u64);
+
+impl FlutterLogicalKey {
+    pub const fn new(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// A structure to represent a key event.
+///
+/// Sending `FlutterKeyEvent` via `FlutterEngineSendKeyEvent` results in a
+/// corresponding `FlutterKeyEvent` to be dispatched in the framework. It is
+/// embedder's responsibility to ensure the regularity of sent events, since the
+/// framework only performs simple one-to-one mapping. The events must conform
+/// the following rules:
+///
+///  * Each key press sequence shall consist of one key down event (`kind` being
+///    `kFlutterKeyEventTypeDown`), zero or more repeat events, and one key up
+///    event, representing a physical key button being pressed, held, and
+///    released.
+///  * All events throughout a key press sequence shall have the same `physical`
+///    and `logical`. Having different `character`s is allowed.
+///
+/// A `FlutterKeyEvent` with `physical` 0 and `logical` 0 is an empty event.
+/// This is the only case either `physical` or `logical` can be 0. An empty
+/// event must be sent if a key message should be converted to no
+/// `FlutterKeyEvent`s, for example, when a key down message is received for a
+/// key that has already been pressed according to the record. This is to ensure
+/// some `FlutterKeyEvent` arrives at the framework before raw key message. See
+/// https://github.com/flutter/flutter/issues/87230.
+pub struct FlutterKeyEvent {
+    /// The timestamp at which the key event was generated. The timestamp should
+    /// be specified in microseconds and the clock should be the same as that
+    /// used by `FlutterEngineGetCurrentTime`.
+    timestamp: Duration,
+
+    /// The event kind.
+    kind: FlutterKeyEventType,
+
+    /// The USB HID code for the physical key of the event.
+    ///
+    /// For the full definition and list of pre-defined physical keys, see
+    /// `PhysicalKeyboardKey` from the framework.
+    ///
+    /// The only case that `physical` might be 0 is when this is an empty event.
+    /// See `FlutterKeyEvent` for introduction.
+    physical: FlutterPhysicalKey,
+
+    /// The key ID for the logical key of this event.
+    ///
+    /// For the full definition and a list of pre-defined logical keys, see
+    /// `LogicalKeyboardKey` from the framework.
+    ///
+    /// The only case that `logical` might be 0 is when this is an empty event.
+    /// See `FlutterKeyEvent` for introduction.
+    logical: FlutterLogicalKey,
+
+    /// Character input from the event. Can be `None`. Ignored for up events.
+    character: Option<CString>,
+
+    /// True if this event does not correspond to a native event.
+    ///
+    /// The embedder is likely to skip events and/or construct new events that
+    /// do not correspond to any native events in order to conform the
+    /// regularity of events (as documented in `FlutterKeyEvent`). An example is
+    /// when a key up is missed due to loss of window focus, on a platform that
+    /// provides query to key pressing status, the embedder might realize that
+    /// the key has been released at the next key event, and should construct a
+    /// synthesized up event immediately before the actual event.
+    ///
+    /// An event being synthesized means that the `timestamp` might greatly
+    /// deviate from the actual time when the event occurs physically.
+    synthesized: bool,
+}
+
+impl FlutterKeyEvent {
+    pub fn new(
+        timestamp: Duration,
+        kind: FlutterKeyEventType,
+        physical: FlutterPhysicalKey,
+        logical: FlutterLogicalKey,
+        character: Option<CString>,
+        synthesized: bool,
+    ) -> Self {
+        Self {
+            timestamp,
+            kind,
+            physical,
+            logical,
+            character,
+            synthesized,
+        }
+    }
+
+    // Note: The `From` trait can *not* be used for this conversion because the
+    // character's `CString` needs to outlive the conversion.
+    pub fn as_ptr(&self) -> flutter_engine_sys::FlutterKeyEvent {
+        flutter_engine_sys::FlutterKeyEvent {
+            struct_size: mem::size_of::<flutter_engine_sys::FlutterKeyEvent>(),
+            timestamp: self.timestamp.as_micros() as f64,
+            type_: self.kind.into(),
+            physical: self.physical.0,
+            logical: self.logical.0,
+            character: self
+                .character
+                .as_ref()
+                .map(|character| character.as_ptr())
+                .unwrap_or(ptr::null()),
+            synthesized: self.synthesized,
         }
     }
 }
