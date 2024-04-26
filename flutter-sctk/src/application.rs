@@ -3,16 +3,16 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 use calloop::futures::{Executor, Scheduler};
 use flutter_engine::{
     builder::FlutterEngineBuilder,
-    ffi::FlutterEngineDisplay,
+    ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
     plugins::{Plugin, PluginRegistrar},
     CreateError, FlutterEngine,
 };
-use flutter_plugins::settings::SettingsPlugin;
 use flutter_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
     localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
     platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
 };
+use flutter_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
 use parking_lot::{Mutex, RwLock};
@@ -58,10 +58,11 @@ use wayland_client::{
 
 use crate::{
     handler::{
-        get_flutter_frame_time_nanos, SctkAsyncResult, SctkMouseCursorHandler, SctkPlatformHandler,
-        SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler, SctkVsyncHandler,
-        FRAME_INTERVAL_60_HZ_IN_NANOS,
+        get_flutter_frame_time_nanos, SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler,
+        SctkPlatformHandler, SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler,
+        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
+    keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
@@ -84,12 +85,14 @@ pub struct SctkApplicationState {
     windows: HashMap<ObjectId, SctkFlutterWindow>,
     active_state: HashMap<ObjectId, bool>,
     pointers: HashMap<ObjectId, WlPointer>,
+    keyboards: HashMap<ObjectId, WlKeyboard>,
     startup_synchronizer: ImplicitWindowStartupSynchronizer,
-    #[allow(dead_code)]
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
+    keyboard_handler: Arc<Mutex<SctkKeyboardHandler>>,
     vsync_handler: Arc<Mutex<SctkVsyncHandler>>,
     async_scheduler: Scheduler<SctkAsyncResult>,
+    modifiers: Modifiers,
 }
 
 impl SctkApplication {
@@ -150,11 +153,13 @@ impl SctkApplication {
         )));
         let mouse_cursor_handler = Arc::new(Mutex::new(SctkMouseCursorHandler::new(conn.clone())));
         let text_input_handler = Arc::new(Mutex::new(SctkTextInputHandler::new()));
+        let keyboard_handler = Arc::new(Mutex::new(SctkKeyboardHandler::new()));
 
         let mut plugins = PluginRegistrar::new();
         plugins.add_plugin(&engine, IsolatePlugin::new(noop_isolate_cb));
-        plugins.add_plugin(&engine, KeyEventPlugin::default());
+        plugins.add_plugin(&engine, KeyEventPlugin::new());
         plugins.add_plugin(&engine, TextInputPlugin::new(text_input_handler.clone()));
+        plugins.add_plugin(&engine, KeyboardPlugin::new(keyboard_handler.clone()));
         plugins.add_plugin(&engine, LifecyclePlugin::default());
         plugins.add_plugin(&engine, LocalizationPlugin::default());
         plugins.add_plugin(&engine, NavigationPlugin::default());
@@ -172,6 +177,7 @@ impl SctkApplication {
             loop_signal: event_loop.get_signal(),
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
+            keyboards: HashMap::new(),
             active_state: HashMap::new(),
             compositor_state,
             shm_state,
@@ -182,8 +188,10 @@ impl SctkApplication {
             startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
+            keyboard_handler,
             vsync_handler,
             async_scheduler,
+            modifiers: Modifiers::default(),
         };
 
         Ok(Self { event_loop, state })
@@ -343,6 +351,109 @@ impl SctkApplicationState {
             flutter_engine::ffi::FlutterEngineDisplaysUpdateType::Startup,
             displays,
         );
+    }
+
+    // Warning: The current implementation can trigger an assertion failure in
+    // the framework [0]. This can happen, for example, when a logical key
+    // changes case between the up and down events.
+    //
+    // Sample sequence of events that can trigger the assertion failure:
+    // - `XK_Shift` down
+    // - `XK_A` down (upper-case `A`, due to shift being down)
+    // - `XK_Shift` up
+    // - `XK_a` up (lower-case `a`, due to shift no longer being down)
+    //
+    // TODO: Get confirmation from Flutter team that the assertion is sound and
+    // handle it properly in the embedder (once confirmed).
+    //
+    // [0](https://github.com/flutter/flutter/blob/3.22.1/packages/flutter/lib/src/services/hardware_keyboard.dart#L512-L515)
+    fn send_key_event(&self, event: SctkKeyEvent) {
+        self.engine.send_key_event(event.clone().into());
+
+        // The `flutter/keyevent`'s are considered legacy but they are still
+        // required for now [0][1], so the current implementation is mostly
+        // using them as a "flush" event for `flutter/keydata` messages.
+        //
+        // TODO: Remove `KeyEventPlugin` once it is no longer *required* for
+        // keyboard handling (planned for Q4 2024 [2]).
+        //
+        // [0](https://github.com/flutter/flutter/pull/132533)
+        // [1](https://github.com/flutter/flutter/issues/136419)
+        // [2](https://github.com/flutter/flutter/issues/136419)
+        self.with_plugin(|keyevent: &KeyEventPlugin| {
+            keyevent.key_action(event.into());
+        });
+    }
+
+    fn press_key_or_repeat(&mut self, event: SctkKeyEvent) {
+        self.send_key_event(event.clone());
+
+        let keysym = event.event.keysym;
+        let select = self.modifiers.shift;
+
+        // See OBS project implementation for a list of alternative key names
+        // that map to the same logical key:
+        // https://github.com/obsproject/obs-browser/blob/b4f724/linux-keyboard-helpers.hpp#L352
+        self.with_plugin_mut(|text_input: &mut TextInputPlugin| {
+            match keysym {
+                Keysym::Return | Keysym::KP_Enter | Keysym::ISO_Enter => {
+                    text_input.enter_pressed();
+                }
+                Keysym::Home | Keysym::KP_Home => {
+                    text_input.with_state(|state| state.move_to_beginning(select));
+                    text_input.notify_changes();
+                }
+                Keysym::End | Keysym::KP_End => {
+                    text_input.with_state(|state| state.move_to_end(select));
+                    text_input.notify_changes();
+                }
+                Keysym::BackSpace
+                | Keysym::Delete
+                | Keysym::KP_Delete
+                | Keysym::Left
+                | Keysym::KP_Left
+                | Keysym::Right
+                | Keysym::KP_Right
+                | Keysym::Up
+                | Keysym::KP_Up
+                | Keysym::Down
+                | Keysym::KP_Down => {
+                    // No-op: Already handled inside the framework in
+                    // `RenderEditable`.
+                }
+                Keysym::Escape
+                | Keysym::Shift_L
+                | Keysym::Shift_R
+                | Keysym::Control_L
+                | Keysym::Control_R
+                | Keysym::Alt_L
+                | Keysym::Alt_R
+                | Keysym::ISO_Level3_Shift // AltGr on european keyboards
+                | Keysym::Super_L
+                | Keysym::Super_R
+                | Keysym::Meta_L
+                | Keysym::Meta_R => {
+                    // No-op. A modifier key-down event should *not* be handled
+                    // by the fallback code below. Doing so would have
+                    // unintended side-effects (e.g.: removing/replacing
+                    // selected text).
+                }
+                _ => {
+                    let Some(text) = event.event.utf8 else {
+                        return;
+                    };
+
+                    if text.is_control_character() {
+                        return;
+                    }
+
+                    text_input.with_state(|state| {
+                        state.add_characters(&text);
+                    });
+                    text_input.notify_changes();
+                }
+            }
+        });
     }
 }
 
@@ -509,10 +620,17 @@ impl KeyboardHandler for SctkApplicationState {
         _keyboard: &WlKeyboard,
         _surface: &WlSurface,
         _serial: u32,
-        _raw: &[u32],
-        _keysyms: &[Keysym],
+        raw: &[u32],
+        keysyms: &[Keysym],
     ) {
-        // not implemented
+        let synthesized_events = self
+            .keyboard_handler
+            .lock()
+            .sync_keyboard_enter_state(raw, keysyms);
+
+        for event in synthesized_events {
+            self.send_key_event(event);
+        }
     }
 
     fn leave(
@@ -532,9 +650,22 @@ impl KeyboardHandler for SctkApplicationState {
         _qh: &QueueHandle<Self>,
         _keyboard: &WlKeyboard,
         _serial: u32,
-        _event: KeyEvent,
+        event: KeyEvent,
     ) {
-        // not implemented
+        trace!(
+            "key pressed: {}",
+            event.keysym.name().unwrap_or("[unknown]"),
+        );
+
+        self.keyboard_handler.lock().press_key(event.clone());
+
+        self.press_key_or_repeat(SctkKeyEvent::new(
+            FlutterKeyEventDeviceType::Keyboard,
+            event,
+            FlutterKeyEventType::Down,
+            self.modifiers,
+            false,
+        ));
     }
 
     fn release_key(
@@ -543,9 +674,22 @@ impl KeyboardHandler for SctkApplicationState {
         _qh: &QueueHandle<Self>,
         _keyboard: &WlKeyboard,
         _serial: u32,
-        _event: KeyEvent,
+        event: KeyEvent,
     ) {
-        // not implemented
+        trace!(
+            "key released: {}",
+            event.keysym.name().unwrap_or("[unknown]"),
+        );
+
+        self.keyboard_handler.lock().release_key(&event);
+
+        self.send_key_event(SctkKeyEvent::new(
+            FlutterKeyEventDeviceType::Keyboard,
+            event,
+            FlutterKeyEventType::Up,
+            self.modifiers,
+            false,
+        ));
     }
 
     fn update_modifiers(
@@ -554,10 +698,10 @@ impl KeyboardHandler for SctkApplicationState {
         _qh: &QueueHandle<Self>,
         _keyboard: &WlKeyboard,
         _serial: u32,
-        _modifiers: Modifiers,
+        modifiers: Modifiers,
         _layout: u32,
     ) {
-        // not implemented
+        self.modifiers = modifiers;
     }
 }
 
@@ -609,6 +753,34 @@ impl SeatHandler for SctkApplicationState {
                 .lock()
                 .set_themed_pointer(themed_pointer);
         }
+
+        if capability == Capability::Keyboard {
+            if let Ok(keyboard) = self.seat_state.get_keyboard_with_repeat(
+                qh,
+                &seat,
+                None,
+                self.loop_handle.clone(),
+                Box::new(|state, _keyboard, event| {
+                    trace!(
+                        "key repeated: {}",
+                        event.keysym.name().unwrap_or("[unknown]"),
+                    );
+
+                    state.press_key_or_repeat(SctkKeyEvent::new(
+                        FlutterKeyEventDeviceType::Keyboard,
+                        event,
+                        FlutterKeyEventType::Repeat,
+                        state.modifiers,
+                        false,
+                    ));
+                }),
+            ) {
+                self.keyboards.insert(seat.id(), keyboard);
+            } else {
+                error!("Failed to get keyboard");
+                self.keyboards.remove(&seat.id());
+            }
+        }
     }
 
     fn remove_capability(
@@ -624,6 +796,10 @@ impl SeatHandler for SctkApplicationState {
             self.mouse_cursor_handler
                 .lock()
                 .remove_themed_pointer_for_seat(seat.id());
+        }
+
+        if capability == Capability::Keyboard {
+            self.keyboards.remove(&seat.id());
         }
     }
 }

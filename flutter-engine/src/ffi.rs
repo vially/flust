@@ -211,7 +211,7 @@ impl From<FlutterKeyEventDeviceType> for flutter_engine_sys::FlutterKeyEventDevi
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FlutterPhysicalKey(u64);
 
 impl FlutterPhysicalKey {
@@ -224,7 +224,7 @@ impl FlutterPhysicalKey {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FlutterLogicalKey(u64);
 
 impl FlutterLogicalKey {

@@ -1,10 +1,13 @@
 use std::{
+    collections::HashMap,
     ffi::{c_void, CStr, CString},
+    iter::zip,
     num::NonZeroU32,
     sync::{
         atomic::{AtomicBool, AtomicIsize, Ordering},
         Arc, Mutex, RwLock, Weak,
     },
+    time::Duration,
 };
 
 use ashpd::desktop::settings::{ColorScheme, Settings};
@@ -16,8 +19,9 @@ use flutter_engine::{
     },
     ffi::{
         FlutterBackingStore, FlutterBackingStoreConfig, FlutterBackingStoreDescription,
+        FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey,
         FlutterOpenGLBackingStore, FlutterOpenGLBackingStoreFramebuffer, FlutterOpenGLFramebuffer,
-        FlutterPresentViewInfo,
+        FlutterPhysicalKey, FlutterPresentViewInfo,
     },
     tasks::TaskRunnerHandler,
     FlutterEngineWeakRef, FlutterVsyncHandler,
@@ -29,6 +33,7 @@ use flutter_glutin::{
     gl,
 };
 use flutter_plugins::{
+    keyboard::{KeyboardStateError, KeyboardStateHandler},
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
     settings::{PlatformBrightness, SettingsPlugin},
@@ -38,13 +43,19 @@ use futures_lite::StreamExt;
 use log::{error, trace, warn};
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},
-    seat::pointer::{CursorIcon, PointerData, PointerDataExt, ThemedPointer},
+    seat::{
+        keyboard::{KeyEvent, Keysym, Modifiers},
+        pointer::{CursorIcon, PointerData, PointerDataExt, ThemedPointer},
+    },
 };
 use thiserror::Error;
 use wayland_backend::client::ObjectId;
 use wayland_client::{protocol::wl_surface::WlSurface, Connection, Proxy, QueueHandle};
 
-use crate::application::SctkApplicationState;
+use crate::{
+    application::SctkApplicationState,
+    keyboard::{SctkKeyEvent, SctkLogicalKey, SctkPhysicalKey},
+};
 
 use crate::window::SctkFlutterWindowInner;
 
@@ -611,6 +622,107 @@ impl TextInputHandler for SctkTextInputHandler {
     fn show(&mut self) {}
 
     fn hide(&mut self) {}
+}
+
+#[derive(Default)]
+pub struct SctkKeyboardHandler {
+    pressed_state: HashMap<FlutterPhysicalKey, KeyEvent>,
+}
+
+impl SctkKeyboardHandler {
+    pub(crate) fn new() -> Self {
+        Default::default()
+    }
+
+    pub(crate) fn press_key(&mut self, event: KeyEvent) {
+        let physical = SctkPhysicalKey::new(event.raw_code);
+        self.pressed_state.insert(physical.into(), event);
+    }
+
+    pub(crate) fn release_key(&mut self, event: &KeyEvent) {
+        let physical = SctkPhysicalKey::new(event.raw_code);
+        self.pressed_state.remove(&physical.into());
+    }
+
+    pub(crate) fn sync_keyboard_enter_state(
+        &mut self,
+        raw: &[u32],
+        keysyms: &[Keysym],
+    ) -> Vec<SctkKeyEvent> {
+        let current_time = unsafe { FlutterEngineGetCurrentTime() };
+        let time = Duration::from_nanos(current_time).as_millis() as u32;
+
+        let pressed_keys: Vec<_> = zip(raw, keysyms)
+            .map(|(&raw_code, &keysym)| KeyEvent {
+                raw_code,
+                keysym,
+                utf8: None,
+                time,
+            })
+            .collect();
+
+        // Extraneous events from `pressed_state` need to be synthesized "up"
+        let mut to_be_released: Vec<SctkKeyEvent> = Vec::new();
+        self.pressed_state.retain(|_, event| {
+            let retain = pressed_keys
+                .iter()
+                .any(|pressed_key| pressed_key.raw_code == event.raw_code);
+            if !retain {
+                to_be_released.push(SctkKeyEvent::new(
+                    FlutterKeyEventDeviceType::Keyboard,
+                    event.clone(),
+                    FlutterKeyEventType::Up,
+                    Modifiers::default(), // Unused for synthesized events
+                    true,
+                ));
+            }
+
+            retain
+        });
+
+        // Missing events from `pressed_state` need to be synthesized "down"
+        let to_be_pressed: Vec<_> = pressed_keys
+            .iter()
+            .filter_map(|event| {
+                if self
+                    .pressed_state
+                    .insert(SctkPhysicalKey::new(event.raw_code).into(), event.clone())
+                    .is_some()
+                {
+                    return None;
+                }
+
+                Some(SctkKeyEvent::new(
+                    FlutterKeyEventDeviceType::Keyboard,
+                    event.clone(),
+                    FlutterKeyEventType::Down,
+                    Modifiers::default(), // Unused for synthesized events
+                    true,
+                ))
+            })
+            .collect();
+
+        [to_be_pressed, to_be_released].concat()
+    }
+}
+
+impl KeyboardStateHandler for SctkKeyboardHandler {
+    fn get_keyboard_state(
+        &self,
+    ) -> Result<HashMap<FlutterPhysicalKey, FlutterLogicalKey>, KeyboardStateError> {
+        let state: HashMap<FlutterPhysicalKey, FlutterLogicalKey> = self
+            .pressed_state
+            .iter()
+            .map(|(physical_key, event)| {
+                (
+                    physical_key.clone(),
+                    SctkLogicalKey::new(event.keysym).into(),
+                )
+            })
+            .collect();
+
+        Ok(state)
+    }
 }
 
 pub(crate) fn get_flutter_frame_time_nanos(frame_interval: u64) -> (u64, u64) {
