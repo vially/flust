@@ -48,6 +48,10 @@ pub struct KeyAction {
     #[serde(rename = "scanCode")]
     pub scan_code: i32,
     pub modifiers: i32,
+    #[serde(rename = "specifiedLogicalKey")]
+    pub specified_logical_key: i32,
+    #[serde(rename = "unicodeScalarValues")]
+    pub unicode_scalar_values: i32,
     pub keymap: String,
     #[serde(rename = "type")]
     pub _type: KeyActionType,

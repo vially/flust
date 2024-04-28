@@ -263,6 +263,8 @@ impl FlutterWindow {
                             keyevent.key_action(KeyAction {
                                 toolkit: "glfw".to_string(),
                                 key_code: raw_key as _,
+                                specified_logical_key: 0,
+                                unicode_scalar_values: 0,
                                 // TODO(vially): Fix scan code
                                 scan_code: 0,
                                 modifiers: raw_modifiers as _,
@@ -276,6 +278,8 @@ impl FlutterWindow {
                             keyevent.key_action(KeyAction {
                                 toolkit: "glfw".to_string(),
                                 key_code: raw_key as _,
+                                specified_logical_key: 0,
+                                unicode_scalar_values: 0,
                                 // TODO(vially): Fix scan code
                                 scan_code: 0,
                                 modifiers: raw_modifiers as _,
