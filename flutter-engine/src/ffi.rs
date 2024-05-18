@@ -7,6 +7,13 @@ use std::{
 use dpi::{PhysicalPosition, PhysicalSize};
 use flutter_engine_sys::{FlutterBackingStoreType, FlutterLayerContentType, FlutterSize};
 
+// Warning: The implicit view ID value needs to be kept in sync with the
+// `kFlutterImplicitViewId` constant on the engine side:
+// https://github.com/flutter/engine/blob/9a8a5b6ac7ebb30b4c8d37939f7e397a77067820/shell/platform/embedder/embedder.cc#L107
+pub const IMPLICIT_VIEW_ID: FlutterViewId = 0;
+
+pub type FlutterViewId = i64;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerPhase {
     Cancel,
@@ -554,12 +561,12 @@ impl FlutterOpenGLBackingStoreFramebuffer {
 }
 
 pub struct FlutterPresentViewInfo {
-    pub view_id: i64,
+    pub view_id: FlutterViewId,
     pub layers: Vec<FlutterLayer>,
 }
 
 impl FlutterPresentViewInfo {
-    pub fn new(view_id: i64, layers: Vec<FlutterLayer>) -> Self {
+    pub fn new(view_id: FlutterViewId, layers: Vec<FlutterLayer>) -> Self {
         Self { view_id, layers }
     }
 }

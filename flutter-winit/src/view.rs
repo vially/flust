@@ -1,5 +1,6 @@
 use flutter_engine::{
-    view::{FlutterView, IMPLICIT_VIEW_ID},
+    ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
+    view::FlutterView,
     FlutterEngine,
 };
 use std::error::Error as StdError;
@@ -9,7 +10,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 use crate::{window::FlutterEvent, FlutterWindow};
 
 pub struct FlutterViewWinit {
-    id: u32,
+    id: FlutterViewId,
     window: FlutterWindow,
 }
 
@@ -24,7 +25,7 @@ impl FlutterViewWinit {
         Ok(Self::new(IMPLICIT_VIEW_ID, window))
     }
 
-    pub fn new(id: u32, window: FlutterWindow) -> Self {
+    pub fn new(id: FlutterViewId, window: FlutterWindow) -> Self {
         Self { id, window }
     }
 

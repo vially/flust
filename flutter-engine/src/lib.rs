@@ -19,7 +19,7 @@ use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use ffi::{FlutterKeyEvent, FlutterPointerEvent};
+use ffi::{FlutterKeyEvent, FlutterPointerEvent, FlutterViewId};
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
     FlutterCompositor, FlutterEngineGetCurrentTime, FlutterEngineResult, FlutterTask, VsyncCallback,
@@ -368,7 +368,7 @@ impl FlutterEngine {
         self.inner.view_registry.write().add_view(view);
     }
 
-    pub fn remove_view(&self, view_id: u32) {
+    pub fn remove_view(&self, view_id: FlutterViewId) {
         self.inner.view_registry.write().remove_view(view_id);
     }
 

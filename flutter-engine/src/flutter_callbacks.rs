@@ -1,6 +1,5 @@
-use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo};
+use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICIT_VIEW_ID};
 use crate::tasks::{TaskRunner, TaskRunnerInner};
-use crate::view::IMPLICIT_VIEW_ID;
 use crate::FlutterEngineInner;
 use core::slice;
 use log::trace;
@@ -139,7 +138,7 @@ pub extern "C" fn compositor_present_layers_callback(
             .map(|layer| (*layer).into())
             .collect();
 
-        let info = FlutterPresentViewInfo::new(IMPLICIT_VIEW_ID.into(), layers);
+        let info = FlutterPresentViewInfo::new(IMPLICIT_VIEW_ID, layers);
 
         engine
             .implicit_view_compositor_handler()

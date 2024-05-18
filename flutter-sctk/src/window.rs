@@ -6,8 +6,8 @@ use std::{
 
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flutter_engine::{
-    ffi::FlutterPointerEvent,
-    view::{FlutterView, IMPLICIT_VIEW_ID},
+    ffi::{FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
+    view::FlutterView,
     FlutterEngineWeakRef,
 };
 use flutter_glutin::builder::FlutterEGLContext;
@@ -59,7 +59,7 @@ pub(crate) enum ResizeState {
 }
 
 pub(crate) struct SctkFlutterWindowInner {
-    id: u32,
+    id: FlutterViewId,
     window: Window,
     engine: FlutterEngineWeakRef,
     current_size: RwLock<Option<Size>>,

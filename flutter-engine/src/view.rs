@@ -2,20 +2,21 @@ use std::{collections::HashMap, sync::Arc};
 
 use flutter_engine_api::FlutterOpenGLHandler;
 
-use crate::compositor::FlutterCompositorHandler;
-
-pub const IMPLICIT_VIEW_ID: u32 = 1;
+use crate::{
+    compositor::FlutterCompositorHandler,
+    ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
+};
 
 /// The view capable of acting as a rendering target and input source for the Flutter engine.
 pub struct FlutterView {
-    id: u32,
+    id: FlutterViewId,
     opengl_handler: Arc<dyn FlutterOpenGLHandler>,
     compositor_handler: Option<Arc<dyn FlutterCompositorHandler>>,
 }
 
 impl FlutterView {
     pub fn new_without_compositor(
-        id: u32,
+        id: FlutterViewId,
         opengl_handler: impl FlutterOpenGLHandler + 'static,
     ) -> Self {
         Self {
@@ -26,7 +27,7 @@ impl FlutterView {
     }
 
     pub fn new_with_compositor(
-        id: u32,
+        id: FlutterViewId,
         opengl_handler: impl FlutterOpenGLHandler + 'static,
         compositor_handler: impl FlutterCompositorHandler + 'static,
     ) -> Self {
@@ -40,7 +41,7 @@ impl FlutterView {
 
 #[derive(Default)]
 pub struct ViewRegistry {
-    views: HashMap<u32, FlutterView>,
+    views: HashMap<FlutterViewId, FlutterView>,
 }
 
 impl ViewRegistry {
@@ -48,7 +49,7 @@ impl ViewRegistry {
         self.views.insert(view.id, view);
     }
 
-    pub fn remove_view(&mut self, view_id: u32) {
+    pub fn remove_view(&mut self, view_id: FlutterViewId) {
         self.views.remove(&view_id);
     }
 
