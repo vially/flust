@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 pub trait StringUtils {
+    #[allow(unused)]
     fn substring(&self, start: usize, end: usize) -> &str;
     fn char_count(&self) -> usize;
     fn byte_index_of_char(&self, char_index: usize) -> Option<usize>;
