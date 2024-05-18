@@ -5,7 +5,9 @@ use std::{
 };
 
 use dpi::{PhysicalPosition, PhysicalSize};
-use flutter_engine_sys::{FlutterBackingStoreType, FlutterLayerContentType, FlutterSize};
+use flutter_engine_sys::{
+    FlutterBackingStoreType, FlutterEngineDisplayId, FlutterLayerContentType, FlutterSize,
+};
 
 pub use flutter_engine_sys::FlutterViewId;
 
@@ -694,5 +696,62 @@ impl From<flutter_engine_sys::FlutterRegion> for FlutterRegion {
             unsafe { slice::from_raw_parts(region.rects, region.rects_count).to_vec() };
 
         Self { rects }
+    }
+}
+
+/// The update type parameter that is passed to `FlutterEngineNotifyDisplayUpdate`.
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum FlutterEngineDisplaysUpdateType {
+    /// `FlutterEngineDisplay`s that were active during start-up. A display is
+    /// considered active if:
+    /// 1. The frame buffer hardware is connected.
+    /// 2. The display is drawable, e.g. it isn't being mirrored from another
+    ///    connected display or sleeping.
+    Startup,
+    Count,
+}
+
+impl From<FlutterEngineDisplaysUpdateType> for flutter_engine_sys::FlutterEngineDisplaysUpdateType {
+    fn from(value: FlutterEngineDisplaysUpdateType) -> Self {
+        match value {
+            FlutterEngineDisplaysUpdateType::Startup => flutter_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeStartup,
+            FlutterEngineDisplaysUpdateType::Count => flutter_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeCount,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct FlutterEngineDisplay {
+    pub display_id: FlutterEngineDisplayId,
+
+    /// This is set to true if the embedder only has one display. In cases where
+    /// this is set to true, the value of display_id is ignored. In cases where
+    /// this is not set to true, it is expected that a valid display_id be
+    /// provided.
+    pub single_display: bool,
+
+    /// This represents the refresh period in frames per second. This value may
+    /// be zero if the device is not running or unavailable or unknown.
+    pub refresh_rate: f64,
+
+    /// The size of the display, in physical pixels.
+    pub size: PhysicalSize<usize>,
+
+    /// The pixel ratio of the display, which is used to convert physical pixels
+    /// to logical pixels.
+    pub device_pixel_ratio: f64,
+}
+
+impl From<FlutterEngineDisplay> for flutter_engine_sys::FlutterEngineDisplay {
+    fn from(display: FlutterEngineDisplay) -> Self {
+        Self {
+            struct_size: mem::size_of::<Self>(),
+            display_id: display.display_id,
+            single_display: display.single_display,
+            refresh_rate: display.refresh_rate,
+            width: display.size.width,
+            height: display.size.height,
+            device_pixel_ratio: display.device_pixel_ratio,
+        }
     }
 }

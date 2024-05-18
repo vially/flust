@@ -310,6 +310,7 @@ impl SctkFlutterWindow {
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 new_scale_factor as f64,
+                0,
             );
         }
     }
@@ -362,6 +363,7 @@ impl SctkFlutterWindow {
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 scale_factor,
+                0,
             );
         }
     }

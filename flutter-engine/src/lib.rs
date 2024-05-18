@@ -19,10 +19,14 @@ use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use ffi::{FlutterKeyEvent, FlutterPointerEvent, FlutterViewId};
+use ffi::{
+    FlutterEngineDisplay, FlutterEngineDisplaysUpdateType, FlutterKeyEvent, FlutterPointerEvent,
+    FlutterViewId,
+};
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
-    FlutterCompositor, FlutterEngineGetCurrentTime, FlutterEngineResult, FlutterTask, VsyncCallback,
+    FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterEngineResult,
+    FlutterTask, VsyncCallback,
 };
 use log::trace;
 use parking_lot::{Mutex, RwLock};
@@ -439,6 +443,7 @@ impl FlutterEngine {
         width: usize,
         height: usize,
         pixel_ratio: f64,
+        display_id: FlutterEngineDisplayId,
     ) {
         trace!("send_window_metrics_event");
         if !self.is_platform_thread() {
@@ -456,7 +461,7 @@ impl FlutterEngine {
             physical_view_inset_right: 0.0,
             physical_view_inset_bottom: 0.0,
             physical_view_inset_left: 0.0,
-            display_id: 0,
+            display_id,
             view_id,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
@@ -488,6 +493,29 @@ impl FlutterEngine {
                 &event.as_ptr(),
                 None,
                 ptr::null_mut(),
+            );
+        }
+    }
+
+    pub fn notify_display_update(
+        &self,
+        update_type: FlutterEngineDisplaysUpdateType,
+        displays: Vec<FlutterEngineDisplay>,
+    ) {
+        trace!("notify_display_update");
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        let displays: Vec<flutter_engine_sys::FlutterEngineDisplay> =
+            displays.iter().map(|display| (*display).into()).collect();
+
+        unsafe {
+            flutter_engine_sys::FlutterEngineNotifyDisplayUpdate(
+                self.engine_ptr(),
+                update_type.into(),
+                displays.as_ptr(),
+                displays.len(),
             );
         }
     }

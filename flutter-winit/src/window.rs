@@ -8,6 +8,7 @@ use flutter_engine::ffi::FlutterViewId;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
+use flutter_engine_sys::FlutterEngineDisplayId;
 use flutter_glutin::context::{Context, ResourceContext};
 use flutter_glutin::handler::GlutinOpenGLHandler;
 use flutter_plugins::isolate::IsolatePlugin;
@@ -180,9 +181,11 @@ impl FlutterWindow {
                     .event_loop
                     .send_event(FlutterEvent::WindowCloseRequested(self.window_id()));
             }
-            WindowEvent::Resized(_) => resize(self.view_id, &engine, &self.context, &self.window),
+            WindowEvent::Resized(_) => {
+                resize(self.view_id, &engine, &self.context, &self.window, 0)
+            }
             WindowEvent::ScaleFactorChanged { .. } => {
-                resize(self.view_id, &engine, &self.context, &self.window)
+                resize(self.view_id, &engine, &self.context, &self.window, 0)
             }
             WindowEvent::CursorEntered { device_id } => pointers.enter(self.view_id, device_id),
             WindowEvent::CursorLeft { device_id } => pointers.leave(self.view_id, device_id),
@@ -310,6 +313,7 @@ pub(crate) fn resize(
     engine: &FlutterEngine,
     context: &Arc<std::sync::Mutex<Context>>,
     window: &Arc<Mutex<Window>>,
+    display_id: FlutterEngineDisplayId,
 ) {
     let (dpi, size) = {
         let window = window.lock();
@@ -326,5 +330,11 @@ pub(crate) fn resize(
         NonZeroU32::new(size.height).expect("Resize height needs to be higher than 0"),
     );
     context.lock().unwrap().resize(context_size);
-    engine.send_window_metrics_event(view_id, size.width as usize, size.height as usize, dpi);
+    engine.send_window_metrics_event(
+        view_id,
+        size.width as usize,
+        size.height as usize,
+        dpi,
+        display_id,
+    );
 }
