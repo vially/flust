@@ -1,4 +1,4 @@
-use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo};
+use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICIT_VIEW_ID};
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
@@ -98,7 +98,7 @@ pub extern "C" fn compositor_backing_store_create_callback(
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         if let Ok(backing_store) = engine
-            .implicit_view_compositor_handler()
+            .compositor_handler_for_view(IMPLICIT_VIEW_ID)
             .unwrap()
             .create_backing_store((*config).into())
         {
@@ -117,7 +117,7 @@ pub extern "C" fn compositor_backing_store_collect_callback(
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         engine
-            .implicit_view_compositor_handler()
+            .compositor_handler_for_view(IMPLICIT_VIEW_ID)
             .unwrap()
             .collect_backing_store((*backing_store).into())
             .is_ok()
@@ -140,7 +140,7 @@ pub extern "C" fn compositor_present_view_callback(
         let info = FlutterPresentViewInfo::new(info.view_id, layers);
 
         engine
-            .implicit_view_compositor_handler()
+            .compositor_handler_for_view(info.view_id)
             .unwrap()
             .present_view(info)
             .is_ok()

@@ -63,9 +63,12 @@ impl ViewRegistry {
             .map(|view| view.opengl_handler.clone())
     }
 
-    pub fn implicit_view_compositor_handler(&self) -> Option<Arc<dyn FlutterCompositorHandler>> {
+    pub fn compositor_handler_for_view(
+        &self,
+        view_id: FlutterViewId,
+    ) -> Option<Arc<dyn FlutterCompositorHandler>> {
         self.views
-            .get(&IMPLICIT_VIEW_ID)
+            .get(&view_id)
             .and_then(|view| view.compositor_handler.as_ref().cloned())
     }
 }

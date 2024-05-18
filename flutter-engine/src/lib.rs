@@ -61,8 +61,13 @@ impl FlutterEngineInner {
         self.view_registry.read().implicit_view_opengl_handler()
     }
 
-    fn implicit_view_compositor_handler(&self) -> Option<Arc<dyn FlutterCompositorHandler>> {
-        self.view_registry.read().implicit_view_compositor_handler()
+    fn compositor_handler_for_view(
+        &self,
+        view_id: FlutterViewId,
+    ) -> Option<Arc<dyn FlutterCompositorHandler>> {
+        self.view_registry
+            .read()
+            .compositor_handler_for_view(view_id)
     }
 }
 
