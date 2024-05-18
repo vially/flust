@@ -20,9 +20,10 @@ impl FlutterViewWinit {
         engine: FlutterEngine,
         builder: WindowBuilder,
     ) -> Result<Self, WinitControllerError> {
-        let window = FlutterWindow::new(event_loop, engine, builder)?;
+        let view_id = IMPLICIT_VIEW_ID;
+        let window = FlutterWindow::new(view_id, event_loop, engine, builder)?;
 
-        Ok(Self::new(IMPLICIT_VIEW_ID, window))
+        Ok(Self::new(view_id, window))
     }
 
     pub fn new(id: FlutterViewId, window: FlutterWindow) -> Self {

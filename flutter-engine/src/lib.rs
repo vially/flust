@@ -226,9 +226,8 @@ impl FlutterEngine {
                 collect_backing_store_callback: Some(
                     flutter_callbacks::compositor_backing_store_collect_callback,
                 ),
-                present_layers_callback: Some(
-                    flutter_callbacks::compositor_present_layers_callback,
-                ),
+                present_layers_callback: None,
+                present_view_callback: Some(flutter_callbacks::compositor_present_view_callback),
                 avoid_backing_store_cache: false,
             } as *const FlutterCompositor,
         };
@@ -429,7 +428,13 @@ impl FlutterEngine {
         }
     }
 
-    pub fn send_window_metrics_event(&self, width: usize, height: usize, pixel_ratio: f64) {
+    pub fn send_window_metrics_event(
+        &self,
+        view_id: FlutterViewId,
+        width: usize,
+        height: usize,
+        pixel_ratio: f64,
+    ) {
         trace!("send_window_metrics_event");
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
@@ -447,6 +452,7 @@ impl FlutterEngine {
             physical_view_inset_bottom: 0.0,
             physical_view_inset_left: 0.0,
             display_id: 0,
+            view_id,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
         };

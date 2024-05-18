@@ -7,12 +7,12 @@ use std::{
 use dpi::{PhysicalPosition, PhysicalSize};
 use flutter_engine_sys::{FlutterBackingStoreType, FlutterLayerContentType, FlutterSize};
 
+pub use flutter_engine_sys::FlutterViewId;
+
 // Warning: The implicit view ID value needs to be kept in sync with the
 // `kFlutterImplicitViewId` constant on the engine side:
 // https://github.com/flutter/engine/blob/9a8a5b6ac7ebb30b4c8d37939f7e397a77067820/shell/platform/embedder/embedder.cc#L107
 pub const IMPLICIT_VIEW_ID: FlutterViewId = 0;
-
-pub type FlutterViewId = i64;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerPhase {
@@ -105,9 +105,11 @@ pub struct FlutterPointerEvent {
     scroll_delta_y: f64,
     device_kind: FlutterPointerDeviceKind,
     buttons: FlutterPointerMouseButtons,
+    view_id: FlutterViewId,
 }
 
 impl FlutterPointerEvent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: i32,
         phase: FlutterPointerPhase,
@@ -116,6 +118,7 @@ impl FlutterPointerEvent {
         (scroll_delta_x, scroll_delta_y): (f64, f64),
         device_kind: FlutterPointerDeviceKind,
         buttons: FlutterPointerMouseButtons,
+        view_id: FlutterViewId,
     ) -> Self {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
@@ -130,6 +133,7 @@ impl FlutterPointerEvent {
             scroll_delta_y,
             device_kind,
             buttons,
+            view_id,
         }
     }
 }
@@ -152,6 +156,7 @@ impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
             pan_y: 0.0,
             scale: 1.0,
             rotation: 0.0,
+            view_id: event.view_id,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
@@ -179,6 +184,27 @@ impl From<FlutterKeyEventType> for flutter_engine_sys::FlutterKeyEventType {
             FlutterKeyEventType::Repeat => {
                 flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeRepeat
             }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum FlutterKeyEventDeviceType {
+    Keyboard,
+    DirectionalPad,
+    Gamepad,
+    Joystick,
+    Hdmi,
+}
+
+impl From<FlutterKeyEventDeviceType> for flutter_engine_sys::FlutterKeyEventDeviceType {
+    fn from(value: FlutterKeyEventDeviceType) -> Self {
+        match value {
+            FlutterKeyEventDeviceType::Keyboard => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeKeyboard,
+            FlutterKeyEventDeviceType::DirectionalPad => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeDirectionalPad,
+            FlutterKeyEventDeviceType::Gamepad => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeGamepad,
+            FlutterKeyEventDeviceType::Joystick => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeJoystick,
+            FlutterKeyEventDeviceType::Hdmi => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeHdmi,
         }
     }
 }
@@ -275,6 +301,9 @@ pub struct FlutterKeyEvent {
     /// An event being synthesized means that the `timestamp` might greatly
     /// deviate from the actual time when the event occurs physically.
     synthesized: bool,
+
+    /// The source device for the key event.
+    device_type: FlutterKeyEventDeviceType,
 }
 
 impl FlutterKeyEvent {
@@ -285,6 +314,7 @@ impl FlutterKeyEvent {
         logical: FlutterLogicalKey,
         character: Option<CString>,
         synthesized: bool,
+        device_type: FlutterKeyEventDeviceType,
     ) -> Self {
         Self {
             timestamp,
@@ -293,6 +323,7 @@ impl FlutterKeyEvent {
             logical,
             character,
             synthesized,
+            device_type,
         }
     }
 
@@ -311,6 +342,7 @@ impl FlutterKeyEvent {
                 .map(|character| character.as_ptr())
                 .unwrap_or(ptr::null()),
             synthesized: self.synthesized,
+            device_type: self.device_type.into(),
         }
     }
 }

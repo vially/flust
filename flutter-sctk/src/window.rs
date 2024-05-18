@@ -306,6 +306,7 @@ impl SctkFlutterWindow {
 
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
+                self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 new_scale_factor as f64,
@@ -357,6 +358,7 @@ impl SctkFlutterWindow {
 
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
+                self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 scale_factor,
@@ -383,7 +385,7 @@ impl SctkFlutterWindow {
             }
 
             let scale_factor = self.inner.load_current_scale_factor();
-            SctkPointerEvent::new(event.clone(), *pointer, scale_factor)
+            SctkPointerEvent::new(self.inner.id, event.clone(), *pointer, scale_factor)
         };
 
         let Ok(event) = FlutterPointerEvent::try_from(sctk_pointer_event) else {

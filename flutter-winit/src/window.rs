@@ -4,6 +4,7 @@ use crate::keyboard::raw_key;
 use crate::pointer::Pointers;
 use dpi::PhysicalSize;
 use flutter_engine::channel::Channel;
+use flutter_engine::ffi::FlutterViewId;
 use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::{FlutterEngine, FlutterEngineWeakRef};
@@ -37,6 +38,7 @@ pub enum FlutterEvent {
 }
 
 pub struct FlutterWindow {
+    view_id: FlutterViewId,
     event_loop: EventLoopProxy<FlutterEvent>,
     window: Arc<Mutex<Window>>,
     context: Arc<std::sync::Mutex<Context>>,
@@ -48,6 +50,7 @@ pub struct FlutterWindow {
 
 impl FlutterWindow {
     pub fn new(
+        view_id: FlutterViewId,
         event_loop: &EventLoop<FlutterEvent>,
         engine: FlutterEngine,
         window: WindowBuilder,
@@ -82,6 +85,7 @@ impl FlutterWindow {
         plugins.add_plugin(&engine, WindowPlugin::new(window_handler));
 
         Ok(Self {
+            view_id,
             event_loop: event_loop.create_proxy(),
             window,
             context,
@@ -98,6 +102,10 @@ impl FlutterWindow {
 
     pub fn context(&self) -> Arc<std::sync::Mutex<Context>> {
         self.context.clone()
+    }
+
+    pub fn view_id(&self) -> FlutterViewId {
+        self.view_id
     }
 
     pub fn window(&self) -> Arc<Mutex<Window>> {
@@ -172,16 +180,18 @@ impl FlutterWindow {
                     .event_loop
                     .send_event(FlutterEvent::WindowCloseRequested(self.window_id()));
             }
-            WindowEvent::Resized(_) => resize(&engine, &self.context, &self.window),
-            WindowEvent::ScaleFactorChanged { .. } => resize(&engine, &self.context, &self.window),
-            WindowEvent::CursorEntered { device_id } => pointers.enter(device_id),
-            WindowEvent::CursorLeft { device_id } => pointers.leave(device_id),
+            WindowEvent::Resized(_) => resize(self.view_id, &engine, &self.context, &self.window),
+            WindowEvent::ScaleFactorChanged { .. } => {
+                resize(self.view_id, &engine, &self.context, &self.window)
+            }
+            WindowEvent::CursorEntered { device_id } => pointers.enter(self.view_id, device_id),
+            WindowEvent::CursorLeft { device_id } => pointers.leave(self.view_id, device_id),
             WindowEvent::CursorMoved {
                 device_id,
                 position,
                 ..
             } => {
-                pointers.moved(device_id, position.into());
+                pointers.moved(self.view_id, device_id, position.into());
             }
             WindowEvent::MouseInput {
                 device_id,
@@ -189,7 +199,7 @@ impl FlutterWindow {
                 button,
                 ..
             } => {
-                pointers.input(device_id, state, button);
+                pointers.input(self.view_id, device_id, state, button);
             }
             WindowEvent::MouseWheel {
                 device_id, delta, ..
@@ -201,7 +211,7 @@ impl FlutterWindow {
                         (-dx, dy)
                     }
                 };
-                pointers.wheel(device_id, delta);
+                pointers.wheel(self.view_id, device_id, delta);
             }
             WindowEvent::Touch(Touch {
                 device_id,
@@ -209,7 +219,7 @@ impl FlutterWindow {
                 location,
                 ..
             }) => {
-                pointers.touch(device_id, phase, location.into());
+                pointers.touch(self.view_id, device_id, phase, location.into());
             }
             WindowEvent::KeyboardInput {
                 event: KeyEvent {
@@ -296,6 +306,7 @@ impl FlutterWindow {
 }
 
 pub(crate) fn resize(
+    view_id: FlutterViewId,
     engine: &FlutterEngine,
     context: &Arc<std::sync::Mutex<Context>>,
     window: &Arc<Mutex<Window>>,
@@ -315,5 +326,5 @@ pub(crate) fn resize(
         NonZeroU32::new(size.height).expect("Resize height needs to be higher than 0"),
     );
     context.lock().unwrap().resize(context_size);
-    engine.send_window_metrics_event(size.width as usize, size.height as usize, dpi);
+    engine.send_window_metrics_event(view_id, size.width as usize, size.height as usize, dpi);
 }

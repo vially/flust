@@ -1,11 +1,11 @@
 use std::time::SystemTimeError;
 
 use dpi::LogicalPosition;
-use flutter_engine::ffi::FlutterPointerEvent;
 use flutter_engine::ffi::{
     FlutterPointerDeviceKind, FlutterPointerMouseButtons, FlutterPointerPhase,
     FlutterPointerSignalKind,
 };
+use flutter_engine::ffi::{FlutterPointerEvent, FlutterViewId};
 use smithay_client_toolkit::seat::pointer::{
     PointerEvent, PointerEventKind, BTN_BACK, BTN_EXTRA, BTN_FORWARD, BTN_LEFT, BTN_RIGHT, BTN_SIDE,
 };
@@ -41,11 +41,16 @@ pub enum PointerConversionError {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SctkPointerEvent(PointerEvent, Pointer, f64);
+pub(crate) struct SctkPointerEvent(FlutterViewId, PointerEvent, Pointer, f64);
 
 impl SctkPointerEvent {
-    pub(crate) fn new(event: PointerEvent, pointer: Pointer, scale_factor: f64) -> Self {
-        Self(event, pointer, scale_factor)
+    pub(crate) fn new(
+        view_id: FlutterViewId,
+        event: PointerEvent,
+        pointer: Pointer,
+        scale_factor: f64,
+    ) -> Self {
+        Self(view_id, event, pointer, scale_factor)
     }
 }
 
@@ -53,7 +58,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
     type Error = PointerConversionError;
 
     fn try_from(
-        SctkPointerEvent(event, pointer, scale_factor): SctkPointerEvent,
+        SctkPointerEvent(view_id, event, pointer, scale_factor): SctkPointerEvent,
     ) -> Result<Self, Self::Error> {
         use PointerEventKind::*;
 
@@ -71,6 +76,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 (0.0, 0.0),
                 FlutterPointerDeviceKind::Mouse,
                 FlutterPointerMouseButtons::None,
+                view_id,
             )),
             Leave { .. } => Ok(FlutterPointerEvent::new(
                 pointer.device,
@@ -80,6 +86,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 (0.0, 0.0),
                 FlutterPointerDeviceKind::Mouse,
                 FlutterPointerMouseButtons::None,
+                view_id,
             )),
             Motion { .. } => Ok(FlutterPointerEvent::new(
                 pointer.device,
@@ -93,6 +100,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 (0.0, 0.0),
                 FlutterPointerDeviceKind::Mouse,
                 FlutterPointerMouseButtons::None,
+                view_id,
             )),
             Press { button, .. } => Ok(FlutterPointerEvent::new(
                 pointer.device,
@@ -102,6 +110,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 (0.0, 0.0),
                 FlutterPointerDeviceKind::Mouse,
                 pointer_mouse_buttons_from_wayland(button),
+                view_id,
             )),
             Release { button, .. } => Ok(FlutterPointerEvent::new(
                 pointer.device,
@@ -111,6 +120,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 (0.0, 0.0),
                 FlutterPointerDeviceKind::Mouse,
                 pointer_mouse_buttons_from_wayland(button),
+                view_id,
             )),
             Axis {
                 horizontal,
@@ -129,6 +139,7 @@ impl TryFrom<SctkPointerEvent> for FlutterPointerEvent {
                 FlutterPointerDeviceKind::Mouse,
                 // TODO: Are these values correct?
                 FlutterPointerMouseButtons::None,
+                view_id,
             )),
         }
     }

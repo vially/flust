@@ -1,4 +1,4 @@
-use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICIT_VIEW_ID};
+use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo};
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
@@ -124,21 +124,20 @@ pub extern "C" fn compositor_backing_store_collect_callback(
     }
 }
 
-pub extern "C" fn compositor_present_layers_callback(
-    layers: *mut *const flutter_engine_sys::FlutterLayer,
-    layers_count: usize,
-    user_data: *mut c_void,
+pub extern "C" fn compositor_present_view_callback(
+    info: *const flutter_engine_sys::FlutterPresentViewInfo,
 ) -> bool {
-    trace!("compositor_present_layers_callback");
+    trace!("compositor_present_view_callback");
     unsafe {
-        let engine = &*(user_data as *const FlutterEngineInner);
+        let info = *info;
+        let engine = &*(info.user_data as *const FlutterEngineInner);
 
-        let layers: Vec<FlutterLayer> = slice::from_raw_parts(*layers, layers_count)
+        let layers: Vec<FlutterLayer> = slice::from_raw_parts(*info.layers, info.layers_count)
             .iter()
             .map(|layer| (*layer).into())
             .collect();
 
-        let info = FlutterPresentViewInfo::new(IMPLICIT_VIEW_ID, layers);
+        let info = FlutterPresentViewInfo::new(info.view_id, layers);
 
         engine
             .implicit_view_compositor_handler()
