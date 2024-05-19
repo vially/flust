@@ -10,11 +10,12 @@ use flutter_engine::{
     view::FlutterView,
     FlutterEngineWeakRef,
 };
+use flutter_engine_sys::FlutterEngineDisplayId;
 use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
 use smithay_client_toolkit::{
-    compositor::CompositorState,
+    compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
     seat::pointer::{PointerEvent, PointerEventKind},
     shell::{
@@ -193,6 +194,16 @@ impl SctkFlutterWindowInner {
             ResizeState::Done => {}
         }
     }
+
+    /// A surface can be present on multiple outputs, but currently Flutter only
+    /// supports passing a single `display_id` as part of the window metrics
+    /// event. Therefore, the current implementation just picks the id of the
+    /// first output.
+    fn get_display_id(&self) -> Option<FlutterEngineDisplayId> {
+        let data = self.window.wl_surface().data::<SurfaceData>()?;
+        let display_id = data.outputs().next()?.id().protocol_id();
+        Some(display_id.into())
+    }
 }
 
 pub struct SctkFlutterWindow {
@@ -304,13 +315,15 @@ impl SctkFlutterWindow {
         self.inner.opengl_handler.resize(physical_size);
         surface.set_buffer_scale(new_scale_factor);
 
+        let display_id = self.inner.get_display_id().unwrap_or_default();
+
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
                 self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 new_scale_factor as f64,
-                0,
+                display_id,
             );
         }
     }
@@ -357,13 +370,15 @@ impl SctkFlutterWindow {
         // [0]: https://github.com/flutter/engine/blob/605b3f3/shell/platform/windows/flutter_windows_view.cc#L701-L711
         self.inner.opengl_handler.resize(physical_size);
 
+        let display_id = self.inner.get_display_id().unwrap_or_default();
+
         if let Some(engine) = self.inner.engine.upgrade() {
             engine.send_window_metrics_event(
                 self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),
                 usize::try_from(physical_size.height.get()).unwrap(),
                 scale_factor,
-                0,
+                display_id,
             );
         }
     }

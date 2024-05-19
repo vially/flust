@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use flutter_engine::{
-    builder::FlutterEngineBuilder, plugins::PluginRegistrar, CreateError, FlutterEngine,
+    builder::FlutterEngineBuilder, ffi::FlutterEngineDisplay, plugins::PluginRegistrar,
+    CreateError, FlutterEngine,
 };
 use flutter_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
@@ -58,6 +59,7 @@ use crate::{
         SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
         FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
+    output::SctkOutput,
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
 
@@ -222,6 +224,8 @@ impl SctkApplicationState {
     fn maybe_send_startup_pending_configure(&mut self) {
         self.startup_synchronizer.is_engine_running = true;
 
+        self.notify_display_update();
+
         let Some((configure, serial)) = self.startup_synchronizer.pending_configure.take() else {
             return;
         };
@@ -258,6 +262,30 @@ impl SctkApplicationState {
         }
 
         Some(1_000_000_000_000 / refresh_rate)
+    }
+
+    fn notify_display_update(&self) {
+        // Ignore display update events if the engine is not running. This
+        // method will be called again once the engine is running to ensure the
+        // display state is up-to-date on the engine side.
+        if !self.startup_synchronizer.is_engine_running {
+            return;
+        }
+
+        let output_state = &self.output_state;
+        let displays: Vec<FlutterEngineDisplay> = output_state
+            .outputs()
+            .map(|output| {
+                SctkOutput::new(output.id().protocol_id().into(), output_state.info(&output)).into()
+            })
+            .collect();
+
+        trace!("notifying engine of display update: {:?}", displays);
+
+        self.engine.notify_display_update(
+            flutter_engine::ffi::FlutterEngineDisplaysUpdateType::Startup,
+            displays,
+        );
     }
 }
 
@@ -508,16 +536,22 @@ impl OutputHandler for SctkApplicationState {
         &mut self.output_state
     }
 
-    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
-        // not needed for current implementation
+    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, output: WlOutput) {
+        trace!("[{}] new output", output.id());
+
+        self.notify_display_update();
     }
 
-    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
-        // not needed for current implementation
+    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, output: WlOutput) {
+        trace!("[{}] update output", output.id());
+
+        self.notify_display_update();
     }
 
-    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: WlOutput) {
-        // not needed for current implementation
+    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, output: WlOutput) {
+        trace!("[{}] output destroyed", output.id());
+
+        self.notify_display_update();
     }
 }
 
@@ -604,7 +638,7 @@ fn insert_timer_source<Data>(handle: &LoopHandle<'static, Data>, timer: Option<T
 }
 
 // Trying to send a `WindowMetricsEvent` before the engine is running results in
-// a `Vieport metrics were invalid` [embedder error][0]. This could happen when
+// a `Viewport metrics were invalid` [embedder error][0]. This could happen when
 // the first `window.configure` event arrives before the engine is fully
 // running.
 //
