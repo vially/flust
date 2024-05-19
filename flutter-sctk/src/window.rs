@@ -383,6 +383,27 @@ impl SctkFlutterWindow {
         }
     }
 
+    pub(crate) fn surface_outputs_changed(&mut self, _conn: &Connection, _surface: &WlSurface) {
+        let scale_factor = self.inner.load_current_scale_factor();
+
+        let Some(physical_size) = self.inner.non_zero_physical_size() else {
+            error!("Invalid physical size while handling `surface_outputs_changed` event");
+            return;
+        };
+
+        let display_id = self.inner.get_display_id().unwrap_or_default();
+
+        if let Some(engine) = self.inner.engine.upgrade() {
+            engine.send_window_metrics_event(
+                self.inner.id,
+                usize::try_from(physical_size.width.get()).unwrap(),
+                usize::try_from(physical_size.height.get()).unwrap(),
+                scale_factor,
+                display_id,
+            );
+        }
+    }
+
     pub(crate) fn pointer_event(
         &mut self,
         _conn: &Connection,

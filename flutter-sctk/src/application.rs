@@ -374,6 +374,46 @@ impl CompositorHandler for SctkApplicationState {
         self.engine
             .on_vsync(baton, frame_start_time_nanos, frame_target_time_nanos);
     }
+
+    fn surface_enter(
+        &mut self,
+        conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        surface: &wayland_client::protocol::wl_surface::WlSurface,
+        output: &wayland_client::protocol::wl_output::WlOutput,
+    ) {
+        trace!("[{}] entered {}", surface.id(), output.id());
+
+        let Some(window) = self.find_window_by_surface_id_mut(surface.id()) else {
+            warn!(
+                "[{}] ignoring `surface_enter` event for unknown flutter window",
+                surface.id()
+            );
+            return;
+        };
+
+        window.surface_outputs_changed(conn, surface);
+    }
+
+    fn surface_leave(
+        &mut self,
+        conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        surface: &wayland_client::protocol::wl_surface::WlSurface,
+        output: &wayland_client::protocol::wl_output::WlOutput,
+    ) {
+        trace!("[{}] left {}", surface.id(), output.id());
+
+        let Some(window) = self.find_window_by_surface_id_mut(surface.id()) else {
+            warn!(
+                "[{}] ignoring `surface_leave` event for unknown flutter window",
+                surface.id()
+            );
+            return;
+        };
+
+        window.surface_outputs_changed(conn, surface);
+    }
 }
 
 impl ShmHandler for SctkApplicationState {

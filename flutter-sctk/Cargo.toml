@@ -15,7 +15,7 @@ glutin = "0.31.3"
 log = "0.4.20"
 parking_lot = "0.12.1"
 raw-window-handle = "0.5.2"
-smithay-client-toolkit = { git = "https://github.com/Smithay/client-toolkit.git" }
+smithay-client-toolkit = { git = "https://github.com/vially/client-toolkit.git", branch = "develop" }
 thiserror = "1.0.50"
 wayland-backend = { version = "0.3.2", features = ["client_system"] }
 wayland-client = "0.31.1"
