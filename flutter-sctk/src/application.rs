@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
+use calloop::futures::{Executor, Scheduler};
 use flutter_engine::{
     builder::FlutterEngineBuilder, ffi::FlutterEngineDisplay, plugins::PluginRegistrar,
     CreateError, FlutterEngine,
@@ -55,7 +56,7 @@ use wayland_client::{
 
 use crate::{
     handler::{
-        get_flutter_frame_time_nanos, SctkMouseCursorHandler, SctkPlatformHandler,
+        get_flutter_frame_time_nanos, SctkAsyncResult, SctkMouseCursorHandler, SctkPlatformHandler,
         SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
         FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
@@ -85,6 +86,8 @@ pub struct SctkApplicationState {
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
     vsync_handler: Arc<Mutex<SctkVsyncHandler>>,
+    #[allow(dead_code)]
+    async_scheduler: Scheduler<SctkAsyncResult>,
 }
 
 impl SctkApplication {
@@ -95,6 +98,15 @@ impl SctkApplication {
 
         let event_loop: EventLoop<SctkApplicationState> = EventLoop::try_new()?;
         WaylandSource::new(conn.clone(), event_queue).insert(event_loop.handle())?;
+
+        let (async_executor, async_scheduler) = calloop::futures::executor::<SctkAsyncResult>()?;
+        event_loop.handle().insert_source(
+            async_executor,
+            |event, _metadata, _state| match event {
+                Ok(_) => {} // no-op
+                Err(err) => error!("sctk async error: {:?}", err),
+            },
+        )?;
 
         let registry_state = RegistryState::new(&globals);
         let output_state = OutputState::new(&globals, &qh);
@@ -168,6 +180,7 @@ impl SctkApplication {
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
             vsync_handler,
+            async_scheduler,
         };
 
         Ok(Self { event_loop, state })
@@ -640,7 +653,12 @@ pub enum SctkApplicationCreateError {
     CalloopError(#[from] calloop::Error),
 
     #[error(transparent)]
-    CalloopInsertError(#[from] calloop::InsertError<WaylandSource<SctkApplicationState>>),
+    CalloopInsertWaylandSourceError(
+        #[from] calloop::InsertError<WaylandSource<SctkApplicationState>>,
+    ),
+
+    #[error(transparent)]
+    CalloopInsertAsyncExecutorError(#[from] calloop::InsertError<Executor<SctkAsyncResult>>),
 
     #[error(transparent)]
     ConnectError(#[from] ConnectError),

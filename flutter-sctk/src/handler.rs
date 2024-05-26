@@ -37,6 +37,7 @@ use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},
     seat::pointer::{CursorIcon, PointerData, PointerDataExt, ThemedPointer},
 };
+use thiserror::Error;
 use wayland_backend::client::ObjectId;
 use wayland_client::{protocol::wl_surface::WlSurface, Connection, Proxy, QueueHandle};
 
@@ -616,3 +617,8 @@ pub(crate) fn get_flutter_frame_time_nanos(frame_interval: u64) -> (u64, u64) {
 
     (frame_start_time_nanos, frame_target_time_nanos)
 }
+
+pub type SctkAsyncResult = Result<(), SctkAsyncError>;
+
+#[derive(Error, Debug)]
+pub enum SctkAsyncError {}

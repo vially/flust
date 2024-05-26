@@ -448,6 +448,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b99da2f8558ca23c71f4fd15dc57c906239752dd27ff3c00a1d56b685b7cbfec"
 dependencies = [
+ "async-task",
  "bitflags 2.5.0",
  "log",
  "polling 3.7.0",
@@ -942,6 +943,7 @@ dependencies = [
 name = "flutter-sctk"
 version = "0.1.0"
 dependencies = [
+ "calloop 0.13.0",
  "dpi",
  "flutter-engine",
  "flutter-engine-api",

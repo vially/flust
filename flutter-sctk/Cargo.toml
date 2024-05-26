@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+calloop = { version = "0.13.0", features = ["executor"] }
 dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }
 flutter-engine-api = { path = "../flutter-engine-api" }
