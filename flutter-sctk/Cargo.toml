@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ashpd = "0.8.1"
 calloop = { version = "0.13.0", features = ["executor"] }
 dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }
@@ -12,6 +13,7 @@ flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-glutin = { path = "../flutter-glutin" }
 flutter-plugins = { path = "../flutter-plugins" }
 flutter-runner-api = { path = "../flutter-runner-api" }
+futures-lite = "2.3.0"
 glutin = "0.31.3"
 log = "0.4.20"
 parking_lot = "0.12.1"

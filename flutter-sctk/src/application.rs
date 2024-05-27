@@ -2,14 +2,16 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use calloop::futures::{Executor, Scheduler};
 use flutter_engine::{
-    builder::FlutterEngineBuilder, ffi::FlutterEngineDisplay, plugins::PluginRegistrar,
+    builder::FlutterEngineBuilder,
+    ffi::FlutterEngineDisplay,
+    plugins::{Plugin, PluginRegistrar},
     CreateError, FlutterEngine,
 };
+use flutter_plugins::settings::SettingsPlugin;
 use flutter_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
     localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
-    platform::PlatformPlugin, settings::SettingsPlugin, system::SystemPlugin,
-    textinput::TextInputPlugin,
+    platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
 };
 use flutter_runner_api::ApplicationAttributes;
 use log::{error, trace, warn};
@@ -57,7 +59,7 @@ use wayland_client::{
 use crate::{
     handler::{
         get_flutter_frame_time_nanos, SctkAsyncResult, SctkMouseCursorHandler, SctkPlatformHandler,
-        SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
+        SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler, SctkVsyncHandler,
         FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     output::SctkOutput,
@@ -86,7 +88,6 @@ pub struct SctkApplicationState {
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
     vsync_handler: Arc<Mutex<SctkVsyncHandler>>,
-    #[allow(dead_code)]
     async_scheduler: Scheduler<SctkAsyncResult>,
 }
 
@@ -198,6 +199,8 @@ impl SctkApplication {
             .insert_source(Timer::immediate(), |_event, _metadata, state| {
                 state.engine.run().expect("Failed to run engine");
 
+                state.schedule_async_startup_tasks();
+
                 state.maybe_send_startup_pending_configure();
 
                 TimeoutAction::Drop
@@ -217,6 +220,22 @@ impl SctkApplication {
 }
 
 impl SctkApplicationState {
+    pub fn with_plugin<F, P>(&self, f: F)
+    where
+        F: FnOnce(&P),
+        P: Plugin + 'static,
+    {
+        self.plugins.read().with_plugin(f)
+    }
+
+    pub fn with_plugin_mut<F, P>(&self, f: F)
+    where
+        F: FnOnce(&mut P),
+        P: Plugin + 'static,
+    {
+        self.plugins.write().with_plugin_mut(f)
+    }
+
     fn find_window_by_surface_id_mut(
         &mut self,
         surface_id: ObjectId,
@@ -247,6 +266,16 @@ impl SctkApplicationState {
         if let Some(window) = self.get_implicit_window_mut() {
             window.configure(&conn, configure, serial);
         };
+    }
+
+    fn schedule_async_startup_tasks(&self) {
+        self.with_plugin(|settings: &SettingsPlugin| {
+            if let Err(err) = self.async_scheduler.schedule(
+                SctkSettingsHandler::read_and_monitor_color_scheme_changes(settings.clone()),
+            ) {
+                error!("Failed to schedule engine async jobs: {}", err);
+            };
+        });
     }
 
     /// Find the maximum refresh rate from the surface current outputs.

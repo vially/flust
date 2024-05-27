@@ -22,6 +22,7 @@ use flutter_engine::codec::Value;
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/settings";
 
+#[derive(Default, Clone)]
 pub struct SettingsPlugin {
     channel: Weak<MessageChannel>,
 }
@@ -36,14 +37,6 @@ pub struct SettingsMessage<'a> {
 pub enum PlatformBrightness {
     Light,
     Dark,
-}
-
-impl Default for SettingsPlugin {
-    fn default() -> Self {
-        Self {
-            channel: Weak::new(),
-        }
-    }
 }
 
 impl Plugin for SettingsPlugin {
