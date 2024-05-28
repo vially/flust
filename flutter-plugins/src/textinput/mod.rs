@@ -26,6 +26,9 @@ pub(crate) mod utils;
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/textinput";
 
+const MULTILINE_INPUT_TYPE: &str = "TextInputType.multiline";
+const INPUT_ACTION_NEWLINE: &str = "TextInputAction.newline";
+
 pub trait TextInputHandler {
     fn show(&mut self);
 
@@ -45,6 +48,7 @@ struct Handler {
 
 struct Data {
     client_id: Option<i64>,
+    client_args: Option<SetClientArgsText>,
     editing_state: Option<TextEditingState>,
 }
 
@@ -69,6 +73,7 @@ impl TextInputPlugin {
     pub fn new(handler: Arc<Mutex<dyn TextInputHandler + Send>>) -> Self {
         let data = Arc::new(RwLock::new(Data {
             client_id: None,
+            client_args: None,
             editing_state: None,
         }));
         Self {
@@ -116,6 +121,45 @@ impl TextInputPlugin {
             }
         };
     }
+
+    // This implementation is based on the official Windows embedder implementation:
+    // https://github.com/flutter/engine/blob/3.22.0/shell/platform/windows/text_input_plugin.cc#L473-L493
+    pub fn enter_pressed(&mut self) {
+        let mut data = self.data.write().unwrap();
+        let client_id = data.client_id;
+
+        let is_multiline_newline_action = data
+            .client_args
+            .as_ref()
+            .map(|args| args.is_multiline_newline_action())
+            .unwrap_or_default();
+
+        if is_multiline_newline_action {
+            if let Some(state) = &mut (data.editing_state) {
+                state.add_characters("\n");
+
+                if let Some(channel) = self.channel.upgrade() {
+                    let mut args: Vec<Value> = Vec::new();
+                    args.push_as_value(client_id);
+                    args.push_as_value(state);
+                    channel.invoke_method("TextInputClient.updateEditingState", args)
+                }
+            }
+        }
+
+        if let Some(input_action) = data
+            .client_args
+            .as_ref()
+            .map(|args| args.input_action.clone())
+        {
+            self.with_channel(|channel| {
+                let mut args: Vec<Value> = Vec::new();
+                args.push_as_value(client_id);
+                args.push_as_value(input_action);
+                channel.invoke_method("TextInputClient.performAction", args)
+            });
+        }
+    }
 }
 
 impl MethodCallHandler for Handler {
@@ -130,6 +174,7 @@ impl MethodCallHandler for Handler {
                 let mut data = self.data.write().unwrap();
                 let args: SetClientArgs = call.args();
                 data.client_id = Some(args.0);
+                data.client_args = Some(args.1);
                 call.success_empty()
             }
             "TextInput.clearClient" => {
@@ -170,6 +215,13 @@ struct SetClientArgsText {
     action_label: Option<String>,
     text_capitalization: String,
     input_type: SetClientArgsInputType,
+}
+
+impl SetClientArgsText {
+    fn is_multiline_newline_action(&self) -> bool {
+        self.input_type.name.as_str() == MULTILINE_INPUT_TYPE
+            && self.input_action.as_str() == INPUT_ACTION_NEWLINE
+    }
 }
 
 #[derive(Serialize, Deserialize)]
