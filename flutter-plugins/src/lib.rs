@@ -1,4 +1,5 @@
 pub mod isolate;
+pub mod keyboard;
 pub mod keyevent;
 pub mod lifecycle;
 pub mod localization;
