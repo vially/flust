@@ -657,7 +657,18 @@ impl KeyboardHandler for SctkApplicationState {
             event.keysym.name().unwrap_or("[unknown]"),
         );
 
-        self.keyboard_handler.lock().press_key(event.clone());
+        if self
+            .keyboard_handler
+            .lock()
+            .press_key(event.clone())
+            .is_err()
+        {
+            error!(
+                "A key was pressed which was already found in internal state. Ignoring {:?}",
+                event
+            );
+            return;
+        };
 
         self.press_key_or_repeat(SctkKeyEvent::new(
             FlutterKeyEventDeviceType::Keyboard,
@@ -681,7 +692,13 @@ impl KeyboardHandler for SctkApplicationState {
             event.keysym.name().unwrap_or("[unknown]"),
         );
 
-        self.keyboard_handler.lock().release_key(&event);
+        if self.keyboard_handler.lock().release_key(&event).is_err() {
+            error!(
+                "A key was released which was not found in internal state. Ignoring {:?}",
+                event
+            );
+            return;
+        };
 
         self.send_key_event(SctkKeyEvent::new(
             FlutterKeyEventDeviceType::Keyboard,

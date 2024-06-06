@@ -624,6 +624,12 @@ impl TextInputHandler for SctkTextInputHandler {
     fn hide(&mut self) {}
 }
 
+#[derive(Error, Debug)]
+pub enum SctkPressedStateError {
+    #[error("Inconsistent pressed state")]
+    InconsistentState,
+}
+
 #[derive(Default)]
 pub struct SctkKeyboardHandler {
     pressed_state: HashMap<FlutterPhysicalKey, KeyEvent>,
@@ -634,14 +640,22 @@ impl SctkKeyboardHandler {
         Default::default()
     }
 
-    pub(crate) fn press_key(&mut self, event: KeyEvent) {
+    pub(crate) fn press_key(&mut self, event: KeyEvent) -> Result<(), SctkPressedStateError> {
         let physical = SctkPhysicalKey::new(event.raw_code);
-        self.pressed_state.insert(physical.into(), event);
+
+        match self.pressed_state.insert(physical.into(), event) {
+            Some(_) => Err(SctkPressedStateError::InconsistentState),
+            None => Ok(()),
+        }
     }
 
-    pub(crate) fn release_key(&mut self, event: &KeyEvent) {
+    pub(crate) fn release_key(&mut self, event: &KeyEvent) -> Result<(), SctkPressedStateError> {
         let physical = SctkPhysicalKey::new(event.raw_code);
-        self.pressed_state.remove(&physical.into());
+
+        match self.pressed_state.remove(&physical.into()) {
+            Some(_) => Ok(()),
+            None => Err(SctkPressedStateError::InconsistentState),
+        }
     }
 
     pub(crate) fn sync_keyboard_enter_state(
