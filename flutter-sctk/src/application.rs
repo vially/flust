@@ -82,6 +82,7 @@ pub struct SctkApplicationState {
     seat_state: SeatState,
     engine: FlutterEngine,
     windows: HashMap<ObjectId, SctkFlutterWindow>,
+    active_state: HashMap<ObjectId, bool>,
     pointers: HashMap<ObjectId, WlPointer>,
     startup_synchronizer: ImplicitWindowStartupSynchronizer,
     #[allow(dead_code)]
@@ -171,6 +172,7 @@ impl SctkApplication {
             loop_signal: event_loop.get_signal(),
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
+            active_state: HashMap::new(),
             compositor_state,
             shm_state,
             registry_state,
@@ -266,6 +268,19 @@ impl SctkApplicationState {
         if let Some(window) = self.get_implicit_window_mut() {
             window.configure(&conn, configure, serial);
         };
+    }
+
+    fn maybe_update_lifecycle_state(&mut self, xdg_toplevel_id: ObjectId, is_active: bool) {
+        let was_active = self.active_state.iter().any(|(_, &active)| active);
+
+        self.active_state.insert(xdg_toplevel_id, is_active);
+
+        if was_active != is_active && self.startup_synchronizer.is_engine_running {
+            self.with_plugin(|lifecycle: &LifecyclePlugin| match is_active {
+                true => lifecycle.send_app_is_resumed(),
+                false => lifecycle.send_app_is_inactive(),
+            })
+        }
     }
 
     fn schedule_async_startup_tasks(&self) {
@@ -657,6 +672,8 @@ impl WindowHandler for SctkApplicationState {
             configure.new_size.0.map_or(0, |v| v.get()),
             configure.new_size.1.map_or(0, |v| v.get()),
         );
+
+        self.maybe_update_lifecycle_state(xdg_toplevel_id.clone(), configure.is_activated());
 
         let Some(window) = self.windows.get_mut(&xdg_toplevel_id) else {
             warn!(
