@@ -353,20 +353,6 @@ impl SctkApplicationState {
         );
     }
 
-    // Warning: The current implementation can trigger an assertion failure in
-    // the framework [0]. This can happen, for example, when a logical key
-    // changes case between the up and down events.
-    //
-    // Sample sequence of events that can trigger the assertion failure:
-    // - `XK_Shift` down
-    // - `XK_A` down (upper-case `A`, due to shift being down)
-    // - `XK_Shift` up
-    // - `XK_a` up (lower-case `a`, due to shift no longer being down)
-    //
-    // TODO: Get confirmation from Flutter team that the assertion is sound and
-    // handle it properly in the embedder (once confirmed).
-    //
-    // [0](https://github.com/flutter/flutter/blob/3.22.1/packages/flutter/lib/src/services/hardware_keyboard.dart#L512-L515)
     fn send_key_event(&self, event: SctkKeyEvent) {
         self.engine.send_key_event(event.clone().into());
 
@@ -674,6 +660,7 @@ impl KeyboardHandler for SctkApplicationState {
             FlutterKeyEventDeviceType::Keyboard,
             event,
             FlutterKeyEventType::Down,
+            None,
             self.modifiers,
             false,
         ));
@@ -692,7 +679,7 @@ impl KeyboardHandler for SctkApplicationState {
             event.keysym.name().unwrap_or("[unknown]"),
         );
 
-        if self.keyboard_handler.lock().release_key(&event).is_err() {
+        let Ok(latched_keydown) = self.keyboard_handler.lock().release_key(&event) else {
             error!(
                 "A key was released which was not found in internal state. Ignoring {:?}",
                 event
@@ -704,6 +691,7 @@ impl KeyboardHandler for SctkApplicationState {
             FlutterKeyEventDeviceType::Keyboard,
             event,
             FlutterKeyEventType::Up,
+            Some(latched_keydown),
             self.modifiers,
             false,
         ));
@@ -787,6 +775,7 @@ impl SeatHandler for SctkApplicationState {
                         FlutterKeyEventDeviceType::Keyboard,
                         event,
                         FlutterKeyEventType::Repeat,
+                        None,
                         state.modifiers,
                         false,
                     ));

@@ -14,6 +14,10 @@ pub struct SctkKeyEvent {
     pub(crate) kind: FlutterKeyEventType,
     pub(crate) modifiers: Modifiers,
     pub(crate) synthesized: bool,
+
+    /// For `Up` events, this field holds the corresponding down `Keysym`. For
+    /// all other event kinds, this field will be `None`.
+    pub(crate) latched_keydown: Option<Keysym>,
 }
 
 impl SctkKeyEvent {
@@ -21,12 +25,14 @@ impl SctkKeyEvent {
         device_type: FlutterKeyEventDeviceType,
         event: KeyEvent,
         kind: FlutterKeyEventType,
+        latched_keydown: Option<Keysym>,
         modifiers: Modifiers,
         synthesized: bool,
     ) -> Self {
         Self {
             device_type,
             event,
+            latched_keydown,
             kind,
             modifiers,
             synthesized,
@@ -52,11 +58,37 @@ impl From<SctkKeyEvent> for FlutterKeyEvent {
             FlutterKeyEventType::Repeat => character,
         };
 
+        // Flutter triggers an assertion failure when the *logical* key of an
+        // `Up` event does not match *exactly* the logical key of its
+        // corresponding `Down` event [0].
+        //
+        // However, there are legitimate reasons why the logical key would
+        // change between the `Down` and `Up` events. This could happen, for
+        // example, when a logical key changes case between the up and down
+        // events.
+        //
+        // A common sequence of events that could lead to this scenario is:
+        // - `XK_Shift` down
+        // - `XK_A` down (upper-case `A`, due to shift being down)
+        // - `XK_Shift` up
+        // - `XK_a` up (lower-case `a`, due to shift no longer being down)
+        //
+        // Therefore, in order to avoid the failed assertion, the logical key of
+        // the `Up` event that gets sent to the engine is built using the keysym
+        // of its corresponding `Down` event (instead of using its own keysym,
+        // which might be different).
+        //
+        // [0](https://github.com/flutter/flutter/blob/3.22.1/packages/flutter/lib/src/services/hardware_keyboard.dart#L512-L515)
+        let keysym = match value.kind {
+            FlutterKeyEventType::Up => value.latched_keydown.unwrap_or(value.event.keysym),
+            _ => value.event.keysym,
+        };
+
         Self::new(
             timestamp,
             value.kind,
             SctkPhysicalKey::new(value.event.raw_code).into(),
-            SctkLogicalKey::new(value.event.keysym).into(),
+            SctkLogicalKey::new(keysym).into(),
             character,
             value.synthesized,
             value.device_type,

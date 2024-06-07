@@ -649,11 +649,14 @@ impl SctkKeyboardHandler {
         }
     }
 
-    pub(crate) fn release_key(&mut self, event: &KeyEvent) -> Result<(), SctkPressedStateError> {
+    pub(crate) fn release_key(
+        &mut self,
+        event: &KeyEvent,
+    ) -> Result<Keysym, SctkPressedStateError> {
         let physical = SctkPhysicalKey::new(event.raw_code);
 
         match self.pressed_state.remove(&physical.into()) {
-            Some(_) => Ok(()),
+            Some(event) => Ok(event.keysym),
             None => Err(SctkPressedStateError::InconsistentState),
         }
     }
@@ -686,6 +689,7 @@ impl SctkKeyboardHandler {
                     FlutterKeyEventDeviceType::Keyboard,
                     event.clone(),
                     FlutterKeyEventType::Up,
+                    Some(event.keysym),
                     Modifiers::default(), // Unused for synthesized events
                     true,
                 ));
@@ -710,6 +714,7 @@ impl SctkKeyboardHandler {
                     FlutterKeyEventDeviceType::Keyboard,
                     event.clone(),
                     FlutterKeyEventType::Down,
+                    None,
                     Modifiers::default(), // Unused for synthesized events
                     true,
                 ))
