@@ -57,6 +57,7 @@ impl WinitApplication {
             .with_platform_handler(platform_task_handler)
             .with_asset_path(attributes.assets_path)
             .with_icu_data_path(attributes.icu_data_path)
+            .with_persistent_cache_path(attributes.persistent_cache_path.clone())
             .with_args(attributes.args)
             .build()?;
 

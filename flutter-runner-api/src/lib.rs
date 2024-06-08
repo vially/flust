@@ -19,4 +19,5 @@ pub struct ApplicationAttributes {
     pub args: Vec<String>,
     pub assets_path: PathBuf,
     pub icu_data_path: PathBuf,
+    pub persistent_cache_path: PathBuf,
 }

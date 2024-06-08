@@ -103,6 +103,11 @@ impl ApplicationBuilder {
         self.attributes.icu_data_path = path.into();
         self
     }
+
+    pub fn with_persistent_cache_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.attributes.persistent_cache_path = path.into();
+        self
+    }
 }
 
 #[derive(Error, Debug)]

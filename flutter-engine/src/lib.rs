@@ -57,6 +57,7 @@ struct FlutterEngineInner {
     texture_registry: TextureRegistry,
     assets: PathBuf,
     icu_data: PathBuf,
+    persistent_cache: PathBuf,
     arguments: Vec<String>,
 }
 
@@ -161,6 +162,7 @@ impl FlutterEngine {
                 texture_registry: TextureRegistry::new(),
                 assets: builder.assets,
                 icu_data: builder.icu_data,
+                persistent_cache: builder.persistent_cache,
                 arguments: builder.args,
             }),
         };
@@ -262,7 +264,7 @@ impl FlutterEngine {
             root_isolate_create_callback: Some(flutter_callbacks::root_isolate_create_callback),
             update_semantics_node_callback: None,
             update_semantics_custom_action_callback: None,
-            persistent_cache_path: std::ptr::null(),
+            persistent_cache_path: path_to_cstring(&inner.persistent_cache).into_raw(),
             is_persistent_cache_read_only: false,
             vsync_callback,
             custom_dart_entrypoint: std::ptr::null(),

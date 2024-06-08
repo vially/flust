@@ -12,6 +12,7 @@ pub struct FlutterEngineBuilder {
     pub(crate) compositor_enabled: bool,
     pub(crate) assets: PathBuf,
     pub(crate) icu_data: PathBuf,
+    pub(crate) persistent_cache: PathBuf,
     pub(crate) args: Vec<String>,
 }
 
@@ -24,6 +25,7 @@ impl FlutterEngineBuilder {
             compositor_enabled: false,
             assets: Default::default(),
             icu_data: Default::default(),
+            persistent_cache: Default::default(),
             args: vec![],
         }
     }
@@ -56,6 +58,11 @@ impl FlutterEngineBuilder {
 
     pub fn with_icu_data_path(mut self, path: PathBuf) -> Self {
         self.icu_data = path;
+        self
+    }
+
+    pub fn with_persistent_cache_path(mut self, path: PathBuf) -> Self {
+        self.persistent_cache = path;
         self
     }
 
