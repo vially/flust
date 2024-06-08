@@ -5,7 +5,7 @@ use flutter_engine::{
 };
 use std::error::Error as StdError;
 use thiserror::Error;
-use winit::{event_loop::EventLoop, window::WindowBuilder};
+use winit::{event_loop::EventLoop, window::WindowAttributes};
 
 use crate::{window::FlutterEvent, FlutterWindow};
 
@@ -18,10 +18,10 @@ impl FlutterViewWinit {
     pub fn new_implicit(
         event_loop: &EventLoop<FlutterEvent>,
         engine: FlutterEngine,
-        builder: WindowBuilder,
+        attributes: WindowAttributes,
     ) -> Result<Self, WinitControllerError> {
         let view_id = IMPLICIT_VIEW_ID;
-        let window = FlutterWindow::new(view_id, event_loop, engine, builder)?;
+        let window = FlutterWindow::new(view_id, event_loop, engine, attributes)?;
 
         Ok(Self::new(view_id, window))
     }

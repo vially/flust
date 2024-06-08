@@ -13,8 +13,8 @@ pub use handler::WinitPlatformTaskHandler;
 pub use window::FlutterWindow;
 pub use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 pub use winit::{
-    dpi::*, error::EventLoopError, platform::wayland::WindowBuilderExtWayland,
-    window::WindowBuilder,
+    dpi::*, error::EventLoopError, platform::wayland::WindowAttributesExtWayland,
+    window::WindowAttributes,
 };
 
 pub use view::*;

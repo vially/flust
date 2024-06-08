@@ -30,7 +30,7 @@ use std::sync::Arc;
 use winit::event::{ElementState, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder, WindowId};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 pub enum FlutterEvent {
     WakePlatformThread,
@@ -54,9 +54,9 @@ impl FlutterWindow {
         view_id: FlutterViewId,
         event_loop: &EventLoop<FlutterEvent>,
         engine: FlutterEngine,
-        window: WindowBuilder,
+        attributes: WindowAttributes,
     ) -> Result<Self, Box<dyn Error>> {
-        let (window, context, resource_context) = create_window_contexts(window, event_loop)?;
+        let (window, context, resource_context) = create_window_contexts(attributes, event_loop)?;
         let context = Arc::new(std::sync::Mutex::new(context));
         let resource_context = Arc::new(std::sync::Mutex::new(resource_context));
         let window = Arc::new(Mutex::new(window));

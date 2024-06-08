@@ -12,10 +12,9 @@ use thiserror::Error;
 use winit::dpi::PhysicalSize;
 use winit::error::EventLoopError;
 use winit::event::Event;
-use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::platform::wayland::WindowBuilderExtWayland;
-use winit::window::WindowBuilder;
+use winit::platform::wayland::WindowAttributesExtWayland;
+use winit::window::WindowAttributes;
 
 use crate::pointer::Pointers;
 use crate::view::WinitControllerError;
@@ -32,23 +31,9 @@ impl WinitApplication {
     pub fn new(
         attributes: ApplicationAttributes,
     ) -> Result<WinitApplication, WinitApplicationBuildError> {
-        let event_loop = EventLoopBuilder::with_user_event().build()?;
+        let event_loop = EventLoop::with_user_event().build()?;
 
-        let builder = WindowBuilder::new();
-        let builder = attributes
-            .title
-            .map_or(builder.clone(), |title| builder.with_title(title));
-
-        let builder = attributes
-            .app_id
-            .map_or(builder.clone(), |app_id| builder.with_name(app_id, ""));
-
-        let builder = attributes.inner_size.map_or(builder.clone(), |size| {
-            builder.with_inner_size(PhysicalSize::new(
-                size.to_physical::<u32>(1.0).width,
-                size.to_physical::<u32>(1.0).height,
-            ))
-        });
+        let window_attributes = WinitWindowAttributes::from(attributes.clone()).0;
 
         let platform_task_handler =
             Arc::new(WinitPlatformTaskHandler::new(event_loop.create_proxy()));
@@ -61,7 +46,8 @@ impl WinitApplication {
             .with_args(attributes.args)
             .build()?;
 
-        let implicit_view = FlutterViewWinit::new_implicit(&event_loop, engine.clone(), builder)?;
+        let implicit_view =
+            FlutterViewWinit::new_implicit(&event_loop, engine.clone(), window_attributes)?;
 
         engine.add_view(implicit_view.create_flutter_view());
 
@@ -118,6 +104,8 @@ impl WinitApplication {
         });
 
         let mut pointers = Pointers::new(self.engine.clone());
+
+        #[allow(deprecated)]
         Ok(self.event_loop.run(move |event, elwt| match event {
             Event::WindowEvent { event, .. } => {
                 window.handle_event(event, &mut pointers);
@@ -159,4 +147,27 @@ pub enum WinitApplicationRunError {
 
     #[error(transparent)]
     WinitEventLoopError(#[from] EventLoopError),
+}
+
+struct WinitWindowAttributes(WindowAttributes);
+
+impl From<ApplicationAttributes> for WinitWindowAttributes {
+    fn from(value: ApplicationAttributes) -> Self {
+        let mut attributes =
+            WindowAttributes::default().with_title(value.title.unwrap_or_default());
+
+        attributes.inner_size = value.inner_size.as_ref().map(|size| {
+            PhysicalSize::new(
+                size.to_physical::<u32>(1.0).width,
+                size.to_physical::<u32>(1.0).height,
+            )
+            .into()
+        });
+
+        let attributes = value.app_id.map_or(attributes.clone(), |app_id| {
+            attributes.with_name(app_id, "")
+        });
+
+        Self(attributes)
+    }
 }

@@ -7,22 +7,22 @@ use flutter_glutin::{
 };
 use glutin::config::ConfigTemplateBuilder;
 use glutin_winit::{ApiPreference, DisplayBuilder};
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::HasWindowHandle;
 use thiserror::Error;
 use winit::{
     event_loop::EventLoop,
-    window::{Window, WindowBuilder},
+    window::{Window, WindowAttributes},
 };
 
 use crate::window::FlutterEvent;
 
 pub(crate) fn create_window_contexts(
-    window_builder: WindowBuilder,
+    window_attributes: WindowAttributes,
     event_loop: &EventLoop<FlutterEvent>,
 ) -> Result<(Window, Context, ResourceContext), Box<dyn Error>> {
     let (window, config) = DisplayBuilder::new()
         .with_preference(ApiPreference::PreferEgl)
-        .with_window_builder(Some(window_builder))
+        .with_window_attributes(Some(window_attributes))
         .build(event_loop, ConfigTemplateBuilder::new(), |configs| {
             // TODO: Find out what's the correct way of choosing a config
             configs.last().unwrap()
@@ -32,8 +32,12 @@ pub(crate) fn create_window_contexts(
         return Err(ContextError::InvalidWindow.into());
     };
 
+    let Ok(window_handle) = window.window_handle() else {
+        return Err(ContextError::InvalidWindow.into());
+    };
+
     let (context, resource_context) = ContextBuilder::new()
-        .with_raw_window_handle(window.raw_window_handle())
+        .with_raw_window_handle(window_handle.as_raw())
         .with_config(config)
         .with_size(window.inner_size().non_zero())
         .build()?;

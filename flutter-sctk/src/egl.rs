@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, ptr::NonNull};
 
 use dpi::PhysicalSize;
 use flutter_glutin::builder::{ContextBuildError, ContextBuilder, FlutterEGLContext};
@@ -21,16 +21,21 @@ impl FlutterEGLContextWaylandExt for FlutterEGLContext {
         surface: &wl_surface::WlSurface,
         size: PhysicalSize<u32>,
     ) -> Result<FlutterEGLContext, CreateWaylandContextError> {
-        let mut wl_display_handle = WaylandDisplayHandle::empty();
-        wl_display_handle.display = surface
-            .backend()
-            .upgrade()
-            .ok_or(CreateWaylandContextError::ConnectionClosed)?
-            .display_ptr() as *mut _;
+        let display = NonNull::new(
+            surface
+                .backend()
+                .upgrade()
+                .ok_or(CreateWaylandContextError::ConnectionClosed)?
+                .display_ptr()
+                .cast(),
+        )
+        .ok_or(CreateWaylandContextError::ConnectionClosed)?;
+        let wl_display_handle = WaylandDisplayHandle::new(display);
         let raw_display_handle = RawDisplayHandle::Wayland(wl_display_handle);
 
-        let mut wl_window_handle = WaylandWindowHandle::empty();
-        wl_window_handle.surface = surface.id().as_ptr() as *mut _;
+        let surface = NonNull::new(surface.id().as_ptr().cast())
+            .ok_or(CreateWaylandContextError::ConnectionClosed)?;
+        let wl_window_handle = WaylandWindowHandle::new(surface);
         let raw_window_handle = RawWindowHandle::Wayland(wl_window_handle);
 
         let (context, resource_context) = ContextBuilder::new()

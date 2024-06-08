@@ -14,10 +14,10 @@ flutter-glutin = { path = "../flutter-glutin" }
 flutter-plugins = { path = "../flutter-plugins" }
 flutter-runner-api = { path = "../flutter-runner-api" }
 futures-lite = "2.3.0"
-glutin = "0.31.3"
+glutin = "0.32.0"
 log = "0.4.20"
 parking_lot = "0.12.1"
-raw-window-handle = "0.5.2"
+raw-window-handle = "0.6.2"
 smithay-client-toolkit = "0.19.1"
 smithay-clipboard = "0.7.1"
 thiserror = "1.0.50"
