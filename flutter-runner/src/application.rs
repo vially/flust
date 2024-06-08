@@ -27,11 +27,21 @@ impl Application {
 
     pub fn new(attributes: ApplicationAttributes) -> Result<Application, ApplicationBuildError> {
         match attributes.backend {
-            #[cfg(feature = "flutter-winit")]
-            Backend::Sctk => Ok(Application::Sctk(SctkApplication::new(attributes)?)),
+            Backend::Sctk => {
+                #[cfg(feature = "flutter-sctk")]
+                return Ok(Application::Sctk(SctkApplication::new(attributes)?));
 
-            #[cfg(feature = "flutter-winit")]
-            Backend::Winit => Ok(Application::Winit(WinitApplication::new(attributes)?)),
+                #[cfg(not(feature = "flutter-sctk"))]
+                panic!("Failed to initialize sctk application. The 'flutter-sctk' feature is not enabled");
+            }
+
+            Backend::Winit => {
+                #[cfg(feature = "flutter-winit")]
+                return Ok(Application::Winit(WinitApplication::new(attributes)?));
+
+                #[cfg(not(feature = "flutter-winit"))]
+                panic!("Failed to initialize winit application. The 'flutter-winit' feature is not enabled");
+            }
         }
     }
 
@@ -112,18 +122,22 @@ impl ApplicationBuilder {
 
 #[derive(Error, Debug)]
 pub enum ApplicationBuildError {
-    #[cfg_attr(feature = "flutter-sctk", error(transparent))]
+    #[cfg(feature = "flutter-sctk")]
+    #[error(transparent)]
     SctkApplicationCreateError(#[from] SctkApplicationCreateError),
 
-    #[cfg_attr(feature = "flutter-winit", error(transparent))]
+    #[cfg(feature = "flutter-winit")]
+    #[error(transparent)]
     WinitApplicationBuildError(#[from] WinitApplicationBuildError),
 }
 
 #[derive(Error, Debug)]
 pub enum ApplicationRunError {
-    #[cfg_attr(feature = "flutter-sctk", error(transparent))]
+    #[cfg(feature = "flutter-sctk")]
+    #[error(transparent)]
     SctkApplicationRunError(#[from] SctkApplicationRunError),
 
-    #[cfg_attr(feature = "flutter-winit", error(transparent))]
+    #[cfg(feature = "flutter-winit")]
+    #[error(transparent)]
     WinitApplicationRunError(#[from] WinitApplicationRunError),
 }
