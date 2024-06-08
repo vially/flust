@@ -28,7 +28,7 @@ use flutter_engine_sys::{
     FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterEngineResult,
     FlutterTask, VsyncCallback,
 };
-use log::trace;
+use tracing::trace;
 use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};

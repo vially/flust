@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tracing::error;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
@@ -56,7 +57,7 @@ impl PlatformHandler for WinitPlatformHandler {
 
     fn set_clipboard_data(&mut self, text: String) {
         if let Err(err) = self.clipboard.set_contents(text) {
-            log::error!("{}", err);
+            error!("{}", err);
         }
     }
 
@@ -66,7 +67,7 @@ impl PlatformHandler for WinitPlatformHandler {
         }
         let result = self.clipboard.get_contents();
         if let Err(err) = &result {
-            log::error!("{}", err);
+            error!("{}", err);
         }
         Ok(result.unwrap_or_default())
     }

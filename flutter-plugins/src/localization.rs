@@ -2,8 +2,8 @@
 //! It handles flutter/localization type message.
 
 use icu_locid::Locale;
-use log::{debug, error, info, warn};
 use std::sync::Weak;
+use tracing::{debug, error, info, warn};
 
 use flutter_engine::channel::MethodCall;
 use flutter_engine::{

@@ -4,10 +4,10 @@ use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseH
 use crate::channel::Channel;
 use crate::codec::value::{from_value, from_value_owned, to_value};
 use crate::codec::Value;
-use log::error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::RefCell;
+use tracing::{error, trace};
 
 pub struct Message {
     engine: FlutterEngineWeakRef,
@@ -151,7 +151,7 @@ impl Channel for MessageChannel {
         let codec = self.codec;
         let message = codec.decode_message(msg.message).unwrap();
         let channel = self.name().to_owned();
-        log::trace!("on channel {}, got message {:?}", channel, message);
+        trace!("on channel {}, got message {:?}", channel, message);
 
         let msg = Message {
             engine: self.engine.clone(),

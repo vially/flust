@@ -27,6 +27,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tracing::trace;
 use winit::event::{ElementState, KeyEvent, MouseScrollDelta, Touch, WindowEvent};
 use winit::event_loop::{EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
@@ -319,7 +320,7 @@ pub(crate) fn resize(
         let window = window.lock();
         (window.scale_factor(), window.inner_size())
     };
-    log::trace!(
+    trace!(
         "resize width: {} height: {} scale {}",
         size.width,
         size.height,

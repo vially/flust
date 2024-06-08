@@ -2,6 +2,8 @@
 //! It contains two implementations StandardMethodChannel using binary encoding
 //! and JsonMethodChannel using json encoding.
 
+use tracing::error;
+
 use crate::{FlutterEngine, FlutterEngineWeakRef};
 
 pub use self::{
@@ -32,7 +34,7 @@ pub trait Channel {
         if let Some(engine) = self.engine() {
             engine.send_platform_message_response(response_handle, buf);
         } else {
-            log::error!("Channel {} was not initialized", self.name());
+            error!("Channel {} was not initialized", self.name());
         }
     }
 }

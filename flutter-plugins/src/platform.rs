@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use flutter_engine::channel::MethodCall;
 use flutter_engine::codec::Value;
-use log::debug;
+use tracing::debug;
 use parking_lot::Mutex;
 
 pub const PLUGIN_NAME: &str = module_path!();

@@ -13,7 +13,7 @@ use flutter_engine::{
 
 use flutter_engine::channel::Message;
 use flutter_engine::codec::Value;
-use log::{error, info};
+use tracing::{error, info};
 
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/system";

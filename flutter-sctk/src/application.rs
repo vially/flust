@@ -14,7 +14,7 @@ use flutter_plugins::{
 };
 use flutter_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
 use flutter_runner_api::ApplicationAttributes;
-use log::{error, trace, warn};
+use tracing::{error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},

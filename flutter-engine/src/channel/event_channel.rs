@@ -1,14 +1,14 @@
 use std::sync::{Arc, RwLock, Weak};
 
-use log::error;
+use tracing::error;
 
+use crate::channel::method_channel::MethodCallHandler;
 use crate::{
     channel::{ChannelImpl, EventHandler, MethodCallHandler, MethodChannel},
     codec::{standard_codec::CODEC, MethodCall, MethodCodec, Value},
     error::MethodCallError,
     FlutterEngine, FlutterEngineWeakRef,
 };
-use crate::channel::method_channel::MethodCallHandler;
 
 pub trait EventHandler {
     fn on_listen(&mut self, args: Value, engine: FlutterEngine) -> Result<Value, MethodCallError>;
@@ -38,7 +38,6 @@ impl EventChannel {
             plugin_name: None,
         }
     }
-
 
     /// When flutter listen to a stream of events using EventChannel.
     /// This method send back a success event.

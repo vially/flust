@@ -23,7 +23,6 @@ use flutter_plugins::settings::SettingsPlugin;
 use flutter_plugins::system::SystemPlugin;
 use flutter_plugins::textinput::TextInputPlugin;
 use flutter_plugins::window::WindowPlugin;
-use log::{debug, info};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -31,6 +30,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SendError, Sender};
 use std::sync::{mpsc, Arc, Weak};
 use std::time::Instant;
+use tracing::{debug, info};
 
 // seems to be about 2.5 lines of text
 const SCROLL_SPEED: f64 = 50.0;
@@ -458,10 +458,9 @@ impl FlutterWindow {
                 // self.window_pixels_per_screen_coordinate =
                 //     f64::from(framebuffer_size.0) / f64::from(window_size.0);
 
-                log::debug!(
+                debug!(
                     "Setting framebuffer size to {:?}, scale to {}",
-                    framebuffer_size,
-                    scale.0
+                    framebuffer_size, scale.0
                 );
 
                 self.engine.send_window_metrics_event(

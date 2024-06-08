@@ -1,7 +1,7 @@
 //! This plugin is used by TextField to edit text and control caret movement.
 //! It handles flutter/textinput type message.
 
-use log::debug;
+use tracing::debug;
 use std::sync::{Arc, RwLock, Weak};
 
 use serde::{Deserialize, Serialize};

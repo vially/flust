@@ -1,7 +1,7 @@
 //! Plugin to work with locales.
 //! It handles flutter/localization type message.
 
-use log::debug;
+use tracing::debug;
 use std::sync::Weak;
 
 use flutter_engine::{

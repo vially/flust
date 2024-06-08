@@ -1,5 +1,5 @@
 use crate::window::{CreateError, FlutterWindow, WindowArgs};
-use log::error;
+use tracing::error;
 use std::path::PathBuf;
 
 mod handler;

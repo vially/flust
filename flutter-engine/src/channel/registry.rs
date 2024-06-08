@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use log::{trace, warn};
+use tracing::{trace, warn};
 
 use crate::FlutterEngineWeakRef;
 

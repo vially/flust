@@ -13,9 +13,9 @@ use flutter_engine::{
 };
 
 use flutter_engine::codec::Value;
-use log::debug;
 use parking_lot::Mutex;
 use strum::EnumString;
+use tracing::debug;
 
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/mousecursor";

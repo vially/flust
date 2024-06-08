@@ -767,12 +767,12 @@ dependencies = [
  "dpi",
  "flutter-engine-api",
  "flutter-engine-sys",
- "log",
  "parking_lot",
  "priority-queue",
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -810,11 +810,11 @@ version = "0.4.0"
 dependencies = [
  "flutter-engine",
  "icu_locid",
- "log",
  "parking_lot",
  "serde",
  "serde_json",
  "strum",
+ "tracing",
 ]
 
 [[package]]
@@ -854,12 +854,12 @@ dependencies = [
  "flutter-runner-api",
  "futures-lite",
  "glutin",
- "log",
  "parking_lot",
  "raw-window-handle",
  "smithay-client-toolkit 0.19.1",
  "smithay-clipboard",
  "thiserror",
+ "tracing",
  "wayland-backend",
  "wayland-client",
 ]
@@ -882,11 +882,11 @@ dependencies = [
  "gl",
  "glutin",
  "glutin-winit",
- "log",
  "parking_lot",
  "raw-window-handle",
  "sys-locale",
  "thiserror",
+ "tracing",
  "winit",
 ]
 

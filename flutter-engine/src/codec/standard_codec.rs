@@ -1,7 +1,7 @@
 use std::convert::AsMut;
 use std::{collections::HashMap, slice};
 
-use log::error;
+use tracing::error;
 
 use super::{MessageCodec, MethodCall, MethodCallResult, MethodCodec, Value};
 

@@ -1,6 +1,6 @@
 use crate::FlutterEngineWeakRef;
 use flutter_engine_sys::{FlutterEngineGetCurrentTime, FlutterTask};
-use log::debug;
+use tracing::debug;
 use parking_lot::{Mutex, MutexGuard};
 use priority_queue::PriorityQueue;
 use std::cmp::Ordering;

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use log::debug;
+use tracing::debug;
 use std::sync::Weak;
 
 use serde::{Deserialize, Serialize};

@@ -2,7 +2,7 @@ use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICI
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
-use log::trace;
+use tracing::trace;
 use parking_lot::Mutex;
 use std::ffi::{c_char, c_uint, c_void, CStr};
 

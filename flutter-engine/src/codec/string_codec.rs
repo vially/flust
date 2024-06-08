@@ -1,4 +1,4 @@
-use log::error;
+use tracing::error;
 
 use super::{MessageCodec, Value};
 

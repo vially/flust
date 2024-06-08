@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 flutter-engine = { path = "../flutter-engine" }
 icu_locid = "1.4.0"
-log = "0.4.20"
+tracing = "0.1"
 parking_lot = "0.12.1"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"

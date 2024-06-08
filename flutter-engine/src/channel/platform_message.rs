@@ -1,9 +1,9 @@
 use crate::FlutterEngine;
 use flutter_engine_sys::{FlutterPlatformMessage, FlutterPlatformMessageResponseHandle};
-use log::error;
 use std::borrow::Cow;
 use std::ffi::{c_void, CStr, CString};
 use std::{mem, ptr};
+use tracing::{error, trace};
 
 #[derive(Debug)]
 pub struct PlatformMessageResponseHandle {
@@ -41,7 +41,7 @@ unsafe extern "C" fn response_handle_callback(
     size: usize,
     user_data: *mut c_void,
 ) {
-    log::trace!("response_handle_callback");
+    trace!("response_handle_callback");
     let message = std::slice::from_raw_parts(data, size);
 
     let user_data = user_data as *mut ResponseType;

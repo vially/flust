@@ -13,7 +13,7 @@ crossbeam-channel = "0.5.8"
 dpi = "0.1.0"
 flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
-log = "0.4.20"
+tracing = "0.1"
 parking_lot = "0.12.1"
 priority-queue = "2.0.3"
 serde = { version = "1.0.188", features = ["derive"] }

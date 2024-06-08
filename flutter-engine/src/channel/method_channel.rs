@@ -1,4 +1,4 @@
-use log::error;
+use tracing::{error, trace};
 
 use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseHandle};
 use crate::channel::Channel;
@@ -243,7 +243,7 @@ impl Channel for MethodChannel {
         let codec = self.codec;
         let call = self.codec.decode_method_call(msg.message).unwrap();
         let channel = self.name().to_owned();
-        log::trace!(
+        trace!(
             "on channel {}, got method call {} with args {:?}",
             channel,
             call.method,

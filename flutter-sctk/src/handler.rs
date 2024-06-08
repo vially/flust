@@ -40,7 +40,6 @@ use flutter_plugins::{
     textinput::TextInputHandler,
 };
 use futures_lite::StreamExt;
-use log::{error, trace, warn};
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},
     seat::{
@@ -50,6 +49,7 @@ use smithay_client_toolkit::{
 };
 use smithay_clipboard::Clipboard;
 use thiserror::Error;
+use tracing::{error, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     protocol::{wl_display::WlDisplay, wl_surface::WlSurface},

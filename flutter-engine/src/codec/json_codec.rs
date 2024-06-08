@@ -1,4 +1,4 @@
-use log::error;
+use tracing::error;
 use serde_json::json;
 
 use super::{MessageCodec, MethodCall, MethodCallResult, MethodCodec, Value};

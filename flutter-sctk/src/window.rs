@@ -13,7 +13,7 @@ use flutter_engine::{
 use flutter_engine_sys::FlutterEngineDisplayId;
 use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
-use log::{error, trace, warn};
+use tracing::{error, trace, warn};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,

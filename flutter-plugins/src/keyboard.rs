@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use log::debug;
+use tracing::debug;
 use parking_lot::Mutex;
 
 use flutter_engine::{

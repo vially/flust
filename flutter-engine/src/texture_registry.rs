@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use tracing::trace;
 
 pub(crate) struct TextureRegistry {
     last_id: AtomicI64,
@@ -23,7 +24,7 @@ impl TextureRegistry {
         let texture_id = self.last_id.fetch_add(1, Ordering::Relaxed);
 
         engine.run_on_platform_thread(move |engine| {
-            log::trace!("texture {}: register", texture_id);
+            trace!("texture {}: register", texture_id);
             unsafe {
                 flutter_engine_sys::FlutterEngineRegisterExternalTexture(
                     engine.engine_ptr(),
@@ -79,7 +80,7 @@ fn post_frame_internal(
     }
 
     engine.run_on_platform_thread(move |engine| {
-        log::trace!("texture {}: marking frame available", texture_id);
+        trace!("texture {}: marking frame available", texture_id);
         unsafe {
             flutter_engine_sys::FlutterEngineMarkExternalTextureFrameAvailable(
                 engine.engine_ptr(),
@@ -93,7 +94,7 @@ impl Drop for Texture {
     fn drop(&mut self) {
         let texture_id = self.texture_id;
         self.engine.run_on_platform_thread(move |engine| {
-            log::trace!("texture {}: unregister", texture_id);
+            trace!("texture {}: unregister", texture_id);
             unsafe {
                 flutter_engine_sys::FlutterEngineUnregisterExternalTexture(
                     engine.engine_ptr(),
@@ -136,7 +137,7 @@ impl TextureFrame {
 }
 
 unsafe extern "C" fn texture_destruction_callback(user_data: *mut c_void) {
-    log::trace!("texture_destruction_callback");
+    trace!("texture_destruction_callback");
     let user_data = user_data as *mut DestructorType;
     let user_data = Box::from_raw(user_data);
     user_data();
