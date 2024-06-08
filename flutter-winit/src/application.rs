@@ -9,12 +9,13 @@ use futures_lite::future;
 use std::sync::Arc;
 use sys_locale::get_locale;
 use thiserror::Error;
+use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::error::EventLoopError;
-use winit::event::Event;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::WindowAttributes;
+use winit::window::{WindowAttributes, WindowId};
 
 use crate::pointer::Pointers;
 use crate::view::WinitControllerError;
@@ -23,8 +24,13 @@ use crate::{FlutterViewWinit, WinitPlatformTaskHandler};
 
 pub struct WinitApplication {
     event_loop: EventLoop<FlutterEvent>,
+    state: WinitApplicationState,
+}
+
+pub struct WinitApplicationState {
     implicit_view: FlutterViewWinit,
     engine: FlutterEngine,
+    pointers: Pointers,
 }
 
 impl WinitApplication {
@@ -49,28 +55,34 @@ impl WinitApplication {
         let implicit_view =
             FlutterViewWinit::new_implicit(&event_loop, engine.clone(), window_attributes)?;
 
+        let pointers = Pointers::new(engine.clone());
+
         engine.add_view(implicit_view.create_flutter_view());
 
-        Ok(WinitApplication {
-            event_loop,
+        let state = WinitApplicationState {
             implicit_view,
             engine,
-        })
+            pointers,
+        };
+
+        Ok(WinitApplication { event_loop, state })
     }
 
     pub fn run(self) -> Result<(), WinitApplicationRunError> {
+        let mut state = self.state;
+
         // Warning: The current logic does not support `custom_task_runners`.
         //
         // TODO: Start event loop *prior* to running the engine. See
         // `FlutterEngineRun` comment in `embedder.h` for additional context.
-        self.engine.run()?;
+        state.engine.run()?;
 
-        let window = self.implicit_view.window();
+        let window = state.implicit_view.window();
         let context = window.context();
 
         resize(
             window.view_id(),
-            &self.engine,
+            &state.engine,
             &context,
             &window.window(),
             0,
@@ -103,28 +115,47 @@ impl WinitApplication {
                 .send();
         });
 
-        let mut pointers = Pointers::new(self.engine.clone());
+        Ok(self.event_loop.run_app(&mut state)?)
+    }
+}
 
-        #[allow(deprecated)]
-        Ok(self.event_loop.run(move |event, elwt| match event {
-            Event::WindowEvent { event, .. } => {
-                window.handle_event(event, &mut pointers);
-            }
-            Event::LoopExiting => {
-                self.engine.shutdown();
-            }
-            Event::UserEvent(FlutterEvent::WindowCloseRequested(_)) => elwt.exit(),
-            _ => {
-                if window.is_closing() {
-                    elwt.exit();
-                    return;
-                }
+impl ApplicationHandler<FlutterEvent> for WinitApplicationState {
+    fn window_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        self.implicit_view
+            .window()
+            .handle_event(event, &mut self.pointers);
+    }
 
-                let next_task_time = self.engine.execute_platform_tasks();
-                let control_flow = next_task_time.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
-                elwt.set_control_flow(control_flow)
-            }
-        })?)
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: FlutterEvent) {
+        match event {
+            FlutterEvent::WindowCloseRequested(_) => event_loop.exit(),
+            FlutterEvent::WakePlatformThread => {} // no-op
+            FlutterEvent::IsolateCreated => {}     // no-op
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.implicit_view.window().is_closing() {
+            event_loop.exit();
+            return;
+        }
+
+        let next_task_time = self.engine.execute_platform_tasks();
+        let control_flow = next_task_time.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
+        event_loop.set_control_flow(control_flow)
+    }
+
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+        // not needed for current implementation
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.engine.shutdown()
     }
 }
 
