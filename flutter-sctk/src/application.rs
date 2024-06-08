@@ -148,9 +148,9 @@ impl SctkApplication {
             .init(engine.downgrade(), implicit_window.wl_surface());
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
-        let platform_handler = Arc::new(Mutex::new(SctkPlatformHandler::new(
-            implicit_window.xdg_toplevel(),
-        )));
+        let platform_handler =
+            unsafe { SctkPlatformHandler::new(conn.display(), implicit_window.xdg_toplevel()) };
+        let platform_handler = Arc::new(Mutex::new(platform_handler));
         let mouse_cursor_handler = Arc::new(Mutex::new(SctkMouseCursorHandler::new(conn.clone())));
         let text_input_handler = Arc::new(Mutex::new(SctkTextInputHandler::new()));
         let keyboard_handler = Arc::new(Mutex::new(SctkKeyboardHandler::new()));

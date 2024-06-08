@@ -48,9 +48,13 @@ use smithay_client_toolkit::{
         pointer::{CursorIcon, PointerData, PointerDataExt, ThemedPointer},
     },
 };
+use smithay_clipboard::Clipboard;
 use thiserror::Error;
 use wayland_backend::client::ObjectId;
-use wayland_client::{protocol::wl_surface::WlSurface, Connection, Proxy, QueueHandle};
+use wayland_client::{
+    protocol::{wl_display::WlDisplay, wl_surface::WlSurface},
+    Connection, Proxy, QueueHandle,
+};
 
 use crate::{
     application::SctkApplicationState,
@@ -476,12 +480,18 @@ impl TaskRunnerHandler for SctkPlatformTaskHandler {
 // plugin supports it.
 pub struct SctkPlatformHandler {
     implicit_xdg_toplevel: XdgToplevel,
+    clipboard: Clipboard,
 }
 
 impl SctkPlatformHandler {
-    pub fn new(xdg_toplevel: XdgToplevel) -> Self {
+    /// # Safety
+    ///
+    /// `display` must be a valid `*mut wl_display` pointer, and it must remain
+    /// valid for as long as `Clipboard` object is alive.
+    pub unsafe fn new(display: WlDisplay, xdg_toplevel: XdgToplevel) -> Self {
         Self {
             implicit_xdg_toplevel: xdg_toplevel,
+            clipboard: Clipboard::new(display.id().as_ptr() as *mut _),
         }
     }
 }
@@ -491,19 +501,14 @@ impl PlatformHandler for SctkPlatformHandler {
         self.implicit_xdg_toplevel.set_title(description.label);
     }
 
-    fn set_clipboard_data(&mut self, _text: String) {
-        error!(
-            "Attempting to set the contents of the clipboard, which hasn't yet been implemented \
-             on this platform."
-        );
+    fn set_clipboard_data(&mut self, text: String) {
+        // TODO: Is updating *both* clipboards a reasonable thing to do here?
+        self.clipboard.store(text.clone());
+        self.clipboard.store_primary(text);
     }
 
     fn get_clipboard_data(&mut self, _mime: &str) -> Result<String, MimeError> {
-        error!(
-            "Attempting to get the contents of the clipboard, which hasn't yet been implemented \
-             on this platform."
-        );
-        Ok("".to_string())
+        self.clipboard.load().map_err(|_| MimeError {})
     }
 }
 

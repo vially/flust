@@ -884,6 +884,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle 0.5.2",
  "smithay-client-toolkit 0.19.1",
+ "smithay-clipboard",
  "thiserror",
  "wayland-backend",
  "wayland-client",
