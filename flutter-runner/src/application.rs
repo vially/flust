@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
 
 use dpi::Size;
 use flutter_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
+use tracing::warn;
 
 #[cfg(feature = "flutter-sctk")]
 use flutter_sctk::application::{
@@ -67,7 +68,10 @@ pub struct ApplicationBuilder {
 
 impl ApplicationBuilder {
     /// Builds the application.
-    pub fn build(self) -> Result<Application, ApplicationBuildError> {
+    pub fn build(mut self) -> Result<Application, ApplicationBuildError> {
+        #[cfg(target_os = "linux")]
+        self.use_default_paths_if_empty();
+
         let application = Application::new(self.attributes)?;
         Ok(application)
     }
@@ -118,6 +122,39 @@ impl ApplicationBuilder {
         self.attributes.persistent_cache_path = path.into();
         self
     }
+
+    #[cfg(target_os = "linux")]
+    fn use_default_paths_if_empty(&mut self) {
+        let app_id = self.attributes.app_id.clone().unwrap_or_default();
+
+        // Use `~/.cache/DESKTOP_APP_ID` as persistent cache dir if not
+        // configured. This will have the effect of storing the engine cache
+        // under `~/.cache/DESKTOP_APP_ID/flutter_engine`.
+        if self.attributes.persistent_cache_path.as_os_str().is_empty() && !app_id.is_empty() {
+            self.attributes.persistent_cache_path = dirs::cache_dir()
+                .map(|cache_dir| cache_dir.join(app_id))
+                .unwrap_or_default();
+        }
+
+        if !&self.attributes.assets_path.as_os_str().is_empty()
+            && !&self.attributes.icu_data_path.as_os_str().is_empty()
+        {
+            return;
+        }
+
+        let Ok(executable_dir) = get_executable_dir() else {
+            warn!("Unable to resolve path for /proc/self/exe");
+            return;
+        };
+
+        if self.attributes.assets_path.as_os_str().is_empty() {
+            self.attributes.assets_path = executable_dir.join("data").join("flutter_assets");
+        }
+
+        if self.attributes.icu_data_path.as_os_str().is_empty() {
+            self.attributes.icu_data_path = executable_dir.join("data").join("icudtl.dat");
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -140,4 +177,13 @@ pub enum ApplicationRunError {
     #[cfg(feature = "flutter-winit")]
     #[error(transparent)]
     WinitApplicationRunError(#[from] WinitApplicationRunError),
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_executable_dir() -> Result<PathBuf, std::io::Error> {
+    canonicalize("/proc/self/exe").and_then(|path| {
+        path.parent()
+            .map(|path| path.into())
+            .ok_or(std::io::Error::from(ErrorKind::NotFound))
+    })
 }
