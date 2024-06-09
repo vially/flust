@@ -28,7 +28,6 @@ use flutter_engine_sys::{
     FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterEngineResult,
     FlutterTask, VsyncCallback,
 };
-use tracing::trace;
 use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
@@ -36,6 +35,7 @@ use std::ptr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use tracing::trace;
 use view::{FlutterView, ViewRegistry};
 
 pub(crate) type MainThreadEngineFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
@@ -139,11 +139,18 @@ impl FlutterEngine {
         // FlutterProjectArgs expects a full argv, so when processing it for flags
         // the first item is treated as the executable and ignored. Add a dummy value
         // so that all switches are used.
-        let mut args = Vec::with_capacity(builder.args.len() + 1);
-        args.push(CString::new("flutter-rs").unwrap().into_raw());
-        for arg in builder.args.iter() {
-            args.push(CString::new(arg.as_str()).unwrap().into_raw());
-        }
+        let dummy_args: Vec<String> = vec!["flutter-rs".into()];
+        let args = [
+            dummy_args,
+            FlutterEngine::args_from_env_vars(),
+            builder.args.clone(),
+        ]
+        .concat();
+
+        let mut args: Vec<_> = args
+            .iter()
+            .map(|arg| CString::new(arg.as_str()).unwrap().into_raw())
+            .collect();
 
         let (main_tx, main_rx) = unbounded();
 
@@ -314,6 +321,19 @@ impl FlutterEngine {
     #[inline]
     pub fn engine_ptr(&self) -> flutter_engine_sys::FlutterEngine {
         self.inner.engine_ptr
+    }
+
+    fn args_from_env_vars() -> Vec<String> {
+        let mut args: Vec<String> = vec![];
+
+        // Allow enabling verbose engine logging though an environment variable.
+        if let Ok(verbose) = std::env::var("FLUTTER_ENGINE_VERBOSE_LOGGING") {
+            if verbose == "1" || verbose.to_lowercase() == "true" {
+                args.push("--verbose-logging".into());
+            }
+        }
+
+        args
     }
 
     pub fn register_channel<C>(&self, channel: C) -> Weak<C>
