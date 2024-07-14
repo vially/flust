@@ -1,6 +1,7 @@
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
 use flutter_engine::builder::FlutterEngineBuilder;
+use flutter_engine::plugins::Plugin;
 use flutter_engine::{CreateError, FlutterEngine, RunError};
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
@@ -116,6 +117,13 @@ impl WinitApplication {
         });
 
         Ok(self.event_loop.run_app(&mut state)?)
+    }
+
+    pub fn add_plugin<P>(&mut self, plugin: P)
+    where
+        P: Plugin + 'static,
+    {
+        self.state.implicit_view.add_plugin(plugin);
     }
 }
 

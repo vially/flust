@@ -1,5 +1,6 @@
 use flutter_engine::{
     ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
+    plugins::Plugin,
     view::FlutterView,
     FlutterEngine,
 };
@@ -36,6 +37,13 @@ impl FlutterViewWinit {
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
         FlutterView::new_without_compositor(self.id, self.window.create_opengl_handler())
+    }
+
+    pub(crate) fn add_plugin<P>(&mut self, plugin: P)
+    where
+        P: Plugin + 'static,
+    {
+        self.window.add_plugin(plugin);
     }
 }
 

@@ -14,7 +14,6 @@ use flutter_plugins::{
 };
 use flutter_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
 use flutter_runner_api::ApplicationAttributes;
-use tracing::{error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},
@@ -43,6 +42,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 use thiserror::Error;
+use tracing::{error, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     globals::{registry_queue_init, BindError, GlobalError},
@@ -228,9 +228,23 @@ impl SctkApplication {
 
         Ok(())
     }
+
+    pub fn add_plugin<P>(&mut self, plugin: P)
+    where
+        P: Plugin + 'static,
+    {
+        self.state.add_plugin(plugin);
+    }
 }
 
 impl SctkApplicationState {
+    pub fn add_plugin<P>(&mut self, plugin: P)
+    where
+        P: Plugin + 'static,
+    {
+        self.plugins.write().add_plugin(&self.engine, plugin);
+    }
+
     pub fn with_plugin<F, P>(&self, f: F)
     where
         F: FnOnce(&P),

@@ -1,6 +1,7 @@
 use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
 
 use dpi::Size;
+use flutter_engine::plugins::Plugin;
 use flutter_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
 use tracing::warn;
@@ -53,6 +54,19 @@ impl Application {
 
             #[cfg(feature = "flutter-winit")]
             Self::Winit(app) => Ok(app.run()?),
+        }
+    }
+
+    pub fn add_plugin<P>(&mut self, plugin: P)
+    where
+        P: Plugin + 'static,
+    {
+        match self {
+            #[cfg(feature = "flutter-sctk")]
+            Self::Sctk(app) => app.add_plugin(plugin),
+
+            #[cfg(feature = "flutter-winit")]
+            Self::Winit(app) => app.add_plugin(plugin),
         }
     }
 }
