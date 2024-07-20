@@ -20,13 +20,13 @@ use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::{
-    FlutterEngineDisplay, FlutterEngineDisplaysUpdateType, FlutterKeyEvent, FlutterPointerEvent,
-    FlutterViewId,
+    FlutterEngineDisplay, FlutterEngineDisplaysUpdateType, FlutterEngineResult,
+    FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent, FlutterViewId,
 };
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
-    FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterEngineResult,
-    FlutterTask, VsyncCallback,
+    FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterTask,
+    VsyncCallback,
 };
 use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
@@ -379,19 +379,13 @@ impl FlutterEngine {
         &self.inner.arguments
     }
 
-    pub fn run(&self) -> Result<(), RunError> {
+    pub fn run(&self) -> Result<(), FlutterEngineError> {
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
 
-        unsafe {
-            match flutter_engine_sys::FlutterEngineRunInitialized(self.engine_ptr()) {
-                FlutterEngineResult::kSuccess => Ok(()),
-                FlutterEngineResult::kInvalidLibraryVersion => Err(RunError::InvalidLibraryVersion),
-                FlutterEngineResult::kInvalidArguments => Err(RunError::InvalidArguments),
-                FlutterEngineResult::kInternalInconsistency => Err(RunError::InternalInconsistency),
-            }
-        }
+        let result = unsafe { flutter_engine_sys::FlutterEngineRunInitialized(self.engine_ptr()) };
+        FlutterEngineResult::from_ffi(result)
     }
 
     pub fn add_view(&self, view: FlutterView) {
@@ -666,12 +660,12 @@ fn path_to_cstring(path: &Path) -> CString {
 
 #[derive(Error, Debug)]
 pub enum CreateError {
-    #[error("Engine pointer is null.")]
+    #[error("Engine pointer is null")]
     EnginePtrNull,
 }
 
 #[derive(Error, Debug)]
-pub enum RunError {
+pub enum FlutterEngineError {
     #[error("Invalid library version")]
     InvalidLibraryVersion,
 

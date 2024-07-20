@@ -2,7 +2,7 @@ use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::plugins::Plugin;
-use flutter_engine::{CreateError, FlutterEngine, RunError};
+use flutter_engine::{CreateError, FlutterEngine, FlutterEngineError};
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
 use flutter_runner_api::ApplicationAttributes;
@@ -182,7 +182,7 @@ pub enum WinitApplicationBuildError {
 #[derive(Error, Debug)]
 pub enum WinitApplicationRunError {
     #[error(transparent)]
-    WinitStartEngineError(#[from] RunError),
+    WinitStartEngineError(#[from] FlutterEngineError),
 
     #[error(transparent)]
     WinitEventLoopError(#[from] EventLoopError),

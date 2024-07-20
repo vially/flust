@@ -11,6 +11,8 @@ use flutter_engine_sys::{
 
 pub use flutter_engine_sys::FlutterViewId;
 
+use crate::FlutterEngineError;
+
 // Warning: The implicit view ID value needs to be kept in sync with the
 // `kFlutterImplicitViewId` constant on the engine side:
 // https://github.com/flutter/engine/blob/9a8a5b6ac7ebb30b4c8d37939f7e397a77067820/shell/platform/embedder/embedder.cc#L107
@@ -752,6 +754,29 @@ impl From<FlutterEngineDisplay> for flutter_engine_sys::FlutterEngineDisplay {
             width: display.size.width,
             height: display.size.height,
             device_pixel_ratio: display.device_pixel_ratio,
+        }
+    }
+}
+
+pub(crate) type FlutterEngineResult = Result<(), FlutterEngineError>;
+
+pub(crate) trait FlutterEngineResultExt {
+    fn from_ffi(result: flutter_engine_sys::FlutterEngineResult) -> Self;
+}
+
+impl FlutterEngineResultExt for FlutterEngineResult {
+    fn from_ffi(result: flutter_engine_sys::FlutterEngineResult) -> Self {
+        match result {
+            flutter_engine_sys::FlutterEngineResult::kSuccess => Ok(()),
+            flutter_engine_sys::FlutterEngineResult::kInvalidLibraryVersion => {
+                Err(FlutterEngineError::InvalidLibraryVersion)
+            }
+            flutter_engine_sys::FlutterEngineResult::kInvalidArguments => {
+                Err(FlutterEngineError::InvalidArguments)
+            }
+            flutter_engine_sys::FlutterEngineResult::kInternalInconsistency => {
+                Err(FlutterEngineError::InternalInconsistency)
+            }
         }
     }
 }
