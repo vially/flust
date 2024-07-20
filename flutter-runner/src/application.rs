@@ -122,6 +122,11 @@ impl ApplicationBuilder {
         self
     }
 
+    pub fn with_aot_library_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.attributes.aot_library_path = path.into();
+        self
+    }
+
     pub fn with_assets_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.attributes.assets_path = path.into();
         self
@@ -152,6 +157,7 @@ impl ApplicationBuilder {
 
         if !&self.attributes.assets_path.as_os_str().is_empty()
             && !&self.attributes.icu_data_path.as_os_str().is_empty()
+            && !&self.attributes.aot_library_path.as_os_str().is_empty()
         {
             return;
         }
@@ -160,6 +166,10 @@ impl ApplicationBuilder {
             warn!("Unable to resolve path for /proc/self/exe");
             return;
         };
+
+        if self.attributes.aot_library_path.as_os_str().is_empty() {
+            self.attributes.aot_library_path = executable_dir.join("lib").join("libapp.so");
+        }
 
         if self.attributes.assets_path.as_os_str().is_empty() {
             self.attributes.assets_path = executable_dir.join("data").join("flutter_assets");

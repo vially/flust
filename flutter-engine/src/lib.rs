@@ -20,13 +20,14 @@ use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::{
-    FlutterEngineDisplay, FlutterEngineDisplaysUpdateType, FlutterEngineResult,
-    FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent, FlutterViewId,
+    FlutterEngineAOTData, FlutterEngineDisplay, FlutterEngineDisplaysUpdateType,
+    FlutterEngineResult, FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent,
+    FlutterViewId,
 };
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
-    FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime, FlutterTask,
-    VsyncCallback,
+    FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime,
+    FlutterEngineRunsAOTCompiledDartCode, FlutterTask, VsyncCallback,
 };
 use parking_lot::{Mutex, RwLock};
 use std::ffi::{c_void, CString};
@@ -55,6 +56,7 @@ struct FlutterEngineInner {
     platform_receiver: Receiver<MainThreadCallback>,
     platform_sender: Sender<MainThreadCallback>,
     texture_registry: TextureRegistry,
+    aot_data: FlutterEngineAOTData,
     assets: PathBuf,
     icu_data: PathBuf,
     persistent_cache: PathBuf,
@@ -167,6 +169,7 @@ impl FlutterEngine {
                 platform_receiver: main_rx,
                 platform_sender: main_tx,
                 texture_registry: TextureRegistry::new(),
+                aot_data: FlutterEngineAOTData::new(&builder.aot_library)?,
                 assets: builder.assets,
                 icu_data: builder.icu_data,
                 persistent_cache: builder.persistent_cache,
@@ -280,7 +283,7 @@ impl FlutterEngine {
             shutdown_dart_vm_when_done: true,
             compositor,
             dart_old_gen_heap_size: -1,
-            aot_data: std::ptr::null_mut(),
+            aot_data: inner.aot_data.data,
             compute_platform_resolved_locale_callback: None,
             dart_entrypoint_argc: 0,
             dart_entrypoint_argv: std::ptr::null(),
@@ -316,6 +319,10 @@ impl FlutterEngine {
     pub fn get_current_time_duration() -> Duration {
         let current_time_nanos = unsafe { FlutterEngineGetCurrentTime() };
         Duration::from_nanos(current_time_nanos)
+    }
+
+    pub fn runs_aot_compiled_dart_code() -> bool {
+        unsafe { FlutterEngineRunsAOTCompiledDartCode() }
     }
 
     #[inline]
@@ -660,6 +667,9 @@ fn path_to_cstring(path: &Path) -> CString {
 
 #[derive(Error, Debug)]
 pub enum CreateError {
+    #[error("Invalid AOT data")]
+    InvalidAOTData(#[from] FlutterEngineError),
+
     #[error("Engine pointer is null")]
     EnginePtrNull,
 }

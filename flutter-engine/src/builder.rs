@@ -10,6 +10,7 @@ pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     pub(crate) compositor_enabled: bool,
+    pub(crate) aot_library: PathBuf,
     pub(crate) assets: PathBuf,
     pub(crate) icu_data: PathBuf,
     pub(crate) persistent_cache: PathBuf,
@@ -23,6 +24,7 @@ impl FlutterEngineBuilder {
             platform_handler: None,
             vsync_handler: None,
             compositor_enabled: false,
+            aot_library: Default::default(),
             assets: Default::default(),
             icu_data: Default::default(),
             persistent_cache: Default::default(),
@@ -48,6 +50,11 @@ impl FlutterEngineBuilder {
 
     pub fn with_compositor_enabled(mut self, enabled: bool) -> Self {
         self.compositor_enabled = enabled;
+        self
+    }
+
+    pub fn with_aot_library_path(mut self, path: PathBuf) -> Self {
+        self.aot_library = path;
         self
     }
 

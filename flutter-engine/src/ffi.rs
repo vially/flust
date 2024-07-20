@@ -1,6 +1,8 @@
 use std::{
     ffi::CString,
-    mem, ptr, slice,
+    mem,
+    path::Path,
+    ptr, slice,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -10,8 +12,9 @@ use flutter_engine_sys::{
 };
 
 pub use flutter_engine_sys::FlutterViewId;
+use tracing::error;
 
-use crate::FlutterEngineError;
+use crate::{path_to_cstring, FlutterEngine, FlutterEngineError};
 
 // Warning: The implicit view ID value needs to be kept in sync with the
 // `kFlutterImplicitViewId` constant on the engine side:
@@ -777,6 +780,61 @@ impl FlutterEngineResultExt for FlutterEngineResult {
             flutter_engine_sys::FlutterEngineResult::kInternalInconsistency => {
                 Err(FlutterEngineError::InternalInconsistency)
             }
+        }
+    }
+}
+
+pub(crate) struct FlutterEngineAOTData {
+    pub(crate) data: flutter_engine_sys::FlutterEngineAOTData,
+}
+
+impl FlutterEngineAOTData {
+    pub(crate) fn new(aot_library_path: &Path) -> Result<Self, FlutterEngineError> {
+        let data: flutter_engine_sys::FlutterEngineAOTData = ptr::null_mut();
+
+        if FlutterEngine::runs_aot_compiled_dart_code() {
+            Self::create_aot_data(aot_library_path, &data)?;
+        }
+
+        Ok(Self { data })
+    }
+
+    fn create_aot_data(
+        aot_library_path: &Path,
+        data_out: &flutter_engine_sys::FlutterEngineAOTData,
+    ) -> Result<(), FlutterEngineError> {
+        let elf_path = path_to_cstring(aot_library_path).into_raw();
+        let source = &flutter_engine_sys::FlutterEngineAOTDataSource {
+            type_: flutter_engine_sys::FlutterEngineAOTDataSourceType::kFlutterEngineAOTDataSourceTypeElfPath,
+            __bindgen_anon_1: flutter_engine_sys::FlutterEngineAOTDataSource__bindgen_ty_1 { elf_path }
+        } as *const flutter_engine_sys::FlutterEngineAOTDataSource;
+
+        let result = unsafe {
+            flutter_engine_sys::FlutterEngineCreateAOTData(
+                source,
+                data_out as *const flutter_engine_sys::FlutterEngineAOTData
+                    as *mut flutter_engine_sys::FlutterEngineAOTData,
+            )
+        };
+        FlutterEngineResult::from_ffi(result)
+    }
+
+    fn collect_aot_data(
+        data: flutter_engine_sys::FlutterEngineAOTData,
+    ) -> Result<(), FlutterEngineError> {
+        let result = unsafe { flutter_engine_sys::FlutterEngineCollectAOTData(data) };
+        FlutterEngineResult::from_ffi(result)
+    }
+}
+
+impl Drop for FlutterEngineAOTData {
+    fn drop(&mut self) {
+        if !self.data.is_null() {
+            if let Err(err) = Self::collect_aot_data(self.data) {
+                error!("Failed to collect AOT data: {:?}", err);
+            };
+
+            self.data = ptr::null_mut();
         }
     }
 }

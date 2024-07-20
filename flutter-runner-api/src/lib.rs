@@ -17,6 +17,7 @@ pub struct ApplicationAttributes {
     pub title: Option<String>,
     pub app_id: Option<String>,
     pub args: Vec<String>,
+    pub aot_library_path: PathBuf,
     pub assets_path: PathBuf,
     pub icu_data_path: PathBuf,
     pub persistent_cache_path: PathBuf,
