@@ -664,23 +664,11 @@ fn path_to_cstring(path: &Path) -> CString {
     CString::new(path.to_string_lossy().to_string()).unwrap()
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Error, Debug)]
 pub enum CreateError {
-    NoHandler,
+    #[error("Engine pointer is null.")]
     EnginePtrNull,
 }
-
-impl core::fmt::Display for CreateError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        let msg = match self {
-            CreateError::NoHandler => "No handler set.",
-            CreateError::EnginePtrNull => "Engine ptr is null.",
-        };
-        writeln!(f, "{}", msg)
-    }
-}
-
-impl std::error::Error for CreateError {}
 
 #[derive(Error, Debug)]
 pub enum RunError {
