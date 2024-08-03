@@ -24,7 +24,7 @@ use ffi::{
     FlutterEngineResult, FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent,
     FlutterViewId,
 };
-use flutter_engine_api::FlutterOpenGLHandler;
+use flust_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::{
     FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime,
     FlutterEngineRunsAOTCompiledDartCode, FlutterTask, VsyncCallback,

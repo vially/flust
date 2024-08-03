@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use flutter_engine_api::FlutterOpenGLHandler;
+use flust_engine_api::FlutterOpenGLHandler;
 
 use crate::{
     compositor::FlutterCompositorHandler,

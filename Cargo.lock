@@ -776,12 +776,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "flust-engine-api"
+version = "0.1.0"
+dependencies = [
+ "dpi",
+]
+
+[[package]]
 name = "flust-glutin"
 version = "0.1.0"
 dependencies = [
  "dpi",
+ "flust-engine-api",
  "flutter-engine",
- "flutter-engine-api",
  "gl_generator",
  "glutin",
  "raw-window-handle",
@@ -816,11 +823,11 @@ dependencies = [
  "ashpd",
  "calloop 0.13.0",
  "dpi",
+ "flust-engine-api",
  "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
- "flutter-engine-api",
  "flutter-engine-sys",
  "futures-lite",
  "glutin",
@@ -842,11 +849,11 @@ dependencies = [
  "async-executor",
  "copypasta",
  "dpi",
+ "flust-engine-api",
  "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
- "flutter-engine-api",
  "flutter-engine-sys",
  "futures-lite",
  "gl",
@@ -866,7 +873,7 @@ version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "dpi",
- "flutter-engine-api",
+ "flust-engine-api",
  "flutter-engine-sys",
  "parking_lot",
  "priority-queue",
@@ -874,13 +881,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "flutter-engine-api"
-version = "0.1.0"
-dependencies = [
- "dpi",
 ]
 
 [[package]]

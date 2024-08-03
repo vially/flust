@@ -4,7 +4,7 @@ use std::{
 };
 
 use dpi::PhysicalSize;
-use flutter_engine_api::FlutterOpenGLHandler;
+use flust_engine_api::FlutterOpenGLHandler;
 
 use crate::context::{Context, ResourceContext};
 

@@ -12,6 +12,7 @@ use std::{
 
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use dpi::PhysicalSize;
+use flust_engine_api::FlutterOpenGLHandler;
 use flust_glutin::{
     context::{Context, ResourceContext},
     gl,
@@ -37,7 +38,6 @@ use flutter_engine::{
     tasks::TaskRunnerHandler,
     FlutterEngineWeakRef, FlutterVsyncHandler,
 };
-use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::FlutterEngineGetCurrentTime;
 use futures_lite::StreamExt;
 use smithay_client_toolkit::{
