@@ -5,23 +5,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/flust-engine-sys.rs"));
 
-#[cfg(target_os = "android")]
-#[link(name = "flutter_engine")]
-extern "C" {}
-
-#[cfg(target_os = "ios")]
-#[link(name = "flutter_engine")]
-extern "C" {}
-
-#[cfg(target_os = "linux")]
-#[link(name = "flutter_engine")]
-extern "C" {}
-
-#[cfg(target_os = "macos")]
-#[link(name = "flutter_engine")]
-extern "C" {}
-
-#[cfg(target_os = "windows")]
 #[link(name = "flutter_engine")]
 extern "C" {}
 
