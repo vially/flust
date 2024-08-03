@@ -141,7 +141,7 @@ impl FlutterEngine {
         // FlutterProjectArgs expects a full argv, so when processing it for flags
         // the first item is treated as the executable and ignored. Add a dummy value
         // so that all switches are used.
-        let dummy_args: Vec<String> = vec!["flutter-rs".into()];
+        let dummy_args: Vec<String> = vec!["flust".into()];
         let args = [
             dummy_args,
             FlutterEngine::args_from_env_vars(),

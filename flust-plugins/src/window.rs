@@ -1,5 +1,5 @@
 //! Plugin to handle system dialogs.
-//! It handles flutter-rs/dialog type message.
+//! It handles flust/dialog type message.
 use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use flust_engine::channel::MethodCall;
 use parking_lot::Mutex;
 
 const PLUGIN_NAME: &str = module_path!();
-const CHANNEL_NAME: &str = "flutter-rs/window";
+const CHANNEL_NAME: &str = "flust/window";
 
 pub trait WindowHandler {
     fn close(&mut self);

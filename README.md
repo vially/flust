@@ -1,4 +1,4 @@
-# flutter-rs
+# Flust
 
 [![Crates.io][crates-badge]][crates-url]
 [![flutter version][flutter-badge]][flutter-url]
@@ -37,7 +37,7 @@ Build flutter desktop app in dart & rust.
     `cargo flutter --format appimage build --release`
 
 # Contribution
-To contribute to flutter-rs, please see [CONTRIBUTING](CONTRIBUTING.md).
+To contribute to Flust, please see [CONTRIBUTING](CONTRIBUTING.md).
 
 # ChangeLog
 [CHANGELOG](CHANGELOG.md).

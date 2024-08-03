@@ -1,6 +1,6 @@
-# Contributing guideline to flutter-rs
+# Contributing guideline to Flust
 
-Thank you for your interest in contributing to flutter-rs! We have many areas
+Thank you for your interest in contributing to Flust! We have many areas
 that could use some help.
 
 - Reporting and fixing platform specific bugs.
