@@ -1,11 +1,7 @@
 [package]
 name = "flutter-glfw"
 version = "0.4.0"
-authors = [
-    "juju <gliheng@gmail.com>",
-    "Sophie Tauchert <sophie@999eagle.moe>",
-    "Chandler Newman <chandler2newman@hotmail.co.uk>",
-]
+authors = ["Flust Contributors"]
 edition = "2018"
 description = "Flutter engine embedder using glfw."
 keywords = ["flutter", "GUI"]

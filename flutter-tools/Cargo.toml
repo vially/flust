@@ -1,7 +1,7 @@
 [package]
 name = "flutter-tools"
 version = "0.1.0"
-authors = ["Chandler Newman <chandler2newman@hotmail.co.uk>"]
+authors = ["Flust Contributors"]
 edition = "2018"
 
 [dependencies]

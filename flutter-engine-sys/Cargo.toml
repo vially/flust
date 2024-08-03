@@ -1,7 +1,7 @@
 [package]
 name = "flutter-engine-sys"
 version = "0.4.0"
-authors = ["juju <gliheng@gmail.com>"]
+authors = ["Flust Contributors"]
 edition = "2021"
 description = "Rust bindings for the flutter engine."
 keywords = ["flutter", "GUI"]
