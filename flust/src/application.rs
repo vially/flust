@@ -6,8 +6,8 @@ use flutter_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
 use tracing::warn;
 
-#[cfg(feature = "flutter-sctk")]
-use flutter_sctk::application::{
+#[cfg(feature = "flust-sctk")]
+use flust_sctk::application::{
     SctkApplication, SctkApplicationCreateError, SctkApplicationRunError,
 };
 
@@ -15,7 +15,7 @@ use flutter_sctk::application::{
 use flust_winit::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
 
 pub enum Application {
-    #[cfg(feature = "flutter-sctk")]
+    #[cfg(feature = "flust-sctk")]
     Sctk(SctkApplication),
 
     #[cfg(feature = "flust-winit")]
@@ -30,11 +30,11 @@ impl Application {
     pub fn new(attributes: ApplicationAttributes) -> Result<Application, ApplicationBuildError> {
         match attributes.backend {
             Backend::Sctk => {
-                #[cfg(feature = "flutter-sctk")]
+                #[cfg(feature = "flust-sctk")]
                 return Ok(Application::Sctk(SctkApplication::new(attributes)?));
 
-                #[cfg(not(feature = "flutter-sctk"))]
-                panic!("Failed to initialize sctk application. The 'flutter-sctk' feature is not enabled");
+                #[cfg(not(feature = "flust-sctk"))]
+                panic!("Failed to initialize sctk application. The 'flust-sctk' feature is not enabled");
             }
 
             Backend::Winit => {
@@ -49,7 +49,7 @@ impl Application {
 
     pub fn run(self) -> Result<(), ApplicationRunError> {
         match self {
-            #[cfg(feature = "flutter-sctk")]
+            #[cfg(feature = "flust-sctk")]
             Self::Sctk(app) => Ok(app.run()?),
 
             #[cfg(feature = "flust-winit")]
@@ -62,7 +62,7 @@ impl Application {
         P: Plugin + 'static,
     {
         match self {
-            #[cfg(feature = "flutter-sctk")]
+            #[cfg(feature = "flust-sctk")]
             Self::Sctk(app) => app.add_plugin(plugin),
 
             #[cfg(feature = "flust-winit")]
@@ -183,7 +183,7 @@ impl ApplicationBuilder {
 
 #[derive(Error, Debug)]
 pub enum ApplicationBuildError {
-    #[cfg(feature = "flutter-sctk")]
+    #[cfg(feature = "flust-sctk")]
     #[error(transparent)]
     SctkApplicationCreateError(#[from] SctkApplicationCreateError),
 
@@ -194,7 +194,7 @@ pub enum ApplicationBuildError {
 
 #[derive(Error, Debug)]
 pub enum ApplicationRunError {
-    #[cfg(feature = "flutter-sctk")]
+    #[cfg(feature = "flust-sctk")]
     #[error(transparent)]
     SctkApplicationRunError(#[from] SctkApplicationRunError),
 

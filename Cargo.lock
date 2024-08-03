@@ -765,14 +765,39 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "dpi",
+ "flust-sctk",
  "flust-winit",
  "flutter-engine",
  "flutter-engine-sys",
  "flutter-plugins",
  "flutter-runner-api",
- "flutter-sctk",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "flust-sctk"
+version = "0.1.0"
+dependencies = [
+ "ashpd",
+ "calloop 0.13.0",
+ "dpi",
+ "flutter-engine",
+ "flutter-engine-api",
+ "flutter-engine-sys",
+ "flutter-glutin",
+ "flutter-plugins",
+ "flutter-runner-api",
+ "futures-lite",
+ "glutin",
+ "parking_lot",
+ "raw-window-handle",
+ "smithay-client-toolkit 0.19.1",
+ "smithay-clipboard",
+ "thiserror",
+ "tracing",
+ "wayland-backend",
+ "wayland-client",
 ]
 
 [[package]]
@@ -865,31 +890,6 @@ version = "0.1.0"
 dependencies = [
  "dpi",
  "flutter-engine",
-]
-
-[[package]]
-name = "flutter-sctk"
-version = "0.1.0"
-dependencies = [
- "ashpd",
- "calloop 0.13.0",
- "dpi",
- "flutter-engine",
- "flutter-engine-api",
- "flutter-engine-sys",
- "flutter-glutin",
- "flutter-plugins",
- "flutter-runner-api",
- "futures-lite",
- "glutin",
- "parking_lot",
- "raw-window-handle",
- "smithay-client-toolkit 0.19.1",
- "smithay-clipboard",
- "thiserror",
- "tracing",
- "wayland-backend",
- "wayland-client",
 ]
 
 [[package]]

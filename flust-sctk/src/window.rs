@@ -13,7 +13,6 @@ use flutter_engine::{
 use flutter_engine_sys::FlutterEngineDisplayId;
 use flutter_glutin::builder::FlutterEGLContext;
 use flutter_runner_api::ApplicationAttributes;
-use tracing::{error, trace, warn};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
@@ -27,6 +26,7 @@ use smithay_client_toolkit::{
     },
 };
 use thiserror::Error;
+use tracing::{error, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     protocol::{wl_pointer::WlPointer, wl_surface::WlSurface},
@@ -356,11 +356,11 @@ impl SctkFlutterWindow {
         // implementation. However, one notable difference between the two is
         // that the Windows implementation resizes the EGL surface *after*
         // sending the window metrics event to the engine (e.g.: as part of the
-        // `CompositorOpenGL::Present` callback [0]), while flutter-sctk's
+        // `CompositorOpenGL::Present` callback [0]), while flust-sctk's
         // implementation resizes it *prior* to sending the window metrics
         // event.
         //
-        // This change in flutter-sctk's implementation was done to avoid some
+        // This change in flust-sctk's implementation was done to avoid some
         // visual glitches that were observed when the EGL surface was resized
         // too late (e.g.: as part of the `on_frame_generated` callback).
         //
