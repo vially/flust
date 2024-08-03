@@ -5,7 +5,7 @@ authors = ["David Craven <david@craven.ch>"]
 edition = "2021"
 description = "Flutter engine embedder using winit."
 keywords = ["flutter", "GUI"]
-repository = "https://github.com/flutter-rs/flutter-rs"
+repository = "https://github.com/vially/flust"
 license = "MIT"
 
 [dependencies]
