@@ -11,14 +11,14 @@ use flutter_sctk::application::{
     SctkApplication, SctkApplicationCreateError, SctkApplicationRunError,
 };
 
-#[cfg(feature = "flutter-winit")]
-use flutter_winit::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
+#[cfg(feature = "flust-winit")]
+use flust_winit::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
 
 pub enum Application {
     #[cfg(feature = "flutter-sctk")]
     Sctk(SctkApplication),
 
-    #[cfg(feature = "flutter-winit")]
+    #[cfg(feature = "flust-winit")]
     Winit(WinitApplication),
 }
 
@@ -38,11 +38,11 @@ impl Application {
             }
 
             Backend::Winit => {
-                #[cfg(feature = "flutter-winit")]
+                #[cfg(feature = "flust-winit")]
                 return Ok(Application::Winit(WinitApplication::new(attributes)?));
 
-                #[cfg(not(feature = "flutter-winit"))]
-                panic!("Failed to initialize winit application. The 'flutter-winit' feature is not enabled");
+                #[cfg(not(feature = "flust-winit"))]
+                panic!("Failed to initialize winit application. The 'flust-winit' feature is not enabled");
             }
         }
     }
@@ -52,7 +52,7 @@ impl Application {
             #[cfg(feature = "flutter-sctk")]
             Self::Sctk(app) => Ok(app.run()?),
 
-            #[cfg(feature = "flutter-winit")]
+            #[cfg(feature = "flust-winit")]
             Self::Winit(app) => Ok(app.run()?),
         }
     }
@@ -65,7 +65,7 @@ impl Application {
             #[cfg(feature = "flutter-sctk")]
             Self::Sctk(app) => app.add_plugin(plugin),
 
-            #[cfg(feature = "flutter-winit")]
+            #[cfg(feature = "flust-winit")]
             Self::Winit(app) => app.add_plugin(plugin),
         }
     }
@@ -187,7 +187,7 @@ pub enum ApplicationBuildError {
     #[error(transparent)]
     SctkApplicationCreateError(#[from] SctkApplicationCreateError),
 
-    #[cfg(feature = "flutter-winit")]
+    #[cfg(feature = "flust-winit")]
     #[error(transparent)]
     WinitApplicationBuildError(#[from] WinitApplicationBuildError),
 }
@@ -198,7 +198,7 @@ pub enum ApplicationRunError {
     #[error(transparent)]
     SctkApplicationRunError(#[from] SctkApplicationRunError),
 
-    #[cfg(feature = "flutter-winit")]
+    #[cfg(feature = "flust-winit")]
     #[error(transparent)]
     WinitApplicationRunError(#[from] WinitApplicationRunError),
 }

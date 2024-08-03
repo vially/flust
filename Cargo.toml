@@ -10,7 +10,7 @@ members = [
     "flutter-plugins",
     "flutter-runner-api",
     "flutter-sctk",
-    "flutter-winit",
+    "flust-winit",
     #"flutter-glfw",
     #"flutter-tools"
 ]

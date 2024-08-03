@@ -88,7 +88,7 @@ jobs:
       run: cargo install cargo-flutter --force
 
     - name: Build
-      run: cargo flutter --quiet --no-flutter build -p flutter-winit --target ${{ matrix.platform.target }}
+      run: cargo flutter --quiet --no-flutter build -p flust-winit --target ${{ matrix.platform.target }}
 
     - name: Test
       if: matrix.platform.cross == false

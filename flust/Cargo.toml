@@ -13,7 +13,7 @@ flutter-engine = { path = "../flutter-engine" }
 flutter-plugins = { path = "../flutter-plugins" }
 flutter-runner-api = { path = "../flutter-runner-api" }
 flutter-sctk = { path = "../flutter-sctk", optional = true }
-flutter-winit = { path = "../flutter-winit", optional = true }
+flust-winit = { path = "../flust-winit", optional = true }
 thiserror = "1.0.50"
 tracing = "0.1"
 
