@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
 use flust_plugins::keyevent::{KeyAction, KeyActionType};
-use flutter_engine::{
+use flust_engine::{
     ffi::{FlutterKeyEvent, FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey},
     FlutterEngine,
 };

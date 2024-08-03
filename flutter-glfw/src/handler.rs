@@ -1,8 +1,8 @@
 use flust_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
 use flust_plugins::textinput::TextInputHandler;
 use flust_plugins::window::{PositionParams, WindowHandler};
-use flutter_engine::tasks::TaskRunnerHandler;
-use flutter_engine::FlutterOpenGLHandler;
+use flust_engine::tasks::TaskRunnerHandler;
+use flust_engine::FlutterOpenGLHandler;
 use glfw::Context;
 use parking_lot::Mutex;
 use std::cell::RefCell;

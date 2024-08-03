@@ -4,15 +4,15 @@
 use tracing::debug;
 use std::sync::Weak;
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MessageChannel, MessageHandler},
     codec::STRING_CODEC,
     plugins::Plugin,
     FlutterEngine,
 };
 
-use flutter_engine::channel::Message;
-use flutter_engine::codec::Value;
+use flust_engine::channel::Message;
+use flust_engine::codec::Value;
 
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/lifecycle";

@@ -2,7 +2,7 @@
 //! It handles flutter/platform type message.
 use std::sync::{Arc, Weak};
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MethodCallHandler, MethodChannel},
     codec::JSON_CODEC,
     plugins::Plugin,
@@ -11,8 +11,8 @@ use flutter_engine::{
 
 use serde::{Deserialize, Serialize};
 
-use flutter_engine::channel::MethodCall;
-use flutter_engine::codec::Value;
+use flust_engine::channel::MethodCall;
+use flust_engine::codec::Value;
 use tracing::debug;
 use parking_lot::Mutex;
 

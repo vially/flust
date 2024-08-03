@@ -7,7 +7,7 @@ edition = "2021"
 ashpd = "0.8.1"
 calloop = { version = "0.13.0", features = ["executor"] }
 dpi = "0.1.0"
-flutter-engine = { path = "../flutter-engine" }
+flust-engine = { path = "../flust-engine" }
 flust-engine-api = { path = "../flust-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flust-glutin = { path = "../flust-glutin" }

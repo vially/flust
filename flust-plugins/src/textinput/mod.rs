@@ -6,9 +6,9 @@ use std::sync::{Arc, RwLock, Weak};
 
 use serde::{Deserialize, Serialize};
 
-use flutter_engine::codec::value::VecExt;
+use flust_engine::codec::value::VecExt;
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MethodCallHandler, MethodChannel},
     codec::JSON_CODEC,
     plugins::Plugin,
@@ -16,8 +16,8 @@ use flutter_engine::{
 };
 
 use self::text_editing_state::TextEditingState;
-use flutter_engine::channel::MethodCall;
-use flutter_engine::codec::Value;
+use flust_engine::channel::MethodCall;
+use flust_engine::codec::Value;
 use parking_lot::Mutex;
 
 mod text_editing_state;

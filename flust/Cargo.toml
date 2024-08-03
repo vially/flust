@@ -9,7 +9,7 @@ default = ["flust-sctk"]
 [dependencies]
 dpi = "0.1.0"
 flutter-engine-sys = { path = "../flutter-engine-sys" }
-flutter-engine = { path = "../flutter-engine" }
+flust-engine = { path = "../flust-engine" }
 flust-plugins = { path = "../flust-plugins" }
 flust-runner-api = { path = "../flust-runner-api" }
 flust-sctk = { path = "../flust-sctk", optional = true }

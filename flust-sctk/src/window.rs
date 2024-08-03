@@ -5,13 +5,13 @@ use std::{
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
-use flust_glutin::builder::FlutterEGLContext;
-use flust_runner_api::ApplicationAttributes;
-use flutter_engine::{
+use flust_engine::{
     ffi::{FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
     view::FlutterView,
     FlutterEngineWeakRef,
 };
+use flust_glutin::builder::FlutterEGLContext;
+use flust_runner_api::ApplicationAttributes;
 use flutter_engine_sys::FlutterEngineDisplayId;
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},

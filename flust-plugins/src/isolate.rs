@@ -2,15 +2,15 @@
 //! It handles flutter/localization type message.
 use std::sync::{Arc, Weak};
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MessageChannel, MessageHandler},
     codec::STRING_CODEC,
     plugins::Plugin,
     FlutterEngine,
 };
 
-use flutter_engine::channel::Message;
-use flutter_engine::codec::Value;
+use flust_engine::channel::Message;
+use flust_engine::codec::Value;
 use parking_lot::Mutex;
 
 pub const PLUGIN_NAME: &str = module_path!();

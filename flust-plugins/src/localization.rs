@@ -5,8 +5,8 @@ use icu_locid::Locale;
 use std::sync::Weak;
 use tracing::{debug, error, info, warn};
 
-use flutter_engine::channel::MethodCall;
-use flutter_engine::{
+use flust_engine::channel::MethodCall;
+use flust_engine::{
     channel::{MethodCallHandler, MethodChannel},
     codec::JSON_CODEC,
     plugins::Plugin,

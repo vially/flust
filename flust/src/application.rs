@@ -2,7 +2,7 @@ use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
 
 use dpi::Size;
 use flust_runner_api::{ApplicationAttributes, Backend};
-use flutter_engine::plugins::Plugin;
+use flust_engine::plugins::Plugin;
 use thiserror::Error;
 use tracing::warn;
 

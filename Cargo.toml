@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "flust",
-    "flutter-engine",
+    "flust-engine",
     "flust-engine-api",
     "flutter-engine-sys",
     "flust-glutin",

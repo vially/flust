@@ -4,9 +4,9 @@
 use tracing::debug;
 use std::sync::Weak;
 
-use flutter_engine::channel::MethodCall;
-use flutter_engine::codec::Value;
-use flutter_engine::{
+use flust_engine::channel::MethodCall;
+use flust_engine::codec::Value;
+use flust_engine::{
     channel::{MethodCallHandler, MethodChannel},
     codec::JSON_CODEC,
     plugins::Plugin,

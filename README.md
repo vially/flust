@@ -46,8 +46,8 @@ To contribute to flutter-rs, please see [CONTRIBUTING](CONTRIBUTING.md).
 [flutter-url]: https://flutter.dev/
 [discord-badge]: https://img.shields.io/discord/743549843632423053?label=discord
 [discord-url]: https://discord.gg/WwdAE6p
-[crates-badge]: https://img.shields.io/crates/v/flutter-engine.svg
-[crates-url]: https://crates.io/crates/flutter-engine
+[crates-badge]: https://img.shields.io/crates/v/flust-engine.svg
+[crates-url]: https://crates.io/crates/flust-engine
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: LICENSE-MIT
 [flutter-app-template]: https://user-images.githubusercontent.com/741807/72476798-5a99e280-37ee-11ea-9e08-b0175ae21ad6.png

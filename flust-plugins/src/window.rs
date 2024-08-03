@@ -4,14 +4,14 @@ use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MethodCallHandler, MethodChannel},
     codec::JSON_CODEC,
     plugins::Plugin,
     FlutterEngine,
 };
 
-use flutter_engine::channel::MethodCall;
+use flust_engine::channel::MethodCall;
 use parking_lot::Mutex;
 
 const PLUGIN_NAME: &str = module_path!();

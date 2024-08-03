@@ -1,7 +1,7 @@
 use crate::window::FlutterEvent;
 use copypasta::nop_clipboard::NopClipboardContext;
 use copypasta::ClipboardProvider;
-use flutter_engine::tasks::TaskRunnerHandler;
+use flust_engine::tasks::TaskRunnerHandler;
 use flust_plugins::platform::{AppSwitcherDescription, MimeError, PlatformHandler};
 use flust_plugins::textinput::TextInputHandler;
 use flust_plugins::window::{PositionParams, WindowHandler};

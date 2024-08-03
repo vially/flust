@@ -1,4 +1,4 @@
-use flutter_engine::ffi::{FlutterLogicalKey, FlutterPhysicalKey};
+use flust_engine::ffi::{FlutterLogicalKey, FlutterPhysicalKey};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 
 use crate::keyboard::{SctkLogicalKey, SctkPhysicalKey};

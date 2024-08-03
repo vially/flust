@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 flutter-engine-sys = { path = "../flutter-engine-sys" }
-flutter-engine = { path = "../flutter-engine" }
+flust-engine = { path = "../flust-engine" }
 flust-plugins = { path = "../flust-plugins" }
 locale_config = "0.3.0"
 log = "0.4.8"

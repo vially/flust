@@ -1,9 +1,9 @@
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
 use flust_runner_api::ApplicationAttributes;
-use flutter_engine::builder::FlutterEngineBuilder;
-use flutter_engine::plugins::Plugin;
-use flutter_engine::{CreateError, FlutterEngine, FlutterEngineError};
+use flust_engine::builder::FlutterEngineBuilder;
+use flust_engine::plugins::Plugin;
+use flust_engine::{CreateError, FlutterEngine, FlutterEngineError};
 use flust_plugins::localization::LocalizationPlugin;
 use flust_plugins::settings::{PlatformBrightness, SettingsPlugin};
 use futures_lite::future;

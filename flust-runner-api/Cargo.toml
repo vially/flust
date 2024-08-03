@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 dpi = "0.1.0"
-flutter-engine = { path = "../flutter-engine" }
+flust-engine = { path = "../flust-engine" }

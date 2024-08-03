@@ -13,16 +13,16 @@ use flust_plugins::settings::SettingsPlugin;
 use flust_plugins::system::SystemPlugin;
 use flust_plugins::textinput::TextInputPlugin;
 use flust_plugins::window::WindowPlugin;
-use flutter_engine::builder::FlutterEngineBuilder;
-use flutter_engine::channel::Channel;
-use flutter_engine::ffi::{
+use flust_engine::builder::FlutterEngineBuilder;
+use flust_engine::channel::Channel;
+use flust_engine::ffi::{
     FlutterPointerDeviceKind, FlutterPointerMouseButtons, FlutterPointerPhase,
     FlutterPointerSignalKind,
 };
-use flutter_engine::plugins::{Plugin, PluginRegistrar};
-use flutter_engine::tasks::TaskRunnerHandler;
-use flutter_engine::texture_registry::Texture;
-use flutter_engine::FlutterEngine;
+use flust_engine::plugins::{Plugin, PluginRegistrar};
+use flust_engine::tasks::TaskRunnerHandler;
+use flust_engine::texture_registry::Texture;
+use flust_engine::FlutterEngine;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::path::PathBuf;

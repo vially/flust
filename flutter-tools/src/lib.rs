@@ -194,7 +194,7 @@ impl Engine {
     pub fn engine_dir(&self) -> PathBuf {
         dirs::cache_dir()
             .expect("Cannot get cache dir")
-            .join("flutter-engine")
+            .join("flust-engine")
             .join(&self.version)
             .join(&self.target)
             .join(self.build.build())

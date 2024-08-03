@@ -4,15 +4,15 @@ use std::sync::Weak;
 
 use serde::{Deserialize, Serialize};
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MessageChannel, MessageHandler},
     codec::JSON_CODEC,
     plugins::Plugin,
     FlutterEngine,
 };
 
-use flutter_engine::channel::Message;
-use flutter_engine::codec::Value;
+use flust_engine::channel::Message;
+use flust_engine::codec::Value;
 use tracing::{error, info};
 
 pub const PLUGIN_NAME: &str = module_path!();

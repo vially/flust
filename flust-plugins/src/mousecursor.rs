@@ -5,14 +5,14 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MethodCall, MethodCallHandler, MethodChannel},
     codec::STANDARD_CODEC,
     plugins::Plugin,
     FlutterEngine,
 };
 
-use flutter_engine::codec::Value;
+use flust_engine::codec::Value;
 use parking_lot::Mutex;
 use strum::EnumString;
 use tracing::debug;

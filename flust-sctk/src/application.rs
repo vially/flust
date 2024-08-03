@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use calloop::futures::{Executor, Scheduler};
 use flust_runner_api::ApplicationAttributes;
-use flutter_engine::{
+use flust_engine::{
     builder::FlutterEngineBuilder,
     ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
     plugins::{Plugin, PluginRegistrar},
@@ -364,7 +364,7 @@ impl SctkApplicationState {
         trace!("notifying engine of display update: {:?}", displays);
 
         self.engine.notify_display_update(
-            flutter_engine::ffi::FlutterEngineDisplaysUpdateType::Startup,
+            flust_engine::ffi::FlutterEngineDisplaysUpdateType::Startup,
             displays,
         );
     }

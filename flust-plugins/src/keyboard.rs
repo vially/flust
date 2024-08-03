@@ -7,7 +7,7 @@ use std::{
 use tracing::debug;
 use parking_lot::Mutex;
 
-use flutter_engine::{
+use flust_engine::{
     channel::{MethodCall, MethodCallHandler, MethodChannel},
     codec::STANDARD_CODEC,
     ffi::{FlutterLogicalKey, FlutterPhysicalKey},
@@ -15,7 +15,7 @@ use flutter_engine::{
     FlutterEngine,
 };
 
-use flutter_engine::codec::Value;
+use flust_engine::codec::Value;
 
 pub const PLUGIN_NAME: &str = module_path!();
 pub const CHANNEL_NAME: &str = "flutter/keyboard";

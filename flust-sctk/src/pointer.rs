@@ -1,11 +1,11 @@
 use std::time::SystemTimeError;
 
 use dpi::LogicalPosition;
-use flutter_engine::ffi::{
+use flust_engine::ffi::{
     FlutterPointerDeviceKind, FlutterPointerMouseButtons, FlutterPointerPhase,
     FlutterPointerSignalKind,
 };
-use flutter_engine::ffi::{FlutterPointerEvent, FlutterViewId};
+use flust_engine::ffi::{FlutterPointerEvent, FlutterViewId};
 use smithay_client_toolkit::seat::pointer::{
     PointerEvent, PointerEventKind, BTN_BACK, BTN_EXTRA, BTN_FORWARD, BTN_LEFT, BTN_RIGHT, BTN_SIDE,
 };

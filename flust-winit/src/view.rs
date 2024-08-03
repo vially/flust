@@ -1,4 +1,4 @@
-use flutter_engine::{
+use flust_engine::{
     ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
     plugins::Plugin,
     view::FlutterView,

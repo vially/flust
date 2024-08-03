@@ -24,7 +24,7 @@ use flust_plugins::{
     settings::{PlatformBrightness, SettingsPlugin},
     textinput::TextInputHandler,
 };
-use flutter_engine::{
+use flust_engine::{
     compositor::{
         CompositorCollectBackingStoreError, CompositorCreateBackingStoreError,
         CompositorPresentError, FlutterCompositorHandler,

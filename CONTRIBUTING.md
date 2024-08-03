@@ -14,9 +14,9 @@ that could use some help.
 This project is cargo workspace with multiple targets.
 
 - `flust-winit` creates an event loop and a window and interfaces with the
-  `flutter-engine` crate.
+  `flust-engine` crate.
 
-- `flutter-engine` is the library that make flutter run. It provides a
+- `flust-engine` is the library that make flutter run. It provides a
   `MethodChannel` struct to iterop with flutter and dart.
 
     When an engine instance is run, a `platform_message_callback` is passed to

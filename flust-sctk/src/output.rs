@@ -1,5 +1,5 @@
 use dpi::PhysicalSize;
-use flutter_engine::ffi::FlutterEngineDisplay;
+use flust_engine::ffi::FlutterEngineDisplay;
 use flutter_engine_sys::FlutterEngineDisplayId;
 use smithay_client_toolkit::output::OutputInfo;
 

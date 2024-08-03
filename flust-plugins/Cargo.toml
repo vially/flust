@@ -9,7 +9,7 @@ repository = "https://github.com/vially/flust"
 license = "MIT"
 
 [dependencies]
-flutter-engine = { path = "../flutter-engine" }
+flust-engine = { path = "../flust-engine" }
 icu_locid = "1.4.0"
 tracing = "0.1"
 parking_lot = "0.12.1"
