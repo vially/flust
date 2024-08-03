@@ -16,7 +16,7 @@ flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
 flutter-glutin = { path = "../flutter-glutin" }
 flutter-plugins = { path = "../flutter-plugins" }
-flutter-runner-api = { path = "../flutter-runner-api" }
+flust-runner-api = { path = "../flust-runner-api" }
 gl = "0.14.0"
 glutin = "0.32.0"
 glutin-winit = "0.5.0"

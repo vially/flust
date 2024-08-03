@@ -1,11 +1,11 @@
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use async_executor::LocalExecutor;
+use flust_runner_api::ApplicationAttributes;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::plugins::Plugin;
 use flutter_engine::{CreateError, FlutterEngine, FlutterEngineError};
 use flutter_plugins::localization::LocalizationPlugin;
 use flutter_plugins::settings::{PlatformBrightness, SettingsPlugin};
-use flutter_runner_api::ApplicationAttributes;
 use futures_lite::future;
 use std::sync::Arc;
 use sys_locale::get_locale;

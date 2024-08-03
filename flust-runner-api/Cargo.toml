@@ -1,5 +1,5 @@
 [package]
-name = "flutter-runner-api"
+name = "flust-runner-api"
 version = "0.1.0"
 edition = "2021"
 

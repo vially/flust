@@ -1,3 +1,3 @@
-pub use flutter_runner_api::*;
+pub use flust_runner_api::*;
 
 pub mod application;

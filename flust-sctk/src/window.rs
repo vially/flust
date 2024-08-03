@@ -5,6 +5,7 @@ use std::{
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
+use flust_runner_api::ApplicationAttributes;
 use flutter_engine::{
     ffi::{FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
     view::FlutterView,
@@ -12,7 +13,6 @@ use flutter_engine::{
 };
 use flutter_engine_sys::FlutterEngineDisplayId;
 use flutter_glutin::builder::FlutterEGLContext;
-use flutter_runner_api::ApplicationAttributes;
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,

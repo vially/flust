@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use calloop::futures::{Executor, Scheduler};
+use flust_runner_api::ApplicationAttributes;
 use flutter_engine::{
     builder::FlutterEngineBuilder,
     ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
@@ -13,7 +14,6 @@ use flutter_plugins::{
     platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
 };
 use flutter_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
-use flutter_runner_api::ApplicationAttributes;
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},
