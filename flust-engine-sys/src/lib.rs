@@ -5,9 +5,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/flust-engine-sys.rs"));
 
-#[link(name = "flutter_engine")]
-extern "C" {}
-
 #[cfg(test)]
 mod tests {
     #[allow(unused)]

@@ -7,6 +7,7 @@ description = "Rust bindings for the flutter engine."
 keywords = ["flutter", "GUI"]
 repository = "https://github.com/vially/flust"
 license = "MIT"
+links = "flutter_engine"
 
 [build-dependencies]
 bindgen = "0.69.1"
