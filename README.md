@@ -42,7 +42,6 @@ To contribute to flutter-rs, please see [CONTRIBUTING](CONTRIBUTING.md).
 # ChangeLog
 [CHANGELOG](CHANGELOG.md).
 
-[flutter-rs logo]: https://raw.githubusercontent.com/flutter-rs/flutter-rs/master/www/images/logo.svg
 [flutter-badge]: https://img.shields.io/badge/flutter-v1.9.1-blueviolet.svg
 [flutter-url]: https://flutter.dev/
 [discord-badge]: https://img.shields.io/discord/743549843632423053?label=discord
@@ -52,5 +51,3 @@ To contribute to flutter-rs, please see [CONTRIBUTING](CONTRIBUTING.md).
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: LICENSE-MIT
 [flutter-app-template]: https://user-images.githubusercontent.com/741807/72476798-5a99e280-37ee-11ea-9e08-b0175ae21ad6.png
-[demo-ui]: https://raw.githubusercontent.com/flutter-rs/flutter-rs/master/www/images/demo_ui.png
-
