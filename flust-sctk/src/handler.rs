@@ -12,6 +12,17 @@ use std::{
 
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use dpi::PhysicalSize;
+use flust_glutin::{
+    context::{Context, ResourceContext},
+    gl,
+};
+use flust_plugins::{
+    keyboard::{KeyboardStateError, KeyboardStateHandler},
+    mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
+    platform::{AppSwitcherDescription, MimeError, PlatformHandler},
+    settings::{PlatformBrightness, SettingsPlugin},
+    textinput::TextInputHandler,
+};
 use flutter_engine::{
     compositor::{
         CompositorCollectBackingStoreError, CompositorCreateBackingStoreError,
@@ -28,17 +39,6 @@ use flutter_engine::{
 };
 use flutter_engine_api::FlutterOpenGLHandler;
 use flutter_engine_sys::FlutterEngineGetCurrentTime;
-use flutter_glutin::{
-    context::{Context, ResourceContext},
-    gl,
-};
-use flust_plugins::{
-    keyboard::{KeyboardStateError, KeyboardStateHandler},
-    mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
-    platform::{AppSwitcherDescription, MimeError, PlatformHandler},
-    settings::{PlatformBrightness, SettingsPlugin},
-    textinput::TextInputHandler,
-};
 use futures_lite::StreamExt;
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},

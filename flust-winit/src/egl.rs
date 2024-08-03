@@ -1,7 +1,7 @@
 use std::{error::Error, num::NonZeroU32};
 
 use dpi::PhysicalSize;
-use flutter_glutin::{
+use flust_glutin::{
     builder::ContextBuilder,
     context::{Context, ResourceContext},
 };

@@ -10,7 +10,7 @@ dpi = "0.1.0"
 flutter-engine = { path = "../flutter-engine" }
 flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
-flutter-glutin = { path = "../flutter-glutin" }
+flust-glutin = { path = "../flust-glutin" }
 flust-plugins = { path = "../flust-plugins" }
 flust-runner-api = { path = "../flust-runner-api" }
 futures-lite = "2.3.0"

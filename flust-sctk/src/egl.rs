@@ -1,7 +1,7 @@
 use std::{num::NonZeroU32, ptr::NonNull};
 
 use dpi::PhysicalSize;
-use flutter_glutin::builder::{ContextBuildError, ContextBuilder, FlutterEGLContext};
+use flust_glutin::builder::{ContextBuildError, ContextBuilder, FlutterEGLContext};
 use glutin::surface::SwapInterval;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,

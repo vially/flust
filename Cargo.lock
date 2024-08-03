@@ -776,6 +776,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "flust-glutin"
+version = "0.1.0"
+dependencies = [
+ "dpi",
+ "flutter-engine",
+ "flutter-engine-api",
+ "gl_generator",
+ "glutin",
+ "raw-window-handle",
+ "thiserror",
+]
+
+[[package]]
 name = "flust-plugins"
 version = "0.4.0"
 dependencies = [
@@ -803,12 +816,12 @@ dependencies = [
  "ashpd",
  "calloop 0.13.0",
  "dpi",
+ "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
  "flutter-engine-api",
  "flutter-engine-sys",
- "flutter-glutin",
  "futures-lite",
  "glutin",
  "parking_lot",
@@ -829,12 +842,12 @@ dependencies = [
  "async-executor",
  "copypasta",
  "dpi",
+ "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
  "flutter-engine-api",
  "flutter-engine-sys",
- "flutter-glutin",
  "futures-lite",
  "gl",
  "glutin",
@@ -877,19 +890,6 @@ dependencies = [
  "bindgen",
  "dirs",
  "libloading",
-]
-
-[[package]]
-name = "flutter-glutin"
-version = "0.1.0"
-dependencies = [
- "dpi",
- "flutter-engine",
- "flutter-engine-api",
- "gl_generator",
- "glutin",
- "raw-window-handle",
- "thiserror",
 ]
 
 [[package]]

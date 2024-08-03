@@ -14,7 +14,7 @@ dpi = "0.1.0"
 flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-engine = { path = "../flutter-engine" }
-flutter-glutin = { path = "../flutter-glutin" }
+flust-glutin = { path = "../flust-glutin" }
 flust-plugins = { path = "../flust-plugins" }
 flust-runner-api = { path = "../flust-runner-api" }
 gl = "0.14.0"
