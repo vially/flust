@@ -12,7 +12,7 @@ license = "MIT"
 crossbeam-channel = "0.5.8"
 dpi = "0.1.0"
 flust-engine-api = { path = "../flust-engine-api" }
-flutter-engine-sys = { path = "../flutter-engine-sys" }
+flust-engine-sys = { path = "../flust-engine-sys" }
 tracing = "0.1"
 parking_lot = "0.12.1"
 priority-queue = "2.0.3"

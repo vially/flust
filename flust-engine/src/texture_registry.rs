@@ -1,5 +1,5 @@
 use crate::FlutterEngine;
-use flutter_engine_sys::FlutterOpenGLTexture;
+use flust_engine_sys::FlutterOpenGLTexture;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -26,7 +26,7 @@ impl TextureRegistry {
         engine.run_on_platform_thread(move |engine| {
             trace!("texture {}: register", texture_id);
             unsafe {
-                flutter_engine_sys::FlutterEngineRegisterExternalTexture(
+                flust_engine_sys::FlutterEngineRegisterExternalTexture(
                     engine.engine_ptr(),
                     texture_id,
                 );
@@ -82,7 +82,7 @@ fn post_frame_internal(
     engine.run_on_platform_thread(move |engine| {
         trace!("texture {}: marking frame available", texture_id);
         unsafe {
-            flutter_engine_sys::FlutterEngineMarkExternalTextureFrameAvailable(
+            flust_engine_sys::FlutterEngineMarkExternalTextureFrameAvailable(
                 engine.engine_ptr(),
                 texture_id,
             );
@@ -96,7 +96,7 @@ impl Drop for Texture {
         self.engine.run_on_platform_thread(move |engine| {
             trace!("texture {}: unregister", texture_id);
             unsafe {
-                flutter_engine_sys::FlutterEngineUnregisterExternalTexture(
+                flust_engine_sys::FlutterEngineUnregisterExternalTexture(
                     engine.engine_ptr(),
                     texture_id,
                 );

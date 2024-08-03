@@ -766,11 +766,11 @@ dependencies = [
  "dirs",
  "dpi",
  "flust-engine",
+ "flust-engine-sys",
  "flust-plugins",
  "flust-runner-api",
  "flust-sctk",
  "flust-winit",
- "flutter-engine-sys",
  "thiserror",
  "tracing",
 ]
@@ -782,7 +782,7 @@ dependencies = [
  "crossbeam-channel",
  "dpi",
  "flust-engine-api",
- "flutter-engine-sys",
+ "flust-engine-sys",
  "parking_lot",
  "priority-queue",
  "serde",
@@ -796,6 +796,15 @@ name = "flust-engine-api"
 version = "0.1.0"
 dependencies = [
  "dpi",
+]
+
+[[package]]
+name = "flust-engine-sys"
+version = "0.4.0"
+dependencies = [
+ "bindgen",
+ "dirs",
+ "libloading",
 ]
 
 [[package]]
@@ -841,10 +850,10 @@ dependencies = [
  "dpi",
  "flust-engine",
  "flust-engine-api",
+ "flust-engine-sys",
  "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
- "flutter-engine-sys",
  "futures-lite",
  "glutin",
  "parking_lot",
@@ -867,10 +876,10 @@ dependencies = [
  "dpi",
  "flust-engine",
  "flust-engine-api",
+ "flust-engine-sys",
  "flust-glutin",
  "flust-plugins",
  "flust-runner-api",
- "flutter-engine-sys",
  "futures-lite",
  "gl",
  "glutin",
@@ -881,15 +890,6 @@ dependencies = [
  "thiserror",
  "tracing",
  "winit",
-]
-
-[[package]]
-name = "flutter-engine-sys"
-version = "0.4.0"
-dependencies = [
- "bindgen",
- "dirs",
- "libloading",
 ]
 
 [[package]]

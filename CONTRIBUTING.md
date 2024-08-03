@@ -25,7 +25,7 @@ This project is cargo workspace with multiple targets.
     method. When flutter makes a native platform request, the callback is called
     and processed by a registered plugin.
 
-- `flutter-engine-sys` is the crate for ffi with flutter engine C apis. It
+- `flust-engine-sys` is the crate for ffi with flutter engine C apis. It
   generates bindings using bindgen.
 
 ## Reference

@@ -1,5 +1,5 @@
 use crate::FlutterEngine;
-use flutter_engine_sys::{FlutterPlatformMessage, FlutterPlatformMessageResponseHandle};
+use flust_engine_sys::{FlutterPlatformMessage, FlutterPlatformMessageResponseHandle};
 use std::borrow::Cow;
 use std::ffi::{c_void, CStr, CString};
 use std::{mem, ptr};
@@ -22,7 +22,7 @@ impl PlatformMessageResponseHandle {
         unsafe {
             let callback = Box::new(callback);
             let mut handle: *mut FlutterPlatformMessageResponseHandle = ptr::null_mut();
-            flutter_engine_sys::FlutterPlatformMessageCreateResponseHandle(
+            flust_engine_sys::FlutterPlatformMessageCreateResponseHandle(
                 engine.engine_ptr(),
                 Some(response_handle_callback),
                 Box::into_raw(Box::new(callback)) as _,

@@ -12,18 +12,6 @@ use std::{
 
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use dpi::PhysicalSize;
-use flust_engine_api::FlutterOpenGLHandler;
-use flust_glutin::{
-    context::{Context, ResourceContext},
-    gl,
-};
-use flust_plugins::{
-    keyboard::{KeyboardStateError, KeyboardStateHandler},
-    mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
-    platform::{AppSwitcherDescription, MimeError, PlatformHandler},
-    settings::{PlatformBrightness, SettingsPlugin},
-    textinput::TextInputHandler,
-};
 use flust_engine::{
     compositor::{
         CompositorCollectBackingStoreError, CompositorCreateBackingStoreError,
@@ -38,7 +26,19 @@ use flust_engine::{
     tasks::TaskRunnerHandler,
     FlutterEngineWeakRef, FlutterVsyncHandler,
 };
-use flutter_engine_sys::FlutterEngineGetCurrentTime;
+use flust_engine_api::FlutterOpenGLHandler;
+use flust_engine_sys::FlutterEngineGetCurrentTime;
+use flust_glutin::{
+    context::{Context, ResourceContext},
+    gl,
+};
+use flust_plugins::{
+    keyboard::{KeyboardStateError, KeyboardStateHandler},
+    mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
+    platform::{AppSwitcherDescription, MimeError, PlatformHandler},
+    settings::{PlatformBrightness, SettingsPlugin},
+    textinput::TextInputHandler,
+};
 use futures_lite::StreamExt;
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},

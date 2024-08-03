@@ -25,7 +25,7 @@ use ffi::{
     FlutterViewId,
 };
 use flust_engine_api::FlutterOpenGLHandler;
-use flutter_engine_sys::{
+use flust_engine_sys::{
     FlutterCompositor, FlutterEngineDisplayId, FlutterEngineGetCurrentTime,
     FlutterEngineRunsAOTCompiledDartCode, FlutterTask, VsyncCallback,
 };
@@ -50,7 +50,7 @@ pub(crate) enum MainThreadCallback {
 struct FlutterEngineInner {
     view_registry: RwLock<ViewRegistry>,
     vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
-    engine_ptr: flutter_engine_sys::FlutterEngine,
+    engine_ptr: flust_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
     platform_runner: TaskRunner,
     platform_receiver: Receiver<MainThreadCallback>,
@@ -182,11 +182,11 @@ impl FlutterEngine {
         inner.platform_runner.init(engine.downgrade());
 
         // Configure renderer
-        let renderer_config = flutter_engine_sys::FlutterRendererConfig {
-            type_: flutter_engine_sys::FlutterRendererType::kOpenGL,
-            __bindgen_anon_1: flutter_engine_sys::FlutterRendererConfig__bindgen_ty_1 {
-                open_gl: flutter_engine_sys::FlutterOpenGLRendererConfig {
-                    struct_size: std::mem::size_of::<flutter_engine_sys::FlutterOpenGLRendererConfig>(
+        let renderer_config = flust_engine_sys::FlutterRendererConfig {
+            type_: flust_engine_sys::FlutterRendererType::kOpenGL,
+            __bindgen_anon_1: flust_engine_sys::FlutterRendererConfig__bindgen_ty_1 {
+                open_gl: flust_engine_sys::FlutterOpenGLRendererConfig {
+                    struct_size: std::mem::size_of::<flust_engine_sys::FlutterOpenGLRendererConfig>(
                     ),
                     make_current: Some(flutter_callbacks::make_current),
                     clear_current: Some(flutter_callbacks::clear_current),
@@ -214,8 +214,8 @@ impl FlutterEngine {
             Weak::into_raw(Arc::downgrade(&arc)) as *mut std::ffi::c_void
         };
 
-        let platform_task_runner = flutter_engine_sys::FlutterTaskRunnerDescription {
-            struct_size: std::mem::size_of::<flutter_engine_sys::FlutterTaskRunnerDescription>(),
+        let platform_task_runner = flust_engine_sys::FlutterTaskRunnerDescription {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterTaskRunnerDescription>(),
             user_data: runner_ptr,
             runs_task_on_current_thread_callback: Some(
                 flutter_callbacks::runs_task_on_current_thread,
@@ -223,10 +223,10 @@ impl FlutterEngine {
             post_task_callback: Some(flutter_callbacks::post_task),
             identifier: 0,
         };
-        let custom_task_runners = flutter_engine_sys::FlutterCustomTaskRunners {
-            struct_size: std::mem::size_of::<flutter_engine_sys::FlutterCustomTaskRunners>(),
+        let custom_task_runners = flust_engine_sys::FlutterCustomTaskRunners {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterCustomTaskRunners>(),
             platform_task_runner: &platform_task_runner
-                as *const flutter_engine_sys::FlutterTaskRunnerDescription,
+                as *const flust_engine_sys::FlutterTaskRunnerDescription,
             render_task_runner: std::ptr::null(),
             thread_priority_setter: None,
         };
@@ -254,8 +254,8 @@ impl FlutterEngine {
         };
 
         // Configure engine
-        let project_args = flutter_engine_sys::FlutterProjectArgs {
-            struct_size: std::mem::size_of::<flutter_engine_sys::FlutterProjectArgs>(),
+        let project_args = flust_engine_sys::FlutterProjectArgs {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterProjectArgs>(),
             assets_path: path_to_cstring(&inner.assets).into_raw(),
             main_path__unused__: std::ptr::null(),
             packages_path__unused__: std::ptr::null(),
@@ -279,7 +279,7 @@ impl FlutterEngine {
             vsync_callback,
             custom_dart_entrypoint: std::ptr::null(),
             custom_task_runners: &custom_task_runners
-                as *const flutter_engine_sys::FlutterCustomTaskRunners,
+                as *const flust_engine_sys::FlutterCustomTaskRunners,
             shutdown_dart_vm_when_done: true,
             compositor,
             dart_old_gen_heap_size: -1,
@@ -299,14 +299,14 @@ impl FlutterEngine {
         unsafe {
             let inner_ptr = Weak::into_raw(Arc::downgrade(inner)) as *mut std::ffi::c_void;
 
-            if flutter_engine_sys::FlutterEngineInitialize(
+            if flust_engine_sys::FlutterEngineInitialize(
                 1,
                 &renderer_config,
                 &project_args,
                 inner_ptr,
-                &inner.engine_ptr as *const flutter_engine_sys::FlutterEngine
-                    as *mut flutter_engine_sys::FlutterEngine,
-            ) != flutter_engine_sys::FlutterEngineResult::kSuccess
+                &inner.engine_ptr as *const flust_engine_sys::FlutterEngine
+                    as *mut flust_engine_sys::FlutterEngine,
+            ) != flust_engine_sys::FlutterEngineResult::kSuccess
                 || inner.engine_ptr.is_null()
             {
                 Err(CreateError::EnginePtrNull)
@@ -326,7 +326,7 @@ impl FlutterEngine {
     }
 
     #[inline]
-    pub fn engine_ptr(&self) -> flutter_engine_sys::FlutterEngine {
+    pub fn engine_ptr(&self) -> flust_engine_sys::FlutterEngine {
         self.inner.engine_ptr
     }
 
@@ -391,7 +391,7 @@ impl FlutterEngine {
             panic!("Not on platform thread");
         }
 
-        let result = unsafe { flutter_engine_sys::FlutterEngineRunInitialized(self.engine_ptr()) };
+        let result = unsafe { flust_engine_sys::FlutterEngineRunInitialized(self.engine_ptr()) };
         FlutterEngineResult::from_ffi(result)
     }
 
@@ -451,7 +451,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineOnVsync(
+            flust_engine_sys::FlutterEngineOnVsync(
                 self.engine_ptr(),
                 baton,
                 frame_start_time_nanos,
@@ -473,8 +473,8 @@ impl FlutterEngine {
             panic!("Not on platform thread");
         }
 
-        let event = flutter_engine_sys::FlutterWindowMetricsEvent {
-            struct_size: std::mem::size_of::<flutter_engine_sys::FlutterWindowMetricsEvent>(),
+        let event = flust_engine_sys::FlutterWindowMetricsEvent {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterWindowMetricsEvent>(),
             width,
             height,
             pixel_ratio,
@@ -490,7 +490,7 @@ impl FlutterEngine {
             __bindgen_padding_0: 0,
         };
         unsafe {
-            flutter_engine_sys::FlutterEngineSendWindowMetricsEvent(self.engine_ptr(), &event);
+            flust_engine_sys::FlutterEngineSendWindowMetricsEvent(self.engine_ptr(), &event);
         }
     }
 
@@ -500,7 +500,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineSendPointerEvent(self.engine_ptr(), &event.into(), 1);
+            flust_engine_sys::FlutterEngineSendPointerEvent(self.engine_ptr(), &event.into(), 1);
         }
     }
 
@@ -511,7 +511,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineSendKeyEvent(
+            flust_engine_sys::FlutterEngineSendKeyEvent(
                 self.engine_ptr(),
                 &event.as_ptr(),
                 None,
@@ -530,11 +530,11 @@ impl FlutterEngine {
             panic!("Not on platform thread");
         }
 
-        let displays: Vec<flutter_engine_sys::FlutterEngineDisplay> =
+        let displays: Vec<flust_engine_sys::FlutterEngineDisplay> =
             displays.iter().map(|display| (*display).into()).collect();
 
         unsafe {
-            flutter_engine_sys::FlutterEngineNotifyDisplayUpdate(
+            flust_engine_sys::FlutterEngineNotifyDisplayUpdate(
                 self.engine_ptr(),
                 update_type.into(),
                 displays.as_ptr(),
@@ -550,10 +550,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineSendPlatformMessage(
-                self.engine_ptr(),
-                &message.into(),
-            );
+            flust_engine_sys::FlutterEngineSendPlatformMessage(self.engine_ptr(), &message.into());
         }
     }
 
@@ -568,7 +565,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineSendPlatformMessageResponse(
+            flust_engine_sys::FlutterEngineSendPlatformMessageResponse(
                 self.engine_ptr(),
                 response_handle.into(),
                 bytes.as_ptr(),
@@ -584,7 +581,7 @@ impl FlutterEngine {
         }
 
         unsafe {
-            flutter_engine_sys::FlutterEngineShutdown(self.engine_ptr());
+            flust_engine_sys::FlutterEngineShutdown(self.engine_ptr());
         }
     }
 
@@ -618,7 +615,7 @@ impl FlutterEngine {
     pub(crate) fn run_task(&self, task: &FlutterTask) {
         trace!("run_task");
         unsafe {
-            flutter_engine_sys::FlutterEngineRunTask(self.engine_ptr(), task as *const FlutterTask);
+            flust_engine_sys::FlutterEngineRunTask(self.engine_ptr(), task as *const FlutterTask);
         }
     }
 
@@ -631,7 +628,7 @@ impl FlutterEngine {
             let cbk = CallbackBox { cbk: Box::new(f) };
             let b = Box::new(cbk);
             let ptr = Box::into_raw(b);
-            flutter_engine_sys::FlutterEnginePostRenderThreadTask(
+            flust_engine_sys::FlutterEnginePostRenderThreadTask(
                 self.engine_ptr(),
                 Some(render_thread_task),
                 ptr as *mut c_void,

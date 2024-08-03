@@ -1,6 +1,6 @@
 use dpi::PhysicalSize;
 use flust_engine::ffi::FlutterEngineDisplay;
-use flutter_engine_sys::FlutterEngineDisplayId;
+use flust_engine_sys::FlutterEngineDisplayId;
 use smithay_client_toolkit::output::OutputInfo;
 
 #[derive(Debug, Clone)]

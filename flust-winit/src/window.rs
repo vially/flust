@@ -20,7 +20,7 @@ use flust_plugins::settings::SettingsPlugin;
 use flust_plugins::system::SystemPlugin;
 use flust_plugins::textinput::TextInputPlugin;
 use flust_plugins::window::WindowPlugin;
-use flutter_engine_sys::FlutterEngineDisplayId;
+use flust_engine_sys::FlutterEngineDisplayId;
 use parking_lot::{Mutex, RwLock};
 use std::error::Error;
 use std::num::NonZeroU32;

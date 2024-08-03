@@ -2,9 +2,9 @@ use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICI
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
-use tracing::trace;
 use parking_lot::Mutex;
 use std::ffi::{c_char, c_uint, c_void, CStr};
+use tracing::trace;
 
 pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
@@ -38,7 +38,7 @@ pub extern "C" fn clear_current(user_data: *mut c_void) -> bool {
 
 pub extern "C" fn fbo_with_frame_info_callback(
     user_data: *mut c_void,
-    frame_info: *const flutter_engine_sys::FlutterFrameInfo,
+    frame_info: *const flust_engine_sys::FlutterFrameInfo,
 ) -> c_uint {
     trace!("fbo_with_frame_info_callback");
     unsafe {
@@ -90,8 +90,8 @@ pub extern "C" fn vsync_callback(user_data: *mut c_void, baton: isize) {
 }
 
 pub extern "C" fn compositor_backing_store_create_callback(
-    config: *const flutter_engine_sys::FlutterBackingStoreConfig,
-    backing_store_out: *mut flutter_engine_sys::FlutterBackingStore,
+    config: *const flust_engine_sys::FlutterBackingStoreConfig,
+    backing_store_out: *mut flust_engine_sys::FlutterBackingStore,
     user_data: *mut c_void,
 ) -> bool {
     trace!("compositor_backing_store_create_callback");
@@ -110,7 +110,7 @@ pub extern "C" fn compositor_backing_store_create_callback(
 }
 
 pub extern "C" fn compositor_backing_store_collect_callback(
-    backing_store: *const flutter_engine_sys::FlutterBackingStore,
+    backing_store: *const flust_engine_sys::FlutterBackingStore,
     user_data: *mut c_void,
 ) -> bool {
     trace!("compositor_backing_store_collect_callback");
@@ -125,7 +125,7 @@ pub extern "C" fn compositor_backing_store_collect_callback(
 }
 
 pub extern "C" fn compositor_present_view_callback(
-    info: *const flutter_engine_sys::FlutterPresentViewInfo,
+    info: *const flust_engine_sys::FlutterPresentViewInfo,
 ) -> bool {
     trace!("compositor_present_view_callback");
     unsafe {
@@ -148,7 +148,7 @@ pub extern "C" fn compositor_present_view_callback(
 }
 
 pub extern "C" fn platform_message_callback(
-    platform_message: *const flutter_engine_sys::FlutterPlatformMessage,
+    platform_message: *const flust_engine_sys::FlutterPlatformMessage,
     user_data: *mut c_void,
 ) {
     trace!("platform_message_callback");
@@ -181,7 +181,7 @@ pub extern "C" fn runs_task_on_current_thread(user_data: *mut c_void) -> bool {
 }
 
 pub extern "C" fn post_task(
-    task: flutter_engine_sys::FlutterTask,
+    task: flust_engine_sys::FlutterTask,
     target_time_nanos: u64,
     user_data: *mut c_void,
 ) {
@@ -198,7 +198,7 @@ pub extern "C" fn gl_external_texture_frame(
     texture_id: i64,
     width: usize,
     height: usize,
-    texture: *mut flutter_engine_sys::FlutterOpenGLTexture,
+    texture: *mut flust_engine_sys::FlutterOpenGLTexture,
 ) -> bool {
     trace!("gl_external_texture_frame");
     unsafe {

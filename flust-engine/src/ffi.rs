@@ -7,11 +7,11 @@ use std::{
 };
 
 use dpi::{PhysicalPosition, PhysicalSize};
-use flutter_engine_sys::{
+use flust_engine_sys::{
     FlutterBackingStoreType, FlutterEngineDisplayId, FlutterLayerContentType, FlutterSize,
 };
 
-pub use flutter_engine_sys::FlutterViewId;
+pub use flust_engine_sys::FlutterViewId;
 use tracing::error;
 
 use crate::{path_to_cstring, FlutterEngine, FlutterEngineError};
@@ -32,16 +32,16 @@ pub enum FlutterPointerPhase {
     Hover,
 }
 
-impl From<FlutterPointerPhase> for flutter_engine_sys::FlutterPointerPhase {
+impl From<FlutterPointerPhase> for flust_engine_sys::FlutterPointerPhase {
     fn from(pointer_phase: FlutterPointerPhase) -> Self {
         match pointer_phase {
-            FlutterPointerPhase::Cancel => flutter_engine_sys::FlutterPointerPhase::kCancel,
-            FlutterPointerPhase::Up => flutter_engine_sys::FlutterPointerPhase::kUp,
-            FlutterPointerPhase::Down => flutter_engine_sys::FlutterPointerPhase::kDown,
-            FlutterPointerPhase::Move => flutter_engine_sys::FlutterPointerPhase::kMove,
-            FlutterPointerPhase::Add => flutter_engine_sys::FlutterPointerPhase::kAdd,
-            FlutterPointerPhase::Remove => flutter_engine_sys::FlutterPointerPhase::kRemove,
-            FlutterPointerPhase::Hover => flutter_engine_sys::FlutterPointerPhase::kHover,
+            FlutterPointerPhase::Cancel => flust_engine_sys::FlutterPointerPhase::kCancel,
+            FlutterPointerPhase::Up => flust_engine_sys::FlutterPointerPhase::kUp,
+            FlutterPointerPhase::Down => flust_engine_sys::FlutterPointerPhase::kDown,
+            FlutterPointerPhase::Move => flust_engine_sys::FlutterPointerPhase::kMove,
+            FlutterPointerPhase::Add => flust_engine_sys::FlutterPointerPhase::kAdd,
+            FlutterPointerPhase::Remove => flust_engine_sys::FlutterPointerPhase::kRemove,
+            FlutterPointerPhase::Hover => flust_engine_sys::FlutterPointerPhase::kHover,
         }
     }
 }
@@ -52,14 +52,14 @@ pub enum FlutterPointerDeviceKind {
     Touch,
 }
 
-impl From<FlutterPointerDeviceKind> for flutter_engine_sys::FlutterPointerDeviceKind {
+impl From<FlutterPointerDeviceKind> for flust_engine_sys::FlutterPointerDeviceKind {
     fn from(device_kind: FlutterPointerDeviceKind) -> Self {
         match device_kind {
             FlutterPointerDeviceKind::Mouse => {
-                flutter_engine_sys::FlutterPointerDeviceKind::kFlutterPointerDeviceKindMouse
+                flust_engine_sys::FlutterPointerDeviceKind::kFlutterPointerDeviceKindMouse
             }
             FlutterPointerDeviceKind::Touch => {
-                flutter_engine_sys::FlutterPointerDeviceKind::kFlutterPointerDeviceKindTouch
+                flust_engine_sys::FlutterPointerDeviceKind::kFlutterPointerDeviceKindTouch
             }
         }
     }
@@ -71,14 +71,14 @@ pub enum FlutterPointerSignalKind {
     Scroll,
 }
 
-impl From<FlutterPointerSignalKind> for flutter_engine_sys::FlutterPointerSignalKind {
+impl From<FlutterPointerSignalKind> for flust_engine_sys::FlutterPointerSignalKind {
     fn from(pointer_signal_kind: FlutterPointerSignalKind) -> Self {
         match pointer_signal_kind {
             FlutterPointerSignalKind::None => {
-                flutter_engine_sys::FlutterPointerSignalKind::kFlutterPointerSignalKindNone
+                flust_engine_sys::FlutterPointerSignalKind::kFlutterPointerSignalKindNone
             }
             FlutterPointerSignalKind::Scroll => {
-                flutter_engine_sys::FlutterPointerSignalKind::kFlutterPointerSignalKindScroll
+                flust_engine_sys::FlutterPointerSignalKind::kFlutterPointerSignalKindScroll
             }
         }
     }
@@ -145,10 +145,10 @@ impl FlutterPointerEvent {
     }
 }
 
-impl From<FlutterPointerEvent> for flutter_engine_sys::FlutterPointerEvent {
+impl From<FlutterPointerEvent> for flust_engine_sys::FlutterPointerEvent {
     fn from(event: FlutterPointerEvent) -> Self {
         Self {
-            struct_size: mem::size_of::<flutter_engine_sys::FlutterPointerEvent>(),
+            struct_size: mem::size_of::<flust_engine_sys::FlutterPointerEvent>(),
             timestamp: event.timestamp.as_micros() as usize,
             phase: event.phase.into(),
             x: event.x,
@@ -179,17 +179,17 @@ pub enum FlutterKeyEventType {
     Repeat,
 }
 
-impl From<FlutterKeyEventType> for flutter_engine_sys::FlutterKeyEventType {
+impl From<FlutterKeyEventType> for flust_engine_sys::FlutterKeyEventType {
     fn from(value: FlutterKeyEventType) -> Self {
         match value {
             FlutterKeyEventType::Up => {
-                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeUp
+                flust_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeUp
             }
             FlutterKeyEventType::Down => {
-                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeDown
+                flust_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeDown
             }
             FlutterKeyEventType::Repeat => {
-                flutter_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeRepeat
+                flust_engine_sys::FlutterKeyEventType::kFlutterKeyEventTypeRepeat
             }
         }
     }
@@ -204,14 +204,14 @@ pub enum FlutterKeyEventDeviceType {
     Hdmi,
 }
 
-impl From<FlutterKeyEventDeviceType> for flutter_engine_sys::FlutterKeyEventDeviceType {
+impl From<FlutterKeyEventDeviceType> for flust_engine_sys::FlutterKeyEventDeviceType {
     fn from(value: FlutterKeyEventDeviceType) -> Self {
         match value {
-            FlutterKeyEventDeviceType::Keyboard => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeKeyboard,
-            FlutterKeyEventDeviceType::DirectionalPad => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeDirectionalPad,
-            FlutterKeyEventDeviceType::Gamepad => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeGamepad,
-            FlutterKeyEventDeviceType::Joystick => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeJoystick,
-            FlutterKeyEventDeviceType::Hdmi => flutter_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeHdmi,
+            FlutterKeyEventDeviceType::Keyboard => flust_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeKeyboard,
+            FlutterKeyEventDeviceType::DirectionalPad => flust_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeDirectionalPad,
+            FlutterKeyEventDeviceType::Gamepad => flust_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeGamepad,
+            FlutterKeyEventDeviceType::Joystick => flust_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeJoystick,
+            FlutterKeyEventDeviceType::Hdmi => flust_engine_sys::FlutterKeyEventDeviceType::kFlutterKeyEventDeviceTypeHdmi,
         }
     }
 }
@@ -336,9 +336,9 @@ impl FlutterKeyEvent {
 
     // Note: The `From` trait can *not* be used for this conversion because the
     // character's `CString` needs to outlive the conversion.
-    pub fn as_ptr(&self) -> flutter_engine_sys::FlutterKeyEvent {
-        flutter_engine_sys::FlutterKeyEvent {
-            struct_size: mem::size_of::<flutter_engine_sys::FlutterKeyEvent>(),
+    pub fn as_ptr(&self) -> flust_engine_sys::FlutterKeyEvent {
+        flust_engine_sys::FlutterKeyEvent {
+            struct_size: mem::size_of::<flust_engine_sys::FlutterKeyEvent>(),
             timestamp: self.timestamp.as_micros() as f64,
             type_: self.kind.into(),
             physical: self.physical.0,
@@ -358,8 +358,8 @@ pub struct FlutterFrameInfo {
     pub size: PhysicalSize<u32>,
 }
 
-impl From<flutter_engine_sys::FlutterFrameInfo> for FlutterFrameInfo {
-    fn from(frame_info: flutter_engine_sys::FlutterFrameInfo) -> Self {
+impl From<flust_engine_sys::FlutterFrameInfo> for FlutterFrameInfo {
+    fn from(frame_info: flust_engine_sys::FlutterFrameInfo) -> Self {
         Self {
             size: PhysicalSize::new(frame_info.size.width, frame_info.size.height),
         }
@@ -375,8 +375,8 @@ pub struct FlutterBackingStoreConfig {
     pub view_id: i64,
 }
 
-impl From<flutter_engine_sys::FlutterBackingStoreConfig> for FlutterBackingStoreConfig {
-    fn from(config: flutter_engine_sys::FlutterBackingStoreConfig) -> Self {
+impl From<flust_engine_sys::FlutterBackingStoreConfig> for FlutterBackingStoreConfig {
+    fn from(config: flust_engine_sys::FlutterBackingStoreConfig) -> Self {
         Self {
             size: config.size,
             // TODO(multi-view): Replace with real `view_id` after bumping
@@ -396,13 +396,13 @@ impl FlutterBackingStore {
         Self { description }
     }
 
-    pub(crate) fn into_ffi(self, target: &mut flutter_engine_sys::FlutterBackingStore) {
+    pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterBackingStore) {
         self.description.into_ffi(target);
     }
 }
 
-impl From<flutter_engine_sys::FlutterBackingStore> for FlutterBackingStore {
-    fn from(value: flutter_engine_sys::FlutterBackingStore) -> Self {
+impl From<flust_engine_sys::FlutterBackingStore> for FlutterBackingStore {
+    fn from(value: flust_engine_sys::FlutterBackingStore) -> Self {
         let description = match value.type_ {
             FlutterBackingStoreType::kFlutterBackingStoreTypeOpenGL => unsafe {
                 value.__bindgen_anon_1.open_gl.into()
@@ -437,7 +437,7 @@ pub enum FlutterBackingStoreDescription {
 }
 
 impl FlutterBackingStoreDescription {
-    pub(crate) fn into_ffi(self, target: &mut flutter_engine_sys::FlutterBackingStore) {
+    pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterBackingStore) {
         let FlutterBackingStoreDescription::OpenGL(opengl_target) = self else {
             unimplemented!("Only OpenGL framebuffer backing store is currently implemented");
         };
@@ -449,7 +449,7 @@ impl FlutterBackingStoreDescription {
     }
 }
 
-impl From<FlutterBackingStoreDescription> for flutter_engine_sys::FlutterBackingStoreType {
+impl From<FlutterBackingStoreDescription> for flust_engine_sys::FlutterBackingStoreType {
     fn from(value: FlutterBackingStoreDescription) -> Self {
         match value {
             FlutterBackingStoreDescription::OpenGL(_) => Self::kFlutterBackingStoreTypeOpenGL,
@@ -461,14 +461,14 @@ impl From<FlutterBackingStoreDescription> for flutter_engine_sys::FlutterBacking
     }
 }
 
-impl From<flutter_engine_sys::FlutterOpenGLBackingStore> for FlutterBackingStoreDescription {
-    fn from(value: flutter_engine_sys::FlutterOpenGLBackingStore) -> Self {
+impl From<flust_engine_sys::FlutterOpenGLBackingStore> for FlutterBackingStoreDescription {
+    fn from(value: flust_engine_sys::FlutterOpenGLBackingStore) -> Self {
         let backing_store = match value.type_ {
-            flutter_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeFramebuffer => {
+            flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeFramebuffer => {
                 let framebuffer = unsafe { value.__bindgen_anon_1.framebuffer.into() };
                 FlutterOpenGLBackingStore::Framebuffer(framebuffer)
             }
-            flutter_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture => {
+            flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture => {
                 FlutterOpenGLBackingStore::Texture
             }
         };
@@ -485,7 +485,7 @@ pub enum FlutterOpenGLBackingStore {
 }
 
 impl FlutterOpenGLBackingStore {
-    pub(crate) fn into_ffi(self, target: &mut flutter_engine_sys::FlutterOpenGLBackingStore) {
+    pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterOpenGLBackingStore) {
         let FlutterOpenGLBackingStore::Framebuffer(framebuffer) = self else {
             unimplemented!("Only framebuffer OpenGL backing store is currently implemented");
         };
@@ -497,14 +497,14 @@ impl FlutterOpenGLBackingStore {
     }
 }
 
-impl From<FlutterOpenGLBackingStore> for flutter_engine_sys::FlutterOpenGLTargetType {
+impl From<FlutterOpenGLBackingStore> for flust_engine_sys::FlutterOpenGLTargetType {
     fn from(value: FlutterOpenGLBackingStore) -> Self {
         match value {
             FlutterOpenGLBackingStore::Framebuffer(_) => {
-                flutter_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeFramebuffer
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeFramebuffer
             }
             FlutterOpenGLBackingStore::Texture => {
-                flutter_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture
             }
         }
     }
@@ -541,12 +541,12 @@ impl FlutterOpenGLFramebuffer {
             // The `user_data` field is converted into a raw pointer as part of
             // the `FlutterOpenGLFramebuffer::into_ffi` call which is then used
             // to fill both the `user_data` and `raw_user_data` fields when
-            // converting from `flutter_engine_sys::FlutterOpenGLFramebuffer`.
+            // converting from `flust_engine_sys::FlutterOpenGLFramebuffer`.
             raw_user_data: std::ptr::null_mut(),
         }
     }
 
-    pub(crate) fn into_ffi(self, target: &mut flutter_engine_sys::FlutterOpenGLFramebuffer) {
+    pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterOpenGLFramebuffer) {
         target.name = self.user_data.framebuffer_id;
         target.target = self.target;
         target.user_data = Box::into_raw(Box::new(self.user_data)) as _;
@@ -562,8 +562,8 @@ impl FlutterOpenGLFramebuffer {
     }
 }
 
-impl From<flutter_engine_sys::FlutterOpenGLFramebuffer> for FlutterOpenGLFramebuffer {
-    fn from(value: flutter_engine_sys::FlutterOpenGLFramebuffer) -> Self {
+impl From<flust_engine_sys::FlutterOpenGLFramebuffer> for FlutterOpenGLFramebuffer {
+    fn from(value: flust_engine_sys::FlutterOpenGLFramebuffer) -> Self {
         let raw_user_data = value.user_data as *mut FlutterOpenGLBackingStoreFramebuffer;
         let user_data =
             unsafe { FlutterOpenGLBackingStoreFramebuffer::clone_from_raw(raw_user_data) };
@@ -625,8 +625,8 @@ pub struct FlutterLayer {
     pub backing_store_present_info: FlutterBackingStorePresentInfo,
 }
 
-impl From<flutter_engine_sys::FlutterLayer> for FlutterLayer {
-    fn from(layer: flutter_engine_sys::FlutterLayer) -> Self {
+impl From<flust_engine_sys::FlutterLayer> for FlutterLayer {
+    fn from(layer: flust_engine_sys::FlutterLayer) -> Self {
         Self {
             content: match layer.type_ {
                 FlutterLayerContentType::kFlutterLayerContentTypeBackingStore => {
@@ -681,8 +681,8 @@ pub struct FlutterBackingStorePresentInfo {
     pub paint_region: FlutterRegion,
 }
 
-impl From<flutter_engine_sys::FlutterBackingStorePresentInfo> for FlutterBackingStorePresentInfo {
-    fn from(present_info: flutter_engine_sys::FlutterBackingStorePresentInfo) -> Self {
+impl From<flust_engine_sys::FlutterBackingStorePresentInfo> for FlutterBackingStorePresentInfo {
+    fn from(present_info: flust_engine_sys::FlutterBackingStorePresentInfo) -> Self {
         Self {
             paint_region: unsafe { *present_info.paint_region }.into(),
         }
@@ -692,12 +692,12 @@ impl From<flutter_engine_sys::FlutterBackingStorePresentInfo> for FlutterBacking
 /// A region represented by a collection of non-overlapping rectangles.
 pub struct FlutterRegion {
     /// The rectangles that make up the region.
-    pub rects: Vec<flutter_engine_sys::FlutterRect>,
+    pub rects: Vec<flust_engine_sys::FlutterRect>,
 }
 
-impl From<flutter_engine_sys::FlutterRegion> for FlutterRegion {
-    fn from(region: flutter_engine_sys::FlutterRegion) -> Self {
-        let rects: Vec<flutter_engine_sys::FlutterRect> =
+impl From<flust_engine_sys::FlutterRegion> for FlutterRegion {
+    fn from(region: flust_engine_sys::FlutterRegion) -> Self {
+        let rects: Vec<flust_engine_sys::FlutterRect> =
             unsafe { slice::from_raw_parts(region.rects, region.rects_count).to_vec() };
 
         Self { rects }
@@ -716,11 +716,11 @@ pub enum FlutterEngineDisplaysUpdateType {
     Count,
 }
 
-impl From<FlutterEngineDisplaysUpdateType> for flutter_engine_sys::FlutterEngineDisplaysUpdateType {
+impl From<FlutterEngineDisplaysUpdateType> for flust_engine_sys::FlutterEngineDisplaysUpdateType {
     fn from(value: FlutterEngineDisplaysUpdateType) -> Self {
         match value {
-            FlutterEngineDisplaysUpdateType::Startup => flutter_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeStartup,
-            FlutterEngineDisplaysUpdateType::Count => flutter_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeCount,
+            FlutterEngineDisplaysUpdateType::Startup => flust_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeStartup,
+            FlutterEngineDisplaysUpdateType::Count => flust_engine_sys::FlutterEngineDisplaysUpdateType::kFlutterEngineDisplaysUpdateTypeCount,
         }
     }
 }
@@ -747,7 +747,7 @@ pub struct FlutterEngineDisplay {
     pub device_pixel_ratio: f64,
 }
 
-impl From<FlutterEngineDisplay> for flutter_engine_sys::FlutterEngineDisplay {
+impl From<FlutterEngineDisplay> for flust_engine_sys::FlutterEngineDisplay {
     fn from(display: FlutterEngineDisplay) -> Self {
         Self {
             struct_size: mem::size_of::<Self>(),
@@ -764,20 +764,20 @@ impl From<FlutterEngineDisplay> for flutter_engine_sys::FlutterEngineDisplay {
 pub(crate) type FlutterEngineResult = Result<(), FlutterEngineError>;
 
 pub(crate) trait FlutterEngineResultExt {
-    fn from_ffi(result: flutter_engine_sys::FlutterEngineResult) -> Self;
+    fn from_ffi(result: flust_engine_sys::FlutterEngineResult) -> Self;
 }
 
 impl FlutterEngineResultExt for FlutterEngineResult {
-    fn from_ffi(result: flutter_engine_sys::FlutterEngineResult) -> Self {
+    fn from_ffi(result: flust_engine_sys::FlutterEngineResult) -> Self {
         match result {
-            flutter_engine_sys::FlutterEngineResult::kSuccess => Ok(()),
-            flutter_engine_sys::FlutterEngineResult::kInvalidLibraryVersion => {
+            flust_engine_sys::FlutterEngineResult::kSuccess => Ok(()),
+            flust_engine_sys::FlutterEngineResult::kInvalidLibraryVersion => {
                 Err(FlutterEngineError::InvalidLibraryVersion)
             }
-            flutter_engine_sys::FlutterEngineResult::kInvalidArguments => {
+            flust_engine_sys::FlutterEngineResult::kInvalidArguments => {
                 Err(FlutterEngineError::InvalidArguments)
             }
-            flutter_engine_sys::FlutterEngineResult::kInternalInconsistency => {
+            flust_engine_sys::FlutterEngineResult::kInternalInconsistency => {
                 Err(FlutterEngineError::InternalInconsistency)
             }
         }
@@ -785,12 +785,12 @@ impl FlutterEngineResultExt for FlutterEngineResult {
 }
 
 pub(crate) struct FlutterEngineAOTData {
-    pub(crate) data: flutter_engine_sys::FlutterEngineAOTData,
+    pub(crate) data: flust_engine_sys::FlutterEngineAOTData,
 }
 
 impl FlutterEngineAOTData {
     pub(crate) fn new(aot_library_path: &Path) -> Result<Self, FlutterEngineError> {
-        let data: flutter_engine_sys::FlutterEngineAOTData = ptr::null_mut();
+        let data: flust_engine_sys::FlutterEngineAOTData = ptr::null_mut();
 
         if FlutterEngine::runs_aot_compiled_dart_code() {
             Self::create_aot_data(aot_library_path, &data)?;
@@ -801,28 +801,28 @@ impl FlutterEngineAOTData {
 
     fn create_aot_data(
         aot_library_path: &Path,
-        data_out: &flutter_engine_sys::FlutterEngineAOTData,
+        data_out: &flust_engine_sys::FlutterEngineAOTData,
     ) -> Result<(), FlutterEngineError> {
         let elf_path = path_to_cstring(aot_library_path).into_raw();
-        let source = &flutter_engine_sys::FlutterEngineAOTDataSource {
-            type_: flutter_engine_sys::FlutterEngineAOTDataSourceType::kFlutterEngineAOTDataSourceTypeElfPath,
-            __bindgen_anon_1: flutter_engine_sys::FlutterEngineAOTDataSource__bindgen_ty_1 { elf_path }
-        } as *const flutter_engine_sys::FlutterEngineAOTDataSource;
+        let source = &flust_engine_sys::FlutterEngineAOTDataSource {
+            type_: flust_engine_sys::FlutterEngineAOTDataSourceType::kFlutterEngineAOTDataSourceTypeElfPath,
+            __bindgen_anon_1: flust_engine_sys::FlutterEngineAOTDataSource__bindgen_ty_1 { elf_path }
+        } as *const flust_engine_sys::FlutterEngineAOTDataSource;
 
         let result = unsafe {
-            flutter_engine_sys::FlutterEngineCreateAOTData(
+            flust_engine_sys::FlutterEngineCreateAOTData(
                 source,
-                data_out as *const flutter_engine_sys::FlutterEngineAOTData
-                    as *mut flutter_engine_sys::FlutterEngineAOTData,
+                data_out as *const flust_engine_sys::FlutterEngineAOTData
+                    as *mut flust_engine_sys::FlutterEngineAOTData,
             )
         };
         FlutterEngineResult::from_ffi(result)
     }
 
     fn collect_aot_data(
-        data: flutter_engine_sys::FlutterEngineAOTData,
+        data: flust_engine_sys::FlutterEngineAOTData,
     ) -> Result<(), FlutterEngineError> {
-        let result = unsafe { flutter_engine_sys::FlutterEngineCollectAOTData(data) };
+        let result = unsafe { flust_engine_sys::FlutterEngineCollectAOTData(data) };
         FlutterEngineResult::from_ffi(result)
     }
 }

@@ -10,9 +10,9 @@ use flust_engine::{
     view::FlutterView,
     FlutterEngineWeakRef,
 };
+use flust_engine_sys::FlutterEngineDisplayId;
 use flust_glutin::builder::FlutterEGLContext;
 use flust_runner_api::ApplicationAttributes;
-use flutter_engine_sys::FlutterEngineDisplayId;
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,

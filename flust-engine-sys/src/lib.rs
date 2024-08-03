@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 #![allow(clippy::unreadable_literal)]
 
-include!(concat!(env!("OUT_DIR"), "/flutter-engine-sys.rs"));
+include!(concat!(env!("OUT_DIR"), "/flust-engine-sys.rs"));
 
 #[cfg(target_os = "android")]
 #[link(name = "flutter_engine")]
