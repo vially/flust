@@ -11,7 +11,7 @@ flutter-engine = { path = "../flutter-engine" }
 flutter-engine-api = { path = "../flutter-engine-api" }
 flutter-engine-sys = { path = "../flutter-engine-sys" }
 flutter-glutin = { path = "../flutter-glutin" }
-flutter-plugins = { path = "../flutter-plugins" }
+flust-plugins = { path = "../flust-plugins" }
 flust-runner-api = { path = "../flust-runner-api" }
 futures-lite = "2.3.0"
 glutin = "0.32.0"

@@ -8,12 +8,12 @@ use flutter_engine::{
     plugins::{Plugin, PluginRegistrar},
     CreateError, FlutterEngine,
 };
-use flutter_plugins::{
+use flust_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
     localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
     platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
 };
-use flutter_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
+use flust_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},

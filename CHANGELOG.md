@@ -18,4 +18,4 @@
 - new cli tool `cargo-flutter`
 - refactor engine to be window framework agnostic
 - dropped tokio and libc dependencies
-- move plugins to `flutter-plugins`
+- move plugins to `flust-plugins`

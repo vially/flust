@@ -1,5 +1,5 @@
 [package]
-name = "flutter-plugins"
+name = "flust-plugins"
 version = "0.4.0"
 authors = ["Flust Contributors"]
 edition = "2021"

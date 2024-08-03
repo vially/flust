@@ -32,7 +32,7 @@ use flutter_glutin::{
     context::{Context, ResourceContext},
     gl,
 };
-use flutter_plugins::{
+use flust_plugins::{
     keyboard::{KeyboardStateError, KeyboardStateHandler},
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},

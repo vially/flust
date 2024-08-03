@@ -2,6 +2,17 @@ use crate::handler::{
     GlfwOpenGLHandler, GlfwPlatformHandler, GlfwPlatformTaskHandler, GlfwTextInputHandler,
     GlfwWindowHandler,
 };
+use flust_plugins::dialog::DialogPlugin;
+use flust_plugins::isolate::IsolatePlugin;
+use flust_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
+use flust_plugins::lifecycle::LifecyclePlugin;
+use flust_plugins::localization::LocalizationPlugin;
+use flust_plugins::navigation::NavigationPlugin;
+use flust_plugins::platform::PlatformPlugin;
+use flust_plugins::settings::SettingsPlugin;
+use flust_plugins::system::SystemPlugin;
+use flust_plugins::textinput::TextInputPlugin;
+use flust_plugins::window::WindowPlugin;
 use flutter_engine::builder::FlutterEngineBuilder;
 use flutter_engine::channel::Channel;
 use flutter_engine::ffi::{
@@ -12,17 +23,6 @@ use flutter_engine::plugins::{Plugin, PluginRegistrar};
 use flutter_engine::tasks::TaskRunnerHandler;
 use flutter_engine::texture_registry::Texture;
 use flutter_engine::FlutterEngine;
-use flutter_plugins::dialog::DialogPlugin;
-use flutter_plugins::isolate::IsolatePlugin;
-use flutter_plugins::keyevent::{KeyAction, KeyActionType, KeyEventPlugin};
-use flutter_plugins::lifecycle::LifecyclePlugin;
-use flutter_plugins::localization::LocalizationPlugin;
-use flutter_plugins::navigation::NavigationPlugin;
-use flutter_plugins::platform::PlatformPlugin;
-use flutter_plugins::settings::SettingsPlugin;
-use flutter_plugins::system::SystemPlugin;
-use flutter_plugins::textinput::TextInputPlugin;
-use flutter_plugins::window::WindowPlugin;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -302,7 +302,7 @@ impl FlutterWindow {
         }
 
         self.with_plugin(
-            |localization: &flutter_plugins::localization::LocalizationPlugin| {
+            |localization: &flust_plugins::localization::LocalizationPlugin| {
                 localization.send_locale(locale_config::Locale::current());
             },
         );
@@ -515,11 +515,9 @@ impl FlutterWindow {
                 self.mouse_tracker
                     .lock()
                     .insert(glfw::MouseButton::Button4, glfw::Action::Press);
-                self.with_plugin(
-                    |navigation: &flutter_plugins::navigation::NavigationPlugin| {
-                        navigation.pop_route();
-                    },
-                );
+                self.with_plugin(|navigation: &flust_plugins::navigation::NavigationPlugin| {
+                    navigation.pop_route();
+                });
             }
             glfw::WindowEvent::MouseButton(buttons, action, _modifiers) => {
                 // Since Events are delayed by wait_events_timeout,
@@ -586,7 +584,7 @@ impl FlutterWindow {
                 self.send_scale_or_size_change();
             }
             glfw::WindowEvent::Char(char) => self.with_plugin_mut(
-                |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                     text_input.with_state(|state| {
                         state.add_characters(&char.to_string());
                     });
@@ -598,7 +596,7 @@ impl FlutterWindow {
                 // TODO: move this to TextInputPlugin
                 match key {
                     glfw::Key::Enter => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.add_characters(&"\n");
                             });
@@ -606,7 +604,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Up => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_up(modifiers.contains(SELECT_MODIFIER_KEY));
                             });
@@ -614,7 +612,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Down => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_down(modifiers.contains(SELECT_MODIFIER_KEY));
                             });
@@ -622,7 +620,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Backspace => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.backspace();
                             });
@@ -630,7 +628,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Delete => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.delete();
                             });
@@ -638,7 +636,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Left => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_left(
                                     modifiers.contains(BY_WORD_MODIFIER_KEY),
@@ -649,7 +647,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Right => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_right(
                                     modifiers.contains(BY_WORD_MODIFIER_KEY),
@@ -660,7 +658,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::Home => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_to_beginning(modifiers.contains(SELECT_MODIFIER_KEY));
                             });
@@ -668,7 +666,7 @@ impl FlutterWindow {
                         },
                     ),
                     glfw::Key::End => self.with_plugin_mut(
-                        |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                        |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                             text_input.with_state(|state| {
                                 state.move_to_end(modifiers.contains(SELECT_MODIFIER_KEY));
                             });
@@ -678,7 +676,7 @@ impl FlutterWindow {
                     glfw::Key::A => {
                         if modifiers.contains(FUNCTION_MODIFIER_KEY) {
                             self.with_plugin_mut(
-                                |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                                |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                                     text_input.with_state(|state| {
                                         state.select_all();
                                     });
@@ -691,7 +689,7 @@ impl FlutterWindow {
                         if modifiers.contains(FUNCTION_MODIFIER_KEY) {
                             let mut window = self.window.lock();
                             self.with_plugin_mut(
-                                |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                                |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                                     text_input.with_state(|state| {
                                         window.set_clipboard_string(state.get_selected_text());
                                         state.delete_selected();
@@ -705,7 +703,7 @@ impl FlutterWindow {
                         if modifiers.contains(FUNCTION_MODIFIER_KEY) {
                             let mut window = self.window.lock();
                             self.with_plugin_mut(
-                                |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                                |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                                     text_input.with_state(|state| {
                                         window.set_clipboard_string(state.get_selected_text());
                                     });
@@ -718,7 +716,7 @@ impl FlutterWindow {
                         if modifiers.contains(FUNCTION_MODIFIER_KEY) {
                             let window = self.window.lock();
                             self.with_plugin_mut(
-                                |text_input: &mut flutter_plugins::textinput::TextInputPlugin| {
+                                |text_input: &mut flust_plugins::textinput::TextInputPlugin| {
                                     text_input.with_state(|state| {
                                         if let Some(text) = window.get_clipboard_string() {
                                             state.add_characters(&text);
@@ -734,7 +732,7 @@ impl FlutterWindow {
                     _ => {}
                 }
 
-                self.with_plugin_mut(|keyevent: &mut flutter_plugins::keyevent::KeyEventPlugin| {
+                self.with_plugin_mut(|keyevent: &mut flust_plugins::keyevent::KeyEventPlugin| {
                     keyevent.key_action(KeyAction {
                         toolkit: "glfw".to_string(),
                         key_code: key as i32,
@@ -746,7 +744,7 @@ impl FlutterWindow {
                 });
             }
             glfw::WindowEvent::Key(key, scancode, glfw::Action::Release, modifiers) => {
-                self.with_plugin_mut(|keyevent: &mut flutter_plugins::keyevent::KeyEventPlugin| {
+                self.with_plugin_mut(|keyevent: &mut flust_plugins::keyevent::KeyEventPlugin| {
                     keyevent.key_action(KeyAction {
                         toolkit: "glfw".to_string(),
                         key_code: key as i32,

@@ -765,13 +765,26 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "dpi",
+ "flust-plugins",
  "flust-runner-api",
  "flust-sctk",
  "flust-winit",
  "flutter-engine",
  "flutter-engine-sys",
- "flutter-plugins",
  "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "flust-plugins"
+version = "0.4.0"
+dependencies = [
+ "flutter-engine",
+ "icu_locid",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "strum",
  "tracing",
 ]
 
@@ -790,12 +803,12 @@ dependencies = [
  "ashpd",
  "calloop 0.13.0",
  "dpi",
+ "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
  "flutter-engine-api",
  "flutter-engine-sys",
  "flutter-glutin",
- "flutter-plugins",
  "futures-lite",
  "glutin",
  "parking_lot",
@@ -816,12 +829,12 @@ dependencies = [
  "async-executor",
  "copypasta",
  "dpi",
+ "flust-plugins",
  "flust-runner-api",
  "flutter-engine",
  "flutter-engine-api",
  "flutter-engine-sys",
  "flutter-glutin",
- "flutter-plugins",
  "futures-lite",
  "gl",
  "glutin",
@@ -877,19 +890,6 @@ dependencies = [
  "glutin",
  "raw-window-handle",
  "thiserror",
-]
-
-[[package]]
-name = "flutter-plugins"
-version = "0.4.0"
-dependencies = [
- "flutter-engine",
- "icu_locid",
- "parking_lot",
- "serde",
- "serde_json",
- "strum",
- "tracing",
 ]
 
 [[package]]

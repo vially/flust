@@ -1,10 +1,10 @@
 use std::ffi::CString;
 
+use flust_plugins::keyevent::{KeyAction, KeyActionType};
 use flutter_engine::{
     ffi::{FlutterKeyEvent, FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey},
     FlutterEngine,
 };
-use flutter_plugins::keyevent::{KeyAction, KeyActionType};
 use smithay_client_toolkit::seat::keyboard::{KeyCode, KeyEvent, Keysym, Modifiers};
 
 #[derive(Clone, Debug)]

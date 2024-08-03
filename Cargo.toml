@@ -7,7 +7,7 @@ members = [
     "flutter-engine-api",
     "flutter-engine-sys",
     "flutter-glutin",
-    "flutter-plugins",
+    "flust-plugins",
     "flust-runner-api",
     "flust-sctk",
     "flust-winit",
