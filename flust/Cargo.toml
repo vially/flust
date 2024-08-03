@@ -2,6 +2,10 @@
 name = "flust"
 version = "0.1.0"
 edition = "2021"
+authors = ["Flust Contributors"]
+description = "Flutter embedder for Linux"
+repository = "https://github.com/vially/flust"
+license = "MIT"
 
 [features]
 default = ["flust-sctk"]
