@@ -1,14 +1,13 @@
 use bindgen::EnumVariation;
+use flust_tools::Flutter;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-fn main() -> Result<(), BuildError> {
-    println!("cargo::rustc-link-lib=flutter_engine");
+const FLUTTER_SDK_MISSING_NO_REBUILD_WARNING: &str = "Flutter SDK path could not be determined. \
+The flust-engine-sys crate might not get rebuilt when the Flutter version changes.";
 
-    // Tell cargo to look for shared libraries in the specified directory (needed for `cargo test`)
-    if let Ok(flutter_engine_search_path) = std::env::var("FLUTTER_ENGINE_LIB_PATH") {
-        println!("cargo::rustc-link-search={flutter_engine_search_path}");
-    }
+fn main() -> Result<(), BuildError> {
+    Cargo::print_instructions()?;
 
     BindingsBuilder::generate("flust-engine-sys.rs")?;
 
@@ -22,6 +21,60 @@ pub enum BuildError {
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Flutter(#[from] flust_tools::Error),
+}
+
+struct Cargo {}
+
+impl Cargo {
+    fn print_instructions() -> Result<(), BuildError> {
+        let flutter = Flutter::auto_detect().ok();
+        let engine_version_path = flutter.as_ref().and_then(|flutter| {
+            flutter
+                .engine_version_path()
+                .into_os_string()
+                .into_string()
+                .ok()
+        });
+
+        println!("cargo::rustc-link-lib=flutter_engine");
+        println!("cargo::rerun-if-changed=embedder.h");
+        println!("cargo::rerun-if-changed=src/lib.rs");
+
+        if let Some(engine_version_path) = engine_version_path {
+            println!("cargo::rerun-if-changed={engine_version_path}");
+        } else {
+            println!("cargo::warning={FLUTTER_SDK_MISSING_NO_REBUILD_WARNING}");
+        }
+
+        let link_search_path = Self::auto_detect_link_search_path(&flutter);
+        if let Some(link_search_path) = link_search_path {
+            println!("cargo::rustc-link-search={link_search_path}");
+        }
+
+        Ok(())
+    }
+
+    fn auto_detect_link_search_path(flutter: &Option<Flutter>) -> Option<String> {
+        if let Ok(flutter_engine_search_path) = std::env::var("FLUTTER_ENGINE_LIB_PATH") {
+            return Some(flutter_engine_search_path);
+        }
+
+        let engine_version = flutter.as_ref()?.engine_version().ok()?;
+
+        // TODO: Remove hard-coded "debug" Flutter build-mode (once a reasonable
+        // strategy of auto-detection has been found).
+        dirs::cache_dir()?
+            .join("flutter-engine-lib")
+            .join("by-engine-version")
+            .join(engine_version)
+            .join("debug")
+            .into_os_string()
+            .into_string()
+            .ok()
+    }
 }
 
 struct BindingsBuilder {}

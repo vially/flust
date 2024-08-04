@@ -1,6 +1,6 @@
 use curl::easy::Easy;
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
-use std::fs::File;
+use std::fs::{read_to_string, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -120,13 +120,17 @@ impl Flutter {
         &self.root_path
     }
 
-    pub fn engine_version(&self) -> Result<String, Error> {
-        let path = self
-            .root_path
+    pub fn engine_version_path(&self) -> PathBuf {
+        self.root_path
             .join("bin")
             .join("internal")
-            .join("engine.version");
-        Ok(std::fs::read_to_string(path).map(|v| v.trim().to_owned())?)
+            .join("engine.version")
+    }
+
+    pub fn engine_version(&self) -> Result<String, Error> {
+        let path = self.engine_version_path();
+        let engine_version = read_to_string(path).map(|v| v.trim().to_owned())?;
+        Ok(engine_version)
     }
 }
 
