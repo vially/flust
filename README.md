@@ -51,3 +51,9 @@ To contribute to Flust, please see [CONTRIBUTING](CONTRIBUTING.md).
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: LICENSE-MIT
 [flutter-app-template]: https://user-images.githubusercontent.com/741807/72476798-5a99e280-37ee-11ea-9e08-b0175ae21ad6.png
+
+# Acknowledgements
+
+[`flutter-rs`](https://github.com/flutter-rs/flutter-rs) - For providing the solid foundation that Flust was originally forked from and builds on top of. The Flust project would not be possible without the awesome work of the `flutter-rs` contributors.
+
+Flust started as a couple of changes on top of the `flutter-rs` project, with the intention of merging them back into upstream. However, by the time the patches turned into something that might be usable upstream, the `flutter-rs` project was [no longer maintained](https://github.com/flutter-rs/flutter-rs/issues/156#issuecomment-859392523) so a decision was made to fork the project and rename it to Flust.
