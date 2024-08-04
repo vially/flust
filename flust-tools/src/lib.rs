@@ -24,7 +24,7 @@ impl std::fmt::Display for Error {
             Error::FlutterNotFound => write!(f, "Couldn't find flutter sdk"),
             Error::DownloadNotFound => write!(
                 f,
-                r#"We couldn't find the requested engine version '{}'.
+                r#"We couldn't find the requested engine version 'missing'.
 This means that your flutter version is too old or to new.
 
 To update flutter run `flutter upgrade`. If the problem persists the engine
@@ -44,7 +44,6 @@ engine_version = "..."
 You'll find the available builds on our github releases page [0].
 
 - [0] https://github.com/flutter-rs/engine-builds/releases"#,
-                "missing",
             ),
             Error::DartNotFound => write!(f, "Could't find dart"),
             Error::Which(error) => error.fmt(f),
@@ -246,7 +245,7 @@ fn download(url: &str, target: &Path) -> Result<(), Error> {
 
     let mut easy = Easy::new();
     easy.fail_on_error(true)?;
-    easy.url(&url)?;
+    easy.url(url)?;
     easy.follow_location(true)?;
     easy.progress(true)?;
     let pb2 = pb.clone();
@@ -261,7 +260,7 @@ fn download(url: &str, target: &Path) -> Result<(), Error> {
     })?;
     easy.write_function(move |data| Ok(file.write(data).unwrap()))?;
 
-    easy.perform().or_else(|_| Err(Error::DownloadNotFound))?;
+    easy.perform().map_err(|_| Error::DownloadNotFound)?;
 
     pb.finish_with_message("Downloaded");
 
@@ -284,11 +283,11 @@ fn unzip(archive: &Path, dir: &Path) -> Result<(), Error> {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let outpath = dir.join(file.sanitized_name());
+        let outpath = dir.join(file.mangled_name());
 
         pb.inc(1);
 
-        if (&*file.name()).ends_with('/') {
+        if file.name().ends_with('/') {
             pb.set_message(&format!(
                 "File {} extracted to \"{}\"",
                 i,
@@ -304,7 +303,7 @@ fn unzip(archive: &Path, dir: &Path) -> Result<(), Error> {
             ));
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
-                    std::fs::create_dir_all(&p)?;
+                    std::fs::create_dir_all(p)?;
                 }
             }
             let mut outfile = std::fs::File::create(&outpath)?;

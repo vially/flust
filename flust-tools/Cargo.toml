@@ -1,5 +1,5 @@
 [package]
-name = "flutter-tools"
+name = "flust-tools"
 version = "0.1.0"
 authors = ["Flust Contributors"]
 edition = "2018"
