@@ -984,6 +984,7 @@ dependencies = [
  "bindgen",
  "dirs",
  "libloading",
+ "thiserror",
 ]
 
 [[package]]
