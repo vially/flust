@@ -1,5 +1,5 @@
 use curl::easy::Easy;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ pub enum Error {
     Which(which::Error),
     Curl(curl::Error),
     Zip(zip::result::ZipError),
+    Indicatif(indicatif::style::TemplateError),
 }
 
 impl std::fmt::Display for Error {
@@ -50,6 +51,7 @@ You'll find the available builds on our github releases page [0].
             Error::Io(error) => error.fmt(f),
             Error::Curl(error) => error.fmt(f),
             Error::Zip(error) => error.fmt(f),
+            Error::Indicatif(error) => error.fmt(f),
         }
     }
 }
@@ -77,6 +79,12 @@ impl From<curl::Error> for Error {
 impl From<zip::result::ZipError> for Error {
     fn from(error: ZipError) -> Self {
         Error::Zip(error)
+    }
+}
+
+impl From<indicatif::style::TemplateError> for Error {
+    fn from(error: TemplateError) -> Self {
+        Error::Indicatif(error)
     }
 }
 
@@ -238,7 +246,7 @@ fn download(url: &str, target: &Path) -> Result<(), Error> {
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")?
         .progress_chars("#>-"));
 
     let pb = Arc::new(pb);
@@ -277,7 +285,7 @@ fn unzip(archive: &Path, dir: &Path) -> Result<(), Error> {
     let pb = ProgressBar::new(archive.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {wide_msg}")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {wide_msg}")?
             .progress_chars("#>-"),
     );
 
@@ -288,14 +296,10 @@ fn unzip(archive: &Path, dir: &Path) -> Result<(), Error> {
         pb.inc(1);
 
         if file.name().ends_with('/') {
-            pb.set_message(&format!(
-                "File {} extracted to \"{}\"",
-                i,
-                outpath.display()
-            ));
+            pb.set_message(format!("File {} extracted to \"{}\"", i, outpath.display()));
             std::fs::create_dir_all(&outpath)?;
         } else {
-            pb.set_message(&format!(
+            pb.set_message(format!(
                 "File {} extracted to \"{}\" ({} bytes)",
                 i,
                 outpath.display(),
