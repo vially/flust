@@ -471,6 +471,10 @@ impl From<flust_engine_sys::FlutterOpenGLBackingStore> for FlutterBackingStoreDe
             flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture => {
                 FlutterOpenGLBackingStore::Texture
             }
+            flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeSurface => {
+                let surface = unsafe { value.__bindgen_anon_1.surface.into() };
+                FlutterOpenGLBackingStore::Surface(surface)
+            }
         };
 
         Self::OpenGL(backing_store)
@@ -482,18 +486,24 @@ impl From<flust_engine_sys::FlutterOpenGLBackingStore> for FlutterBackingStoreDe
 pub enum FlutterOpenGLBackingStore {
     Framebuffer(FlutterOpenGLFramebuffer),
     Texture,
+    Surface(FlutterOpenGLSurface),
 }
 
 impl FlutterOpenGLBackingStore {
     pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterOpenGLBackingStore) {
-        let FlutterOpenGLBackingStore::Framebuffer(framebuffer) = self else {
-            unimplemented!("Only framebuffer OpenGL backing store is currently implemented");
-        };
-
         target.type_ = self.into();
-        unsafe {
-            framebuffer.into_ffi(&mut target.__bindgen_anon_1.framebuffer);
-        };
+
+        match self {
+            FlutterOpenGLBackingStore::Framebuffer(framebuffer) => unsafe {
+                framebuffer.into_ffi(&mut target.__bindgen_anon_1.framebuffer);
+            },
+            FlutterOpenGLBackingStore::Texture => {
+                unimplemented!("OpenGL texture backing store is not currently implemented")
+            }
+            FlutterOpenGLBackingStore::Surface(surface) => unsafe {
+                surface.into_ffi(&mut target.__bindgen_anon_1.surface);
+            },
+        }
     }
 }
 
@@ -506,15 +516,101 @@ impl From<FlutterOpenGLBackingStore> for flust_engine_sys::FlutterOpenGLTargetTy
             FlutterOpenGLBackingStore::Texture => {
                 flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture
             }
+            FlutterOpenGLBackingStore::Surface(_) => {
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeSurface
+            }
+        }
+    }
+}
+
+type VoidCallback = unsafe extern "C" fn(user_data: *mut ::std::os::raw::c_void);
+
+type FlutterOpenGLSurfaceCallback = unsafe extern "C" fn(
+    user_data: *mut ::std::os::raw::c_void,
+    opengl_state_changed: *mut bool,
+) -> bool;
+
+#[derive(Copy, Clone, Debug)]
+pub struct FlutterOpenGLSurface {
+    /// User data to be passed to the make_current, clear_current and
+    /// destruction callbacks.
+    pub user_data: *mut ::std::os::raw::c_void,
+
+    /// Callback invoked (on an engine-managed thread) that asks the embedder to
+    /// make the surface current.
+    ///
+    /// Should return true if the operation succeeded, false if the surface
+    /// could not be made current and rendering should be cancelled.
+    ///
+    /// The second parameter 'opengl state changed' should be set to true if any
+    /// OpenGL API state is different than before this callback was called. In
+    /// that case, Flutter will invalidate the internal OpenGL API state cache,
+    /// which is a somewhat expensive operation.
+    pub make_current_callback: FlutterOpenGLSurfaceCallback,
+
+    /// Callback invoked (on an engine-managed thread) when the current surface
+    /// can be cleared.
+    ///
+    /// Should return true if the operation succeeded, false if an error
+    /// ocurred. That error will be logged but otherwise not handled by the
+    /// engine.
+    ///
+    /// The second parameter 'opengl state changed' is the same as with the
+    /// [`make_current_callback`].
+    ///
+    /// The embedder might clear the surface here after it was previously made
+    /// current. That's not required however, it's also possible to clear it in
+    /// the destruction callback. There's no way to signal OpenGL state changes
+    /// in the destruction callback though.
+    pub clear_current_callback: FlutterOpenGLSurfaceCallback,
+
+    /// Callback invoked (on an engine-managed thread) that asks the embedder to
+    /// collect the surface.
+    pub destruction_callback: VoidCallback,
+
+    /// The surface format (example GL_RGBA8).
+    pub format: u32,
+}
+
+impl FlutterOpenGLSurface {
+    pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterOpenGLSurface) {
+        target.struct_size = mem::size_of::<flust_engine_sys::FlutterOpenGLSurface>();
+        target.format = self.format;
+        target.user_data = self.user_data;
+        target.make_current_callback = Some(self.make_current_callback);
+        target.clear_current_callback = Some(self.clear_current_callback);
+        target.destruction_callback = Some(self.destruction_callback);
+    }
+}
+
+impl From<flust_engine_sys::FlutterOpenGLSurface> for FlutterOpenGLSurface {
+    fn from(surface: flust_engine_sys::FlutterOpenGLSurface) -> Self {
+        Self {
+            format: surface.format,
+            user_data: surface.user_data,
+            make_current_callback: surface
+                .make_current_callback
+                .expect("`FlutterOpenGLSurface.make_current_callback` should not be null"),
+            clear_current_callback: surface
+                .clear_current_callback
+                .expect("`FlutterOpenGLSurface.clear_current_callback` should not be null"),
+            destruction_callback: surface
+                .destruction_callback
+                .expect("`FlutterOpenGLSurface.destruction_callback` should not be null"),
         }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct FlutterOpenGLFramebuffer {
-    /// The target of the color attachment of the frame-buffer. For example,
-    /// GL_TEXTURE_2D or GL_RENDERBUFFER. In case of ambiguity when dealing with
-    /// Window bound frame-buffers, 0 may be used.
+    /// The format of the color attachment of the frame-buffer. For example,
+    /// GL_RGBA8.
+    ///
+    /// In case of ambiguity when dealing with Window bound frame-buffers, 0 may
+    /// be used.
+    ///
+    /// @bug      This field is incorrectly named as "target" when it actually
+    ///           refers to a format.
     pub target: u32,
 
     /// The name of the framebuffer.
