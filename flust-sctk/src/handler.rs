@@ -150,11 +150,7 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
 #[derive(Clone)]
 pub struct SctkCompositorHandler {
     window: Weak<SctkFlutterWindowInner>,
-    context: Arc<Mutex<Context>>,
-    #[allow(dead_code)]
-    opengl_target_type: FlutterOpenGLTargetType,
-    gl: gl::Gl,
-    format: u32,
+    opengl_compositor: SctkOpenGLCompositor,
 }
 
 impl SctkCompositorHandler {
@@ -163,24 +159,11 @@ impl SctkCompositorHandler {
         context: Arc<Mutex<Context>>,
         opengl_target_type: FlutterOpenGLTargetType,
     ) -> Self {
-        context.lock().unwrap().make_current();
-
-        let gl = gl::Gl::load_with(|symbol| {
-            let proc = CString::new(symbol).unwrap();
-            context.lock().unwrap().get_proc_address(proc.as_c_str())
-        });
-
-        context.lock().unwrap().make_not_current();
+        let opengl_compositor = SctkOpenGLCompositor::new(context, opengl_target_type);
 
         Self {
             window,
-            context,
-            gl,
-            opengl_target_type,
-            // TODO: Use similar logic for detecting supported formats as the
-            // Windows embedder:
-            // https://github.com/flutter/engine/blob/a6acfa4/shell/platform/windows/compositor_opengl.cc#L23-L34
-            format: gl::RGBA8,
+            opengl_compositor,
         }
     }
 
@@ -193,23 +176,7 @@ impl SctkCompositorHandler {
             ));
         }
 
-        if !self.context.lock().unwrap().make_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context current".into(),
-            ));
-        }
-
-        unsafe {
-            self.gl.ClearColor(0.0, 0.0, 0.0, 0.0);
-            self.gl
-                .Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
-        };
-
-        if !self.context.lock().unwrap().present() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Present failed".into(),
-            ));
-        }
+        self.opengl_compositor.clear()?;
 
         window.on_frame_presented();
         Ok(())
@@ -227,13 +194,6 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
         let layer = info.layers.first().unwrap();
         debug_assert!(layer.offset.x == 0.0 && layer.offset.y == 0.0);
 
-        let source_id = layer
-            .content
-            .get_opengl_backing_store_framebuffer_name()
-            .ok_or(CompositorPresentError::PresentFailed(
-                "Unable to retrieve framebuffer name from layer".into(),
-            ))?;
-
         // TODO: Investigate if conversion to `u32` is correct
         let frame_size = PhysicalSize::<u32>::new(
             layer.size.width.round() as u32,
@@ -247,6 +207,103 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
                 "Frame generated callback failed".into(),
             ));
         }
+
+        self.opengl_compositor.present_opengl_view(info)?;
+
+        window.on_frame_presented();
+        Ok(())
+    }
+
+    fn create_backing_store(
+        &self,
+        config: FlutterBackingStoreConfig,
+    ) -> Result<FlutterBackingStore, CompositorCreateBackingStoreError> {
+        let opengl_backing_store = self.opengl_compositor.create_opengl_backing_store(config)?;
+        let description = FlutterBackingStoreDescription::OpenGL(opengl_backing_store);
+        let backing_store = FlutterBackingStore::new(description, config.view_id);
+
+        Ok(backing_store)
+    }
+
+    fn collect_backing_store(
+        &self,
+        mut backing_store: FlutterBackingStore,
+    ) -> Result<(), CompositorCollectBackingStoreError> {
+        backing_store.drop_raw_user_data();
+
+        let FlutterBackingStoreDescription::OpenGL(opengl_backing_store) =
+            backing_store.description
+        else {
+            return Err(CompositorCollectBackingStoreError::CollectFailed(
+                "Only OpenGL backing stores are currently implemented".into(),
+            ));
+        };
+
+        self.opengl_compositor
+            .collect_opengl_backing_store(opengl_backing_store)
+    }
+}
+
+trait SctkOpenGLCompositorHandler {
+    fn present_opengl_view(
+        &self,
+        info: FlutterPresentViewInfo,
+    ) -> Result<(), CompositorPresentError>;
+
+    fn create_opengl_backing_store(
+        &self,
+        config: FlutterBackingStoreConfig,
+    ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError>;
+
+    fn collect_opengl_backing_store(
+        &self,
+        backing_store: FlutterOpenGLBackingStore,
+    ) -> Result<(), CompositorCollectBackingStoreError>;
+
+    fn clear(&self) -> Result<(), CompositorPresentError>;
+}
+
+#[derive(Clone)]
+struct SctkOpenGLCompositorHandlerFramebuffer {
+    context: Arc<Mutex<Context>>,
+    gl: gl::Gl,
+    format: u32,
+}
+
+impl SctkOpenGLCompositorHandlerFramebuffer {
+    pub fn new(context: Arc<Mutex<Context>>) -> Self {
+        context.lock().unwrap().make_current();
+
+        let gl = gl::Gl::load_with(|symbol| {
+            let proc = CString::new(symbol).unwrap();
+            context.lock().unwrap().get_proc_address(proc.as_c_str())
+        });
+
+        context.lock().unwrap().make_not_current();
+
+        Self {
+            context,
+            gl,
+            // TODO: Use similar logic for detecting supported formats as the
+            // Windows embedder:
+            // https://github.com/flutter/engine/blob/a6acfa4/shell/platform/windows/compositor_opengl.cc#L23-L34
+            format: gl::RGBA8,
+        }
+    }
+}
+
+impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
+    fn present_opengl_view(
+        &self,
+        info: FlutterPresentViewInfo,
+    ) -> Result<(), CompositorPresentError> {
+        let layer = info.layers.first().unwrap();
+        let source_id = layer
+            .content
+            .get_opengl_backing_store_framebuffer_name()
+            .ok_or(CompositorPresentError::PresentFailed(
+                "Unable to retrieve framebuffer name from layer".into(),
+            ))?;
 
         if !self.context.lock().unwrap().make_current() {
             return Err(CompositorPresentError::PresentFailed(
@@ -287,14 +344,13 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
             ));
         }
 
-        window.on_frame_presented();
         Ok(())
     }
 
-    fn create_backing_store(
+    fn create_opengl_backing_store(
         &self,
         config: FlutterBackingStoreConfig,
-    ) -> Result<FlutterBackingStore, CompositorCreateBackingStoreError> {
+    ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError> {
         let mut user_data = FlutterOpenGLBackingStoreFramebuffer::new();
         unsafe {
             self.gl.GenTextures(1, &mut user_data.texture_id);
@@ -345,30 +401,18 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
         };
 
         let framebuffer = FlutterOpenGLFramebuffer::new(self.format, user_data);
-        let opengl_backing_store = FlutterOpenGLBackingStore::Framebuffer(framebuffer);
-        let description = FlutterBackingStoreDescription::OpenGL(opengl_backing_store);
-        let backing_store = FlutterBackingStore::new(description, config.view_id);
 
-        Ok(backing_store)
+        Ok(FlutterOpenGLBackingStore::Framebuffer(framebuffer))
     }
 
-    fn collect_backing_store(
+    fn collect_opengl_backing_store(
         &self,
-        mut backing_store: FlutterBackingStore,
+        backing_store: FlutterOpenGLBackingStore,
     ) -> Result<(), CompositorCollectBackingStoreError> {
-        backing_store.drop_raw_user_data();
-
-        let FlutterBackingStoreDescription::OpenGL(opengl_backing_store) =
-            backing_store.description
-        else {
+        let FlutterOpenGLBackingStore::Framebuffer(mut framebuffer) = backing_store else {
             return Err(CompositorCollectBackingStoreError::CollectFailed(
-                "Only OpenGL backing stores are currently implemented".into(),
-            ));
-        };
-
-        let FlutterOpenGLBackingStore::Framebuffer(mut framebuffer) = opengl_backing_store else {
-            return Err(CompositorCollectBackingStoreError::CollectFailed(
-                "Only OpenGL framebuffer backing stores are currently implemented".into(),
+                "Unexpected OpenGL backing store type received in collect callback for framebuffer type"
+                    .into(),
             ));
         };
 
@@ -381,6 +425,88 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
         framebuffer.drop_raw_user_data();
 
         Ok(())
+    }
+
+    fn clear(&self) -> Result<(), CompositorPresentError> {
+        if !self.context.lock().unwrap().make_current() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Unable to make context current".into(),
+            ));
+        }
+
+        unsafe {
+            self.gl.ClearColor(0.0, 0.0, 0.0, 0.0);
+            self.gl
+                .Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
+        };
+
+        if !self.context.lock().unwrap().present() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Present failed".into(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+enum SctkOpenGLCompositor {
+    Framebuffer(SctkOpenGLCompositorHandlerFramebuffer),
+}
+
+impl SctkOpenGLCompositor {
+    pub fn new(context: Arc<Mutex<Context>>, opengl_target_type: FlutterOpenGLTargetType) -> Self {
+        match opengl_target_type {
+            FlutterOpenGLTargetType::Framebuffer => {
+                Self::Framebuffer(SctkOpenGLCompositorHandlerFramebuffer::new(context))
+            }
+            FlutterOpenGLTargetType::Texture => unimplemented!(
+                "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
+            ),
+            FlutterOpenGLTargetType::Surface => unimplemented!(
+                "`FlutterOpenGLTargetType::Surface` is not currently implemented for SCTK backend"
+            ),
+        }
+    }
+}
+
+impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
+    fn present_opengl_view(
+        &self,
+        info: FlutterPresentViewInfo,
+    ) -> Result<(), CompositorPresentError> {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => handler.present_opengl_view(info),
+        }
+    }
+
+    fn create_opengl_backing_store(
+        &self,
+        config: FlutterBackingStoreConfig,
+    ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError> {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => {
+                handler.create_opengl_backing_store(config)
+            }
+        }
+    }
+
+    fn collect_opengl_backing_store(
+        &self,
+        backing_store: FlutterOpenGLBackingStore,
+    ) -> Result<(), CompositorCollectBackingStoreError> {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => {
+                handler.collect_opengl_backing_store(backing_store)
+            }
+        }
+    }
+
+    fn clear(&self) -> Result<(), CompositorPresentError> {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => handler.clear(),
+        }
     }
 }
 
