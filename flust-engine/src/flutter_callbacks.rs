@@ -1,4 +1,7 @@
-use crate::ffi::{FlutterFrameInfo, FlutterLayer, FlutterPresentViewInfo, IMPLICIT_VIEW_ID};
+use crate::ffi::{
+    FlutterBackingStore, FlutterBackingStoreConfig, FlutterFrameInfo, FlutterLayer,
+    FlutterPresentViewInfo,
+};
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
@@ -97,10 +100,11 @@ pub extern "C" fn compositor_backing_store_create_callback(
     trace!("compositor_backing_store_create_callback");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
+        let config = FlutterBackingStoreConfig::from(*config);
         if let Ok(backing_store) = engine
-            .compositor_handler_for_view(IMPLICIT_VIEW_ID)
+            .compositor_handler_for_view(config.view_id)
             .unwrap()
-            .create_backing_store((*config).into())
+            .create_backing_store(config)
         {
             backing_store.into_ffi(&mut *backing_store_out);
             return true;
@@ -116,10 +120,11 @@ pub extern "C" fn compositor_backing_store_collect_callback(
     trace!("compositor_backing_store_collect_callback");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
+        let backing_store = FlutterBackingStore::from(*backing_store);
         engine
-            .compositor_handler_for_view(IMPLICIT_VIEW_ID)
+            .compositor_handler_for_view(backing_store.user_data.view_id)
             .unwrap()
-            .collect_backing_store((*backing_store).into())
+            .collect_backing_store(backing_store)
             .is_ok()
     }
 }

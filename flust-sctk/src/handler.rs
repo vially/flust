@@ -340,15 +340,17 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
         let framebuffer = FlutterOpenGLFramebuffer::new(self.format, user_data);
         let opengl_backing_store = FlutterOpenGLBackingStore::Framebuffer(framebuffer);
         let description = FlutterBackingStoreDescription::OpenGL(opengl_backing_store);
-        let backing_store = FlutterBackingStore::new(description);
+        let backing_store = FlutterBackingStore::new(description, config.view_id);
 
         Ok(backing_store)
     }
 
     fn collect_backing_store(
         &self,
-        backing_store: FlutterBackingStore,
+        mut backing_store: FlutterBackingStore,
     ) -> Result<(), CompositorCollectBackingStoreError> {
+        backing_store.drop_raw_user_data();
+
         let FlutterBackingStoreDescription::OpenGL(opengl_backing_store) =
             backing_store.description
         else {

@@ -372,37 +372,87 @@ pub struct FlutterBackingStoreConfig {
     pub size: FlutterSize,
     /// The identifier for the view that the engine will use this backing store
     /// to render into.
-    pub view_id: i64,
+    pub view_id: FlutterViewId,
 }
 
 impl From<flust_engine_sys::FlutterBackingStoreConfig> for FlutterBackingStoreConfig {
     fn from(config: flust_engine_sys::FlutterBackingStoreConfig) -> Self {
         Self {
             size: config.size,
-            // TODO(multi-view): Replace with real `view_id` after bumping
-            // `embedder.h` to Flutter version 3.22+.
-            view_id: 0,
+            view_id: config.view_id,
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct FlutterBackingStoreUserData {
+    // The `view_id` field is used for being able to determine the targeted view
+    // in the `collect_backing_store_callback`.
+    pub view_id: FlutterViewId,
+}
+
+impl FlutterBackingStoreUserData {
+    fn into_ffi(self, target: &mut flust_engine_sys::FlutterBackingStore) {
+        target.user_data = Box::into_raw(Box::new(self)) as _;
+    }
+
+    // Creates a *copy* of the data from the raw pointer. This is useful for
+    // getting access to the underlying data but without impacting the raw
+    // pointer when this copy gets dropped.
+    unsafe fn clone_from_raw(raw: *mut Self) -> Self {
+        let raw = Box::from_raw(raw);
+        let user_data = raw.clone();
+        std::mem::forget(raw);
+        *user_data
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct FlutterBackingStore {
     pub description: FlutterBackingStoreDescription,
+    pub user_data: FlutterBackingStoreUserData,
+
+    /// This field is used for collecting the `user_data` memory as part of the
+    /// `FlutterCompositor.collect_backing_store_callback`.
+    raw_user_data: *mut FlutterBackingStoreUserData,
 }
 
 impl FlutterBackingStore {
-    pub fn new(description: FlutterBackingStoreDescription) -> Self {
-        Self { description }
+    pub fn new(description: FlutterBackingStoreDescription, view_id: FlutterViewId) -> Self {
+        Self {
+            description,
+            user_data: FlutterBackingStoreUserData { view_id },
+            // Note: `raw_user_data` is initialized as `nullptr` but it will
+            // point to an actual `user_data` value after a roundtrip through
+            // the embedder API.
+            //
+            // The `user_data` field is converted into a raw pointer as part of
+            // the `FlutterBackingStore::into_ffi` call which is then used to
+            // fill both the `user_data` and `raw_user_data` fields when
+            // converting from `flust_engine_sys::FlutterBackingStore`.
+            raw_user_data: std::ptr::null_mut(),
+        }
     }
 
     pub(crate) fn into_ffi(self, target: &mut flust_engine_sys::FlutterBackingStore) {
+        self.user_data.into_ffi(target);
         self.description.into_ffi(target);
+    }
+
+    pub fn drop_raw_user_data(&mut self) {
+        unsafe {
+            drop(Box::from_raw(self.raw_user_data));
+        }
+
+        self.raw_user_data = std::ptr::null_mut()
     }
 }
 
 impl From<flust_engine_sys::FlutterBackingStore> for FlutterBackingStore {
     fn from(value: flust_engine_sys::FlutterBackingStore) -> Self {
+        let raw_user_data = value.user_data as *mut FlutterBackingStoreUserData;
+        let user_data = unsafe { FlutterBackingStoreUserData::clone_from_raw(raw_user_data) };
+
         let description = match value.type_ {
             FlutterBackingStoreType::kFlutterBackingStoreTypeOpenGL => unsafe {
                 value.__bindgen_anon_1.open_gl.into()
@@ -421,7 +471,11 @@ impl From<flust_engine_sys::FlutterBackingStore> for FlutterBackingStore {
             }
         };
 
-        Self { description }
+        Self {
+            description,
+            user_data,
+            raw_user_data,
+        }
     }
 }
 
