@@ -1,8 +1,8 @@
 use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
 
 use dpi::Size;
-use flust_runner_api::{ApplicationAttributes, Backend};
 use flust_engine::plugins::Plugin;
+use flust_runner_api::{ApplicationAttributes, Backend};
 use thiserror::Error;
 use tracing::warn;
 
@@ -28,10 +28,10 @@ impl Application {
     }
 
     pub fn new(attributes: ApplicationAttributes) -> Result<Application, ApplicationBuildError> {
-        match attributes.backend {
-            Backend::Sctk => {
+        match attributes.backend.clone() {
+            Backend::Sctk(config) => {
                 #[cfg(feature = "flust-sctk")]
-                return Ok(Application::Sctk(SctkApplication::new(attributes)?));
+                return Ok(Application::Sctk(SctkApplication::new(attributes, config)?));
 
                 #[cfg(not(feature = "flust-sctk"))]
                 panic!("Failed to initialize sctk application. The 'flust-sctk' feature is not enabled");

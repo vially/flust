@@ -12,7 +12,7 @@ use flust_engine::{
 };
 use flust_engine_sys::FlutterEngineDisplayId;
 use flust_glutin::builder::FlutterEGLContext;
-use flust_runner_api::ApplicationAttributes;
+use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
@@ -218,6 +218,7 @@ impl SctkFlutterWindow {
         xdg_shell_state: &XdgShell,
         vsync_handler: Arc<parking_lot::Mutex<SctkVsyncHandler>>,
         attributes: ApplicationAttributes,
+        config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
         let surface = compositor_state.create_surface(qh);
         let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, qh);
@@ -254,7 +255,11 @@ impl SctkFlutterWindow {
                 context.clone(),
                 resource_context,
             ),
-            compositor_handler: SctkCompositorHandler::new(inner.clone(), context),
+            compositor_handler: SctkCompositorHandler::new(
+                inner.clone(),
+                context,
+                config.opengl_target_type,
+            ),
             vsync_handler,
             resize_mutex: Default::default(),
             resize_status: Default::default(),

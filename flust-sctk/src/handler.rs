@@ -21,7 +21,7 @@ use flust_engine::{
         FlutterBackingStore, FlutterBackingStoreConfig, FlutterBackingStoreDescription,
         FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey,
         FlutterOpenGLBackingStore, FlutterOpenGLBackingStoreFramebuffer, FlutterOpenGLFramebuffer,
-        FlutterPhysicalKey, FlutterPresentViewInfo,
+        FlutterOpenGLTargetType, FlutterPhysicalKey, FlutterPresentViewInfo,
     },
     tasks::TaskRunnerHandler,
     FlutterEngineWeakRef, FlutterVsyncHandler,
@@ -151,12 +151,18 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
 pub struct SctkCompositorHandler {
     window: Weak<SctkFlutterWindowInner>,
     context: Arc<Mutex<Context>>,
+    #[allow(dead_code)]
+    opengl_target_type: FlutterOpenGLTargetType,
     gl: gl::Gl,
     format: u32,
 }
 
 impl SctkCompositorHandler {
-    pub fn new(window: Weak<SctkFlutterWindowInner>, context: Arc<Mutex<Context>>) -> Self {
+    pub fn new(
+        window: Weak<SctkFlutterWindowInner>,
+        context: Arc<Mutex<Context>>,
+        opengl_target_type: FlutterOpenGLTargetType,
+    ) -> Self {
         context.lock().unwrap().make_current();
 
         let gl = gl::Gl::load_with(|symbol| {
@@ -170,6 +176,7 @@ impl SctkCompositorHandler {
             window,
             context,
             gl,
+            opengl_target_type,
             // TODO: Use similar logic for detecting supported formats as the
             // Windows embedder:
             // https://github.com/flutter/engine/blob/a6acfa4/shell/platform/windows/compositor_opengl.cc#L23-L34

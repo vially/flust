@@ -1,12 +1,31 @@
 use std::path::PathBuf;
 
 use dpi::Size;
+use flust_engine::ffi::FlutterOpenGLTargetType;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub enum Backend {
-    #[default]
-    Sctk,
+    Sctk(BackendConfigSctk),
     Winit,
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        Self::Sctk(Default::default())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BackendConfigSctk {
+    pub opengl_target_type: FlutterOpenGLTargetType,
+}
+
+impl Default for BackendConfigSctk {
+    fn default() -> Self {
+        Self {
+            opengl_target_type: FlutterOpenGLTargetType::Framebuffer,
+        }
+    }
 }
 
 /// Attributes used when creating an application.

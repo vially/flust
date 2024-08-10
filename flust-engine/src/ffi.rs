@@ -535,6 +535,29 @@ impl From<flust_engine_sys::FlutterOpenGLBackingStore> for FlutterBackingStoreDe
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum FlutterOpenGLTargetType {
+    Framebuffer,
+    Texture,
+    Surface,
+}
+
+impl From<FlutterOpenGLTargetType> for flust_engine_sys::FlutterOpenGLTargetType {
+    fn from(target_type: FlutterOpenGLTargetType) -> Self {
+        match target_type {
+            FlutterOpenGLTargetType::Framebuffer => {
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeFramebuffer
+            }
+            FlutterOpenGLTargetType::Texture => {
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeTexture
+            }
+            FlutterOpenGLTargetType::Surface => {
+                flust_engine_sys::FlutterOpenGLTargetType::kFlutterOpenGLTargetTypeSurface
+            }
+        }
+    }
+}
+
 // TODO: Add support for OpenGL texture target type
 #[derive(Copy, Clone, Debug)]
 pub enum FlutterOpenGLBackingStore {

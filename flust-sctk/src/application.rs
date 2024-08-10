@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
 
 use calloop::futures::{Executor, Scheduler};
-use flust_runner_api::ApplicationAttributes;
 use flust_engine::{
     builder::FlutterEngineBuilder,
     ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
@@ -14,6 +13,7 @@ use flust_plugins::{
     platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
 };
 use flust_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
+use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},
@@ -96,7 +96,10 @@ pub struct SctkApplicationState {
 }
 
 impl SctkApplication {
-    pub fn new(attributes: ApplicationAttributes) -> Result<Self, SctkApplicationCreateError> {
+    pub fn new(
+        attributes: ApplicationAttributes,
+        config: BackendConfigSctk,
+    ) -> Result<Self, SctkApplicationCreateError> {
         let conn = Connection::connect_to_env()?;
         let (globals, event_queue) = registry_queue_init(&conn)?;
         let qh = event_queue.handle();
@@ -141,6 +144,7 @@ impl SctkApplication {
             &xdg_shell_state,
             vsync_handler.clone(),
             attributes,
+            config,
         )?;
 
         engine.add_view(implicit_window.create_flutter_view());
