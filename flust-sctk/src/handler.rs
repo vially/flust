@@ -21,7 +21,7 @@ use flust_engine::{
         FlutterBackingStore, FlutterBackingStoreConfig, FlutterBackingStoreDescription,
         FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey,
         FlutterOpenGLBackingStore, FlutterOpenGLBackingStoreFramebuffer, FlutterOpenGLFramebuffer,
-        FlutterOpenGLTargetType, FlutterPhysicalKey, FlutterPresentViewInfo,
+        FlutterOpenGLSurface, FlutterOpenGLTargetType, FlutterPhysicalKey, FlutterPresentViewInfo,
     },
     tasks::TaskRunnerHandler,
     FlutterEngineWeakRef, FlutterVsyncHandler,
@@ -448,8 +448,112 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
 }
 
 #[derive(Clone)]
+struct SctkOpenGLCompositorHandlerSurface {
+    context: Arc<Mutex<Context>>,
+}
+
+impl SctkOpenGLCompositorHandlerSurface {
+    pub fn new(context: Arc<Mutex<Context>>) -> Self {
+        Self { context }
+    }
+}
+
+impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
+    fn present_opengl_view(
+        &self,
+        _info: FlutterPresentViewInfo,
+    ) -> Result<(), CompositorPresentError> {
+        // TODO: Investigate if wrapping the present call with
+        // `make_current`/`make_not_current` is expected.
+        if !self.context.lock().unwrap().make_current() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Unable to make context current".into(),
+            ));
+        }
+
+        if !self.context.lock().unwrap().present() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Present failed".into(),
+            ));
+        }
+
+        if !self.context.lock().unwrap().make_not_current() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Unable to make context not current".into(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn create_opengl_backing_store(
+        &self,
+        _config: FlutterBackingStoreConfig,
+    ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError> {
+        let user_data = Arc::downgrade(&self.context).into_raw() as *mut std::ffi::c_void;
+
+        let surface = FlutterOpenGLSurface {
+            user_data,
+            make_current_callback,
+            clear_current_callback,
+            destruction_callback,
+            format: Context::get_supported_format(),
+        };
+
+        Ok(FlutterOpenGLBackingStore::Surface(surface))
+    }
+
+    fn collect_opengl_backing_store(
+        &self,
+        backing_store: FlutterOpenGLBackingStore,
+    ) -> Result<(), CompositorCollectBackingStoreError> {
+        let FlutterOpenGLBackingStore::Surface(surface) = backing_store else {
+            return Err(CompositorCollectBackingStoreError::CollectFailed(
+                "Unexpected OpenGL backing store type received in collect callback for surface type"
+                    .into(),
+            ));
+        };
+
+        unsafe { drop(Weak::from_raw(surface.user_data as *const Mutex<Context>)) };
+
+        Ok(())
+    }
+
+    fn clear(&self) -> Result<(), CompositorPresentError> {
+        Ok(()) // no-op
+    }
+}
+
+pub extern "C" fn make_current_callback(
+    user_data: *mut c_void,
+    _opengl_state_changed: *mut bool,
+) -> bool {
+    trace!("make_current_callback");
+    unsafe {
+        let context = &*(user_data as *const Mutex<Context>);
+        context.lock().unwrap().make_current()
+    }
+}
+
+pub extern "C" fn clear_current_callback(
+    user_data: *mut c_void,
+    _opengl_state_changed: *mut bool,
+) -> bool {
+    trace!("clear_current_callback");
+    unsafe {
+        let context = &*(user_data as *const Mutex<Context>);
+        context.lock().unwrap().make_not_current()
+    }
+}
+
+pub extern "C" fn destruction_callback(_user_data: *mut c_void) {
+    trace!("destruction_callback");
+}
+
+#[derive(Clone)]
 enum SctkOpenGLCompositor {
     Framebuffer(SctkOpenGLCompositorHandlerFramebuffer),
+    Surface(SctkOpenGLCompositorHandlerSurface),
 }
 
 impl SctkOpenGLCompositor {
@@ -461,9 +565,9 @@ impl SctkOpenGLCompositor {
             FlutterOpenGLTargetType::Texture => unimplemented!(
                 "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
             ),
-            FlutterOpenGLTargetType::Surface => unimplemented!(
-                "`FlutterOpenGLTargetType::Surface` is not currently implemented for SCTK backend"
-            ),
+            FlutterOpenGLTargetType::Surface => {
+                Self::Surface(SctkOpenGLCompositorHandlerSurface::new(context))
+            }
         }
     }
 }
@@ -475,6 +579,7 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
     ) -> Result<(), CompositorPresentError> {
         match self {
             SctkOpenGLCompositor::Framebuffer(handler) => handler.present_opengl_view(info),
+            SctkOpenGLCompositor::Surface(handler) => handler.present_opengl_view(info),
         }
     }
 
@@ -486,6 +591,7 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
             SctkOpenGLCompositor::Framebuffer(handler) => {
                 handler.create_opengl_backing_store(config)
             }
+            SctkOpenGLCompositor::Surface(handler) => handler.create_opengl_backing_store(config),
         }
     }
 
@@ -497,12 +603,16 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
             SctkOpenGLCompositor::Framebuffer(handler) => {
                 handler.collect_opengl_backing_store(backing_store)
             }
+            SctkOpenGLCompositor::Surface(handler) => {
+                handler.collect_opengl_backing_store(backing_store)
+            }
         }
     }
 
     fn clear(&self) -> Result<(), CompositorPresentError> {
         match self {
             SctkOpenGLCompositor::Framebuffer(handler) => handler.clear(),
+            SctkOpenGLCompositor::Surface(handler) => handler.clear(),
         }
     }
 }

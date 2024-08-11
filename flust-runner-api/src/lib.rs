@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use dpi::Size;
-use flust_engine::ffi::FlutterOpenGLTargetType;
+pub use flust_engine::ffi::FlutterOpenGLTargetType;
 
 #[derive(Debug, Clone)]
 pub enum Backend {
@@ -15,6 +15,12 @@ impl Default for Backend {
     }
 }
 
+impl From<BackendConfigSctk> for Backend {
+    fn from(config: BackendConfigSctk) -> Self {
+        Self::Sctk(config)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BackendConfigSctk {
     pub opengl_target_type: FlutterOpenGLTargetType,
@@ -25,6 +31,12 @@ impl Default for BackendConfigSctk {
         Self {
             opengl_target_type: FlutterOpenGLTargetType::Framebuffer,
         }
+    }
+}
+
+impl From<FlutterOpenGLTargetType> for BackendConfigSctk {
+    fn from(opengl_target_type: FlutterOpenGLTargetType) -> Self {
+        Self { opengl_target_type }
     }
 }
 
