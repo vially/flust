@@ -284,10 +284,7 @@ impl SctkOpenGLCompositorHandlerFramebuffer {
         Self {
             context,
             gl,
-            // TODO: Use similar logic for detecting supported formats as the
-            // Windows embedder:
-            // https://github.com/flutter/engine/blob/a6acfa4/shell/platform/windows/compositor_opengl.cc#L23-L34
-            format: gl::RGBA8,
+            format: Context::get_supported_format(),
         }
     }
 }

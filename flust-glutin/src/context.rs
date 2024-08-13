@@ -11,6 +11,8 @@ use std::{
     num::NonZeroU32,
 };
 
+use crate::gl;
+
 pub struct Context {
     display: Display,
     surface: Surface<WindowSurface>,
@@ -49,6 +51,14 @@ impl Context {
 
     pub fn get_proc_address(&self, proc: &CStr) -> *const c_void {
         self.display.get_proc_address(proc)
+    }
+
+    // TODO: Use similar logic for detecting supported formats as the Windows
+    // and Linux embedders:
+    // - https://github.com/flutter/engine/blob/a6acfa4/shell/platform/windows/compositor_opengl.cc#L23-L34
+    // - https://github.com/flutter/engine/blob/088dcf/shell/platform/linux/fl_framebuffer.cc#L81-L104
+    pub fn get_supported_format() -> gl::types::GLenum {
+        gl::RGBA8
     }
 
     pub fn resize(&mut self, size: PhysicalSize<NonZeroU32>) {
