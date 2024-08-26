@@ -323,6 +323,13 @@ impl SctkFlutterWindow {
         let display_id = self.inner.get_display_id().unwrap_or_default();
 
         if let Some(engine) = self.inner.engine.upgrade() {
+            trace!(
+                "[preferred_buffer_scale event] sending window metrics event: {}x{} (scale: {})",
+                physical_size.width,
+                physical_size.height,
+                new_scale_factor
+            );
+
             engine.send_window_metrics_event(
                 self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),
@@ -378,6 +385,13 @@ impl SctkFlutterWindow {
         let display_id = self.inner.get_display_id().unwrap_or_default();
 
         if let Some(engine) = self.inner.engine.upgrade() {
+            trace!(
+                "[configure event] sending window metrics event: {}x{} (scale: {})",
+                physical_size.width,
+                physical_size.height,
+                scale_factor
+            );
+
             engine.send_window_metrics_event(
                 self.inner.id,
                 usize::try_from(physical_size.width.get()).unwrap(),

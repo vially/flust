@@ -488,8 +488,13 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
 
     fn create_opengl_backing_store(
         &self,
-        _config: FlutterBackingStoreConfig,
+        config: FlutterBackingStoreConfig,
     ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError> {
+        trace!(
+            "create opengl backing store: {}x{}",
+            config.size.width,
+            config.size.height
+        );
         let user_data = Arc::downgrade(&self.context).into_raw() as *mut std::ffi::c_void;
 
         let surface = FlutterOpenGLSurface {
@@ -507,6 +512,8 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
         &self,
         backing_store: FlutterOpenGLBackingStore,
     ) -> Result<(), CompositorCollectBackingStoreError> {
+        trace!("collect opengl backing store");
+
         let FlutterOpenGLBackingStore::Surface(surface) = backing_store else {
             return Err(CompositorCollectBackingStoreError::CollectFailed(
                 "Unexpected OpenGL backing store type received in collect callback for surface type"
@@ -678,6 +685,11 @@ impl FlutterVsyncHandler for SctkVsyncHandler {
         let can_schedule_frames = self.can_schedule_frames.load(Ordering::Relaxed);
         if !can_schedule_frames {
             engine.run_on_platform_thread(move |engine| {
+                trace!(
+                    "[baton: {}] frames can not be scheduled yet: returning baton to engine",
+                    baton
+                );
+
                 // Once the surface is mapped, the `wl_output`'s refresh rate
                 // will be used for determining the frame interval. But until
                 // then, 60hz seems like a reasonable default.
