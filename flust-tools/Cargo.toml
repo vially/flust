@@ -10,3 +10,8 @@ dirs = "5.0"
 curl = "0.4.46"
 indicatif = "0.17.8"
 zip = "2.1.6"
+clap = { version = "4.5.16", features = ["derive"] }
+strum = { version = "0.26.3", features = ["derive"] }
+tracing = "0.1"
+tabled = "0.16.0"
+supports-hyperlinks = "3.0.0"
