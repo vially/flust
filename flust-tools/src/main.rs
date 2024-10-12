@@ -32,6 +32,18 @@ enum EngineLibraryCommands {
         #[arg(short, long)]
         long: bool,
     },
+
+    /// Install a Flutter engine library version
+    Install {
+        /// The Flutter engine library version to install
+        version: Option<String>,
+    },
+
+    /// Uninstall a Flutter engine library version
+    Uninstall {
+        /// The Flutter engine library version to uninstall
+        version: Option<String>,
+    },
 }
 
 fn main() -> Result<(), Error> {
@@ -109,6 +121,12 @@ fn main() -> Result<(), Error> {
                     println!("{}", table);
 
                     Ok(())
+                }
+                EngineLibraryCommands::Install { version } => {
+                    EngineLibraryCache::install_version(version.as_deref())
+                }
+                EngineLibraryCommands::Uninstall { version } => {
+                    EngineLibraryCache::uninstall_version(version.as_deref())
                 }
             },
             None => Ok(()),

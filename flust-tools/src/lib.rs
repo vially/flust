@@ -1,5 +1,6 @@
 use curl::easy::Easy;
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{read_to_string, File};
 use std::io::{BufRead, ErrorKind, Write};
@@ -9,20 +10,20 @@ use std::string::ToString;
 use std::sync::Arc;
 use strum::EnumIter;
 use strum::IntoEnumIterator;
+use tempfile;
 use tracing::warn;
-use zip::result::ZipError;
-use zip::ZipArchive;
 
 #[derive(Debug)]
 pub enum Error {
     FlutterNotFound,
     FlutterVersionNotFound,
+    FlutterVersionAlreadyInstalled,
     DownloadNotFound,
     DartNotFound,
     Io(std::io::Error),
     Which(which::Error),
     Curl(curl::Error),
-    Zip(zip::result::ZipError),
+    Reqwest(reqwest::Error),
     Indicatif(indicatif::style::TemplateError),
 }
 
@@ -31,6 +32,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::FlutterNotFound => write!(f, "Couldn't find flutter sdk"),
             Error::FlutterVersionNotFound => write!(f, "Unable to determine Flutter SDK version"),
+            Error::FlutterVersionAlreadyInstalled => write!(f, "Flutter version already installed"),
             Error::DownloadNotFound => write!(
                 f,
                 r#"We couldn't find the requested engine version 'missing'.
@@ -58,7 +60,7 @@ You'll find the available builds on our github releases page [0].
             Error::Which(error) => error.fmt(f),
             Error::Io(error) => error.fmt(f),
             Error::Curl(error) => error.fmt(f),
-            Error::Zip(error) => error.fmt(f),
+            Error::Reqwest(error) => error.fmt(f),
             Error::Indicatif(error) => error.fmt(f),
         }
     }
@@ -84,9 +86,9 @@ impl From<curl::Error> for Error {
     }
 }
 
-impl From<zip::result::ZipError> for Error {
-    fn from(error: ZipError) -> Self {
-        Error::Zip(error)
+impl From<reqwest::Error> for Error {
+    fn from(error: reqwest::Error) -> Self {
+        Error::Reqwest(error)
     }
 }
 
@@ -185,6 +187,46 @@ impl Flutter {
     }
 }
 
+struct FlutterRelease {
+    flutter_version: String,
+    engine_version: String,
+}
+
+impl FlutterRelease {
+    fn current_version() -> Result<Self, Error> {
+        let flutter = Flutter::auto_detect()?;
+        Ok(Self {
+            flutter_version: flutter.version()?,
+            engine_version: flutter.engine_version()?,
+        })
+    }
+
+    fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
+        let Some(flutter_version) = flutter_version else {
+            return Self::current_version();
+        };
+
+        let engine_version = match VersionMappingCache::find_engine_version(flutter_version) {
+            Some(engine_version) => engine_version,
+            None => Self::read_engine_version_from_github_tag(flutter_version)?,
+        };
+
+        Ok(Self {
+            flutter_version: flutter_version.to_owned(),
+            engine_version,
+        })
+    }
+
+    fn read_engine_version_from_github_tag(flutter_version: &str) -> Result<String, Error> {
+        let url = format!(
+            "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{}/bin/internal/engine.version",
+            flutter_version
+        );
+
+        Ok(reqwest::blocking::get(url)?.text()?.trim().to_owned())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, strum::Display)]
 pub enum Build {
     #[strum(serialize = "debug")]
@@ -278,6 +320,94 @@ impl EngineLibraryCache {
         Ok(std::fs::canonicalize(path)?)
     }
 
+    pub fn is_version_installed<P: AsRef<Path>>(flutter_version: P) -> Result<bool, Error> {
+        let path = Self::engine_cache_dir()
+            .join("by-flutter-version")
+            .join(flutter_version);
+
+        Ok(std::fs::exists(path)?)
+    }
+
+    pub fn install_version(flutter_version: Option<&str>) -> Result<(), Error> {
+        let release = FlutterRelease::for_flutter_version(flutter_version)?;
+
+        if EngineLibraryCache::is_version_installed(&release.flutter_version)? {
+            return Err(Error::FlutterVersionAlreadyInstalled);
+        }
+
+        for build_mode in Build::iter() {
+            let library_path = Engine::new(
+                &release.flutter_version,
+                &release.engine_version,
+                "x86_64-unknown-linux-gnu",
+                build_mode,
+            )
+            .download()?;
+
+            let library_dirs = vec![
+                Self::engine_cache_dir()
+                    .join("by-flutter-version")
+                    .join(&release.flutter_version)
+                    .join(build_mode.to_string()),
+                Self::engine_cache_dir()
+                    .join("by-engine-version")
+                    .join(&release.engine_version)
+                    .join(build_mode.to_string()),
+            ];
+            for library_dir in library_dirs {
+                if !library_dir.exists() {
+                    std::fs::create_dir_all(&library_dir)?;
+                }
+                std::os::unix::fs::symlink(
+                    &library_path,
+                    library_dir.join("libflutter_engine.so"),
+                )?;
+            }
+        }
+
+        VersionMappingCache::insert(&release.flutter_version, &release.engine_version)?;
+
+        Ok(())
+    }
+
+    pub fn uninstall_version(flutter_version: Option<&str>) -> Result<(), Error> {
+        let release = FlutterRelease::for_flutter_version(flutter_version)?;
+
+        if !EngineLibraryCache::is_version_installed(&release.flutter_version)? {
+            return Err(Error::FlutterVersionNotFound);
+        }
+
+        let library_dirs = vec![
+            Self::engine_cache_dir()
+                .join("by-flutter-version")
+                .join(&release.flutter_version),
+            Self::engine_cache_dir()
+                .join("by-engine-version")
+                .join(&release.engine_version),
+        ];
+        for library_dir in library_dirs {
+            if library_dir.exists() {
+                std::fs::remove_dir_all(library_dir)?;
+            }
+        }
+
+        let build_modes = vec!["debug", "debug_unstripped", "profile", "release"];
+        for build_mode in build_modes {
+            let library_name = format!(
+                "libflutter_engine_{}-{}.so",
+                build_mode, &release.flutter_version
+            );
+            let library_path = Self::engine_cache_dir().join(library_name);
+            if library_path.exists() {
+                std::fs::remove_file(library_path)?;
+            }
+        }
+
+        VersionMappingCache::remove(&release.flutter_version, &release.engine_version)?;
+
+        Ok(())
+    }
+
     pub fn engine_cache_dir() -> PathBuf {
         dirs::cache_dir()
             .expect("Cannot get cache dir")
@@ -287,16 +417,23 @@ impl EngineLibraryCache {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Engine {
-    version: String,
+    flutter_version: String,
+    engine_version: String,
     target: String,
     build: Build,
 }
 
 impl Engine {
-    pub fn new(version: String, target: String, build: Build) -> Self {
+    pub fn new(
+        flutter_version: impl Into<String>,
+        engine_version: impl Into<String>,
+        target: impl Into<String>,
+        build: Build,
+    ) -> Self {
         Self {
-            version,
-            target,
+            flutter_version: flutter_version.into(),
+            engine_version: engine_version.into(),
+            target: target.into(),
             build,
         }
     }
@@ -304,76 +441,50 @@ impl Engine {
     pub fn download_url(&self) -> String {
         let build = self.build.build();
         let platform = match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => format!("linux_x64-host_{}", build),
-            "armv7-linux-androideabi" => format!("linux_x64-android_{}", build),
-            "aarch64-linux-android" => format!("linux_x64-android_{}_arm64", build),
-            "i686-linux-android" => format!("linux_x64-android_{}_x64", build),
-            "x86_64-linux-android" => format!("linux_x64-android_{}_x86", build),
-            "x86_64-apple-darwin" => format!("macosx_x64-host_{}", build),
-            "armv7-apple-ios" => format!("macosx_x64-ios_{}_arm", build),
-            "aarch64-apple-ios" => format!("macosx_x64-ios_{}", build),
-            "x86_64-pc-windows-msvc" => format!("windows_x64-host_{}", build),
+            "x86_64-unknown-linux-gnu" => format!("engine-x64-generic-{}", build),
             _ => panic!("unsupported platform"),
         };
         format!(
-            "https://github.com/flutter-rs/engine-builds/releases/download/f-{0}/{1}.zip",
-            &self.version, platform
+            "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/{}.tar.xz",
+            &self.engine_version, platform
         )
     }
 
-    pub fn library_name(&self) -> &'static str {
+    pub fn library_name(&self) -> String {
         match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => "libflutter_engine.so",
-            "armv7-linux-androideabi" => "libflutter_engine.so",
-            "aarch64-linux-android" => "libflutter_engine.so",
-            "i686-linux-android" => "libflutter_engine.so",
-            "x86_64-linux-android" => "libflutter_engine.so",
-            "x86_64-apple-darwin" => "libflutter_engine.dylib",
-            "armv7-apple-ios" => "libflutter_engine.dylib",
-            "aarch64-apple-ios" => "libflutter_engine.dylib",
-            "x86_64-pc-windows-msvc" => "flutter_engine.dll",
+            "x86_64-unknown-linux-gnu" => format!(
+                "libflutter_engine_{}-{}.so",
+                self.build, &self.flutter_version
+            ),
             _ => panic!("unsupported platform"),
         }
     }
 
-    pub fn engine_dir(&self) -> PathBuf {
-        dirs::cache_dir()
-            .expect("Cannot get cache dir")
-            .join("flust-engine")
-            .join(&self.version)
-            .join(&self.target)
-            .join(self.build.build())
-    }
-
     pub fn library_path(&self) -> PathBuf {
-        self.engine_dir().join(self.library_name())
+        EngineLibraryCache::engine_cache_dir().join(self.library_name())
     }
 
-    pub fn download(&self) -> Result<(), Error> {
+    pub fn download(&self) -> Result<PathBuf, Error> {
         let url = self.download_url();
         let path = self.library_path();
         let dir = path.parent().unwrap().to_owned();
 
         if path.exists() {
-            return Ok(());
+            return Ok(path);
         }
 
         std::fs::create_dir_all(&dir)?;
 
-        let download_file = dir.join("engine.zip");
+        let tempdir = tempfile::tempdir()?;
+        let download_file = tempdir.path().join("engine.tar.xz");
         download(&url, &download_file)?;
-        unzip(&download_file, &dir)?;
+        unarchive(&download_file, &tempdir.path())?;
 
-        Ok(())
-    }
+        if tempdir.path().join("libflutter_engine.so").exists() {
+            std::fs::copy(tempdir.path().join("libflutter_engine.so"), &path)?;
+        }
 
-    pub fn dart(&self) -> Result<PathBuf, Error> {
-        let host_engine_dir = self.engine_dir();
-        ["dart", "dart.exe"]
-            .iter()
-            .map(|bin| host_engine_dir.join(bin))
-            .find(|path| path.exists())
-            .ok_or(Error::DartNotFound)
+        Ok(path)
     }
 }
 
@@ -414,56 +525,68 @@ fn download(url: &str, target: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn unzip(archive: &Path, dir: &Path) -> Result<(), Error> {
-    println!("Extracting {:?}...", archive.file_name().unwrap());
+fn unarchive(archive_path: &Path, target_dir: &Path) -> Result<(), Error> {
+    println!("Extracting {:?}...", archive_path.file_name().unwrap());
 
-    let file = File::open(archive)?;
-    let mut archive = ZipArchive::new(file)?;
-
-    let pb = ProgressBar::new(archive.len() as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {wide_msg}")?
-            .progress_chars("#>-"),
-    );
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        let outpath = dir.join(file.mangled_name());
-
-        pb.inc(1);
-
-        if file.name().ends_with('/') {
-            pb.set_message(format!("File {} extracted to \"{}\"", i, outpath.display()));
-            std::fs::create_dir_all(&outpath)?;
-        } else {
-            pb.set_message(format!(
-                "File {} extracted to \"{}\" ({} bytes)",
-                i,
-                outpath.display(),
-                file.size()
-            ));
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    std::fs::create_dir_all(p)?;
-                }
-            }
-            let mut outfile = std::fs::File::create(&outpath)?;
-            std::io::copy(&mut file, &mut outfile).unwrap();
-
-            #[cfg(unix)]
-            {
-                use std::fs::Permissions;
-                use std::os::unix::fs::PermissionsExt;
-
-                if let Some(mode) = file.unix_mode() {
-                    std::fs::set_permissions(&outpath, Permissions::from_mode(mode))?;
-                }
-            }
-        }
-    }
-
-    pb.finish_with_message("Extracted");
+    let decoder = xz2::read::XzDecoder::new(File::open(archive_path)?);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(target_dir)?;
 
     Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct VersionMappingCache {
+    by_flutter_version: HashMap<String, String>,
+    by_engine_version: HashMap<String, String>,
+}
+
+impl VersionMappingCache {
+    fn from_json_file() -> Result<Self, Error> {
+        let mapping_file = File::open(Self::get_file_path())?;
+        Ok(serde_json::from_reader(mapping_file)
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?)
+    }
+
+    fn write_json_file(&self) -> Result<(), Error> {
+        let file_path = Self::get_file_path();
+        std::fs::create_dir_all(file_path.parent().unwrap())?;
+
+        serde_json::to_writer(File::create(file_path)?, self)
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+
+        Ok(())
+    }
+
+    fn get_file_path() -> PathBuf {
+        EngineLibraryCache::engine_cache_dir().join("version_mapping.json")
+    }
+
+    fn find_engine_version(flutter_version: &str) -> Option<String> {
+        Self::from_json_file()
+            .ok()?
+            .by_flutter_version
+            .get(flutter_version)
+            .cloned()
+    }
+
+    fn remove(flutter_version: &str, engine_version: &str) -> Result<(), Error> {
+        let mut mapping = Self::from_json_file()?;
+        mapping.by_flutter_version.remove(flutter_version);
+        mapping.by_engine_version.remove(engine_version);
+        mapping.write_json_file()?;
+        Ok(())
+    }
+
+    fn insert(flutter_version: &str, engine_version: &str) -> Result<(), Error> {
+        let mut mapping = Self::from_json_file()?;
+        mapping
+            .by_flutter_version
+            .insert(flutter_version.to_owned(), engine_version.to_owned());
+        mapping
+            .by_engine_version
+            .insert(engine_version.to_owned(), flutter_version.to_owned());
+        mapping.write_json_file()?;
+        Ok(())
+    }
 }
