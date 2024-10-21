@@ -163,6 +163,13 @@ impl FlutterSDK {
         Ok(version.into())
     }
 
+    pub fn version(&self) -> Result<FlutterRelease, Error> {
+        Ok(FlutterRelease {
+            flutter_version: self.flutter_version()?,
+            engine_version: self.engine_version()?,
+        })
+    }
+
     pub fn engine_version(&self) -> Result<String, Error> {
         read_trimmed_string(self.engine_version_path())
     }
@@ -182,23 +189,19 @@ impl FlutterSDK {
     }
 }
 
-struct FlutterRelease {
+pub struct FlutterRelease {
     flutter_version: String,
     engine_version: String,
 }
 
 impl FlutterRelease {
-    fn current_version() -> Result<Self, Error> {
-        let flutter = FlutterSDK::auto_detect()?;
-        Ok(Self {
-            flutter_version: flutter.flutter_version()?,
-            engine_version: flutter.engine_version()?,
-        })
+    pub fn for_current_sdk_version() -> Result<Self, Error> {
+        Ok(FlutterSDK::auto_detect()?.version()?)
     }
 
     fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
         let Some(flutter_version) = flutter_version else {
-            return Self::current_version();
+            return Self::for_current_sdk_version();
         };
 
         let engine_version = match VersionMappingCache::find_engine_version(flutter_version) {
