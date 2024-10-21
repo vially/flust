@@ -190,8 +190,8 @@ impl FlutterSDK {
 }
 
 pub struct FlutterRelease {
-    flutter_version: String,
-    engine_version: String,
+    pub flutter_version: String,
+    pub engine_version: String,
 }
 
 impl FlutterRelease {
@@ -199,7 +199,7 @@ impl FlutterRelease {
         Ok(FlutterSDK::auto_detect()?.version()?)
     }
 
-    fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
+    pub fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
         let Some(flutter_version) = flutter_version else {
             return Self::for_current_sdk_version();
         };
@@ -326,9 +326,7 @@ impl EngineLibraryCache {
         Ok(std::fs::exists(path)?)
     }
 
-    pub fn install_version(flutter_version: Option<&str>) -> Result<(), Error> {
-        let release = FlutterRelease::for_flutter_version(flutter_version)?;
-
+    pub fn install_version(release: &FlutterRelease) -> Result<(), Error> {
         if EngineLibraryCache::is_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionAlreadyInstalled);
         }
@@ -368,9 +366,7 @@ impl EngineLibraryCache {
         Ok(())
     }
 
-    pub fn uninstall_version(flutter_version: Option<&str>) -> Result<(), Error> {
-        let release = FlutterRelease::for_flutter_version(flutter_version)?;
-
+    pub fn uninstall_version(release: &FlutterRelease) -> Result<(), Error> {
         if !EngineLibraryCache::is_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionNotFound);
         }

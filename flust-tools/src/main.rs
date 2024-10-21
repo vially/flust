@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use clap::{Parser, Subcommand};
-use flust_tools::{EngineLibraryCache, Error, FlutterSDK};
+use flust_tools::{EngineLibraryCache, Error, FlutterRelease, FlutterSDK};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
 
@@ -123,10 +123,53 @@ fn main() -> Result<(), Error> {
                     Ok(())
                 }
                 EngineLibraryCommands::Install { version } => {
-                    EngineLibraryCache::install_version(version.as_deref())
+                    let release = FlutterRelease::for_flutter_version(version.as_deref())?;
+                    match EngineLibraryCache::install_version(&release) {
+                        Ok(()) => {
+                            println!(
+                                "Installed engine library for Flutter {} ({})",
+                                release.flutter_version, release.engine_version
+                            );
+                            Ok(())
+                        }
+                        Err(Error::FlutterVersionAlreadyInstalled) => {
+                            println!(
+                                "Engine library for Flutter {} ({}) is already installed",
+                                release.flutter_version, release.engine_version
+                            );
+                            Ok(())
+                        }
+                        Err(err) => {
+                            println!("Failed to install Flutter engine library version: {}", err);
+                            Err(err)
+                        }
+                    }
                 }
                 EngineLibraryCommands::Uninstall { version } => {
-                    EngineLibraryCache::uninstall_version(version.as_deref())
+                    let release = FlutterRelease::for_flutter_version(version.as_deref())?;
+                    match EngineLibraryCache::uninstall_version(&release) {
+                        Ok(()) => {
+                            println!(
+                                "Uninstalled engine library for Flutter {} ({})",
+                                release.flutter_version, release.engine_version
+                            );
+                            Ok(())
+                        }
+                        Err(Error::FlutterVersionNotFound) => {
+                            println!(
+                                "No existing engine library has been found for Flutter {} ({})",
+                                release.flutter_version, release.engine_version
+                            );
+                            Ok(())
+                        }
+                        Err(err) => {
+                            println!(
+                                "Failed to uninstall Flutter engine library version: {}",
+                                err
+                            );
+                            Err(err)
+                        }
+                    }
                 }
             },
             None => Ok(()),
