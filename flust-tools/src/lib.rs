@@ -98,11 +98,11 @@ impl From<indicatif::style::TemplateError> for Error {
     }
 }
 
-pub struct Flutter {
+pub struct FlutterSDK {
     root_path: PathBuf,
 }
 
-impl Flutter {
+impl FlutterSDK {
     pub fn new_from_path(path: PathBuf) -> Result<Self, Error> {
         if !path.exists() {
             return Err(Error::FlutterNotFound);
@@ -189,7 +189,7 @@ struct FlutterRelease {
 
 impl FlutterRelease {
     fn current_version() -> Result<Self, Error> {
-        let flutter = Flutter::auto_detect()?;
+        let flutter = FlutterSDK::auto_detect()?;
         Ok(Self {
             flutter_version: flutter.version()?,
             engine_version: flutter.engine_version()?,

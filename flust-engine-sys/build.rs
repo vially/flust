@@ -1,5 +1,5 @@
 use bindgen::EnumVariation;
-use flust_tools::Flutter;
+use flust_tools::FlutterSDK;
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -78,7 +78,7 @@ struct Cargo {}
 
 impl Cargo {
     fn print_instructions() -> Result<(), BuildError> {
-        let flutter = Flutter::auto_detect().ok();
+        let flutter = FlutterSDK::auto_detect().ok();
         let engine_version_path = flutter.as_ref().and_then(|flutter| {
             flutter
                 .engine_version_path()
@@ -105,7 +105,7 @@ impl Cargo {
         Ok(())
     }
 
-    fn auto_detect_link_search_path(flutter: &Option<Flutter>) -> Option<String> {
+    fn auto_detect_link_search_path(flutter: &Option<FlutterSDK>) -> Option<String> {
         if let Ok(flutter_engine_search_path) = std::env::var("FLUTTER_ENGINE_LIB_PATH") {
             return Some(flutter_engine_search_path);
         }

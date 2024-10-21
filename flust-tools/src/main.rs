@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use clap::{Parser, Subcommand};
-use flust_tools::{EngineLibraryCache, Error, Flutter};
+use flust_tools::{EngineLibraryCache, Error, FlutterSDK};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
 
@@ -55,7 +55,7 @@ fn main() -> Result<(), Error> {
 
     match command {
         Command::Doctor {} => {
-            let flutter = Flutter::auto_detect()?;
+            let flutter = FlutterSDK::auto_detect()?;
             let version = flutter.version()?;
             let engine_version = flutter.engine_version()?;
 
@@ -67,7 +67,7 @@ fn main() -> Result<(), Error> {
         Command::EngineLibrary { command } => match command {
             Some(command) => match command {
                 EngineLibraryCommands::List { long } => {
-                    let current_version = Flutter::auto_detect()?.version()?;
+                    let current_version = FlutterSDK::auto_detect()?.version()?;
 
                     let mut builder = tabled::builder::Builder::default();
 
