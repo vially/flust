@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use clap::{Parser, Subcommand};
-use flust_tools::{EngineLibraryCache, Error, FlutterRelease, FlutterSDK};
+use flust_tools::{EngineVersionManager, Error, FlutterRelease, FlutterSDK};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
 
@@ -71,7 +71,7 @@ fn main() -> Result<(), Error> {
 
                     let mut builder = tabled::builder::Builder::default();
 
-                    let versions = EngineLibraryCache::find_installed_versions()?;
+                    let versions = EngineVersionManager::find_installed_versions()?;
                     for version in versions {
                         let current = match version == current_version {
                             true => "*",
@@ -79,7 +79,7 @@ fn main() -> Result<(), Error> {
                         };
 
                         let build_modes =
-                            EngineLibraryCache::find_build_modes_for_installed_version(
+                            EngineVersionManager::find_build_modes_for_installed_version(
                                 version.clone(),
                             )?;
 
@@ -124,7 +124,7 @@ fn main() -> Result<(), Error> {
                 }
                 EngineLibraryCommands::Install { version } => {
                     let release = FlutterRelease::for_flutter_version(version.as_deref())?;
-                    match EngineLibraryCache::install_version(&release) {
+                    match EngineVersionManager::install_version(&release) {
                         Ok(()) => {
                             println!(
                                 "Installed engine library for Flutter {} ({})",
@@ -147,7 +147,7 @@ fn main() -> Result<(), Error> {
                 }
                 EngineLibraryCommands::Uninstall { version } => {
                     let release = FlutterRelease::for_flutter_version(version.as_deref())?;
-                    match EngineLibraryCache::uninstall_version(&release) {
+                    match EngineVersionManager::uninstall_version(&release) {
                         Ok(()) => {
                             println!(
                                 "Uninstalled engine library for Flutter {} ({})",

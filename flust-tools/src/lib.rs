@@ -245,9 +245,9 @@ impl Build {
     }
 }
 
-pub struct EngineLibraryCache {}
+pub struct EngineVersionManager {}
 
-impl EngineLibraryCache {
+impl EngineVersionManager {
     pub fn find_installed_versions() -> Result<Vec<String>, Error> {
         let cache_dir = Self::engine_cache_dir().join("by-flutter-version");
         let entries = std::fs::read_dir(cache_dir)?;
@@ -327,7 +327,7 @@ impl EngineLibraryCache {
     }
 
     pub fn install_version(release: &FlutterRelease) -> Result<(), Error> {
-        if EngineLibraryCache::is_version_installed(&release.flutter_version)? {
+        if EngineVersionManager::is_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionAlreadyInstalled);
         }
 
@@ -367,7 +367,7 @@ impl EngineLibraryCache {
     }
 
     pub fn uninstall_version(release: &FlutterRelease) -> Result<(), Error> {
-        if !EngineLibraryCache::is_version_installed(&release.flutter_version)? {
+        if !EngineVersionManager::is_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionNotFound);
         }
 
@@ -455,7 +455,7 @@ impl Engine {
     }
 
     pub fn library_path(&self) -> PathBuf {
-        EngineLibraryCache::engine_cache_dir().join(self.library_name())
+        EngineVersionManager::engine_cache_dir().join(self.library_name())
     }
 
     pub fn download(&self) -> Result<PathBuf, Error> {
@@ -557,7 +557,7 @@ impl VersionMappingCache {
     }
 
     fn get_file_path() -> PathBuf {
-        EngineLibraryCache::engine_cache_dir().join("version_mapping.json")
+        EngineVersionManager::engine_cache_dir().join("version_mapping.json")
     }
 
     fn find_engine_version(flutter_version: &str) -> Option<String> {
