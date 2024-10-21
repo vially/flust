@@ -167,7 +167,7 @@ impl FlutterSDK {
         read_trimmed_string(self.engine_version_path())
     }
 
-    pub fn version(&self) -> Result<String, Error> {
+    pub fn flutter_version(&self) -> Result<String, Error> {
         match read_trimmed_string(self.version_path()) {
             Ok(version) => Ok(version),
             Err(err) => match err {
@@ -191,7 +191,7 @@ impl FlutterRelease {
     fn current_version() -> Result<Self, Error> {
         let flutter = FlutterSDK::auto_detect()?;
         Ok(Self {
-            flutter_version: flutter.version()?,
+            flutter_version: flutter.flutter_version()?,
             engine_version: flutter.engine_version()?,
         })
     }

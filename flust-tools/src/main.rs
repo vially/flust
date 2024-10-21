@@ -56,7 +56,7 @@ fn main() -> Result<(), Error> {
     match command {
         Command::Doctor {} => {
             let flutter = FlutterSDK::auto_detect()?;
-            let version = flutter.version()?;
+            let version = flutter.flutter_version()?;
             let engine_version = flutter.engine_version()?;
 
             println!("Flutter {}", version);
@@ -67,7 +67,7 @@ fn main() -> Result<(), Error> {
         Command::EngineLibrary { command } => match command {
             Some(command) => match command {
                 EngineLibraryCommands::List { long } => {
-                    let current_version = FlutterSDK::auto_detect()?.version()?;
+                    let current_version = FlutterSDK::auto_detect()?.flutter_version()?;
 
                     let mut builder = tabled::builder::Builder::default();
 
