@@ -145,11 +145,6 @@ impl Flutter {
             .join("engine.version")
     }
 
-    fn read_version_from_path(path: PathBuf) -> Result<String, Error> {
-        let version = read_to_string(path).map(|v| v.trim().to_owned())?;
-        Ok(version)
-    }
-
     // This method returns the equivalent of `flutter --version | head -1 | awk '{ print $2 }'`
     fn read_version_from_flutter_output(&self) -> Result<String, Error> {
         let first_output_line = Command::new(self.flutter_bin_path())
@@ -169,11 +164,11 @@ impl Flutter {
     }
 
     pub fn engine_version(&self) -> Result<String, Error> {
-        Self::read_version_from_path(self.engine_version_path())
+        read_trimmed_string(self.engine_version_path())
     }
 
     pub fn version(&self) -> Result<String, Error> {
-        match Self::read_version_from_path(self.version_path()) {
+        match read_trimmed_string(self.version_path()) {
             Ok(version) => Ok(version),
             Err(err) => match err {
                 // `$FLUTTER_SDK_ROOT/version` does not always exist. If that's
@@ -533,6 +528,10 @@ fn unarchive(archive_path: &Path, target_dir: &Path) -> Result<(), Error> {
     archive.unpack(target_dir)?;
 
     Ok(())
+}
+
+fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {
+    Ok(read_to_string(path).map(|v| v.trim().to_owned())?)
 }
 
 #[derive(Serialize, Deserialize)]
