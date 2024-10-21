@@ -130,11 +130,11 @@ impl FlutterSDK {
         &self.root_path
     }
 
-    pub fn version_path(&self) -> PathBuf {
+    fn version_path(&self) -> PathBuf {
         self.root_path.join("version")
     }
 
-    pub fn flutter_bin_path(&self) -> PathBuf {
+    fn flutter_bin_path(&self) -> PathBuf {
         self.root_path.join("bin").join("flutter")
     }
 
