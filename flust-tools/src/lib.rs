@@ -217,11 +217,11 @@ impl FlutterReleaseExt for FlutterRelease {
 pub struct EngineVersionManager {}
 
 impl EngineVersionManager {
-    pub fn find_installed_versions() -> Result<Vec<String>, Error> {
+    pub fn find_installed_flutter_versions() -> Result<Vec<String>, Error> {
         let cache_dir = Self::engine_cache_dir().join("by-flutter-version");
         let entries = std::fs::read_dir(cache_dir)?;
 
-        let mut paths: Vec<String> = Vec::new();
+        let mut flutter_versions: Vec<String> = Vec::new();
 
         for entry in entries {
             match entry {
@@ -236,7 +236,7 @@ impl EngineVersionManager {
 
                     let file_name = entry.file_name();
                     match file_name.to_str() {
-                        Some(version) => paths.push(version.into()),
+                        Some(version) => flutter_versions.push(version.into()),
                         None => {
                             warn!(
                                 "Invalid file name found in Engine library cache directory: {:?}",
@@ -254,19 +254,21 @@ impl EngineVersionManager {
             }
         }
 
-        paths.sort();
-        paths.reverse();
+        flutter_versions.sort();
+        flutter_versions.reverse();
 
-        Ok(paths)
+        Ok(flutter_versions)
     }
 
-    pub fn find_build_modes_for_installed_version<P: AsRef<Path>>(
-        version: P,
+    pub fn find_build_modes_for_installed_flutter_version<P: AsRef<Path>>(
+        flutter_version: P,
     ) -> Result<HashMap<FlutterBuildMode, PathBuf>, Error> {
         let mut build_modes: HashMap<FlutterBuildMode, PathBuf> = HashMap::new();
         for build_mode in FlutterBuildMode::iter() {
-            if let Ok(path) = Self::find_canonical_path_for_installed_version(&version, build_mode)
-            {
+            if let Ok(path) = Self::find_canonical_path_for_installed_flutter_version(
+                &flutter_version,
+                build_mode,
+            ) {
                 build_modes.insert(build_mode, path);
             }
         }
@@ -274,20 +276,20 @@ impl EngineVersionManager {
         Ok(build_modes)
     }
 
-    pub fn find_canonical_path_for_installed_version<P: AsRef<Path>>(
-        version: P,
+    pub fn find_canonical_path_for_installed_flutter_version<P: AsRef<Path>>(
+        flutter_version: P,
         build_mode: FlutterBuildMode,
     ) -> Result<PathBuf, Error> {
         let path = Self::engine_cache_dir()
             .join("by-flutter-version")
-            .join(version)
+            .join(flutter_version)
             .join(String::from(build_mode))
             .join("libflutter_engine.so");
 
         Ok(std::fs::canonicalize(path)?)
     }
 
-    pub fn is_version_installed<P: AsRef<Path>>(flutter_version: P) -> Result<bool, Error> {
+    pub fn is_flutter_version_installed<P: AsRef<Path>>(flutter_version: P) -> Result<bool, Error> {
         let path = Self::engine_cache_dir()
             .join("by-flutter-version")
             .join(flutter_version);
@@ -296,7 +298,7 @@ impl EngineVersionManager {
     }
 
     pub fn install_version(release: &FlutterRelease) -> Result<(), Error> {
-        if EngineVersionManager::is_version_installed(&release.flutter_version)? {
+        if EngineVersionManager::is_flutter_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionAlreadyInstalled);
         }
 
@@ -331,7 +333,7 @@ impl EngineVersionManager {
     }
 
     pub fn uninstall_version(release: &FlutterRelease) -> Result<(), Error> {
-        if !EngineVersionManager::is_version_installed(&release.flutter_version)? {
+        if !EngineVersionManager::is_flutter_version_installed(&release.flutter_version)? {
             return Err(Error::FlutterVersionNotFound);
         }
 

@@ -72,7 +72,7 @@ fn main() -> Result<(), Error> {
 
                     let mut builder = tabled::builder::Builder::default();
 
-                    let versions = EngineVersionManager::find_installed_versions()?;
+                    let versions = EngineVersionManager::find_installed_flutter_versions()?;
                     for version in versions {
                         let current = match version == current_version {
                             true => "*",
@@ -80,7 +80,7 @@ fn main() -> Result<(), Error> {
                         };
 
                         let build_modes =
-                            EngineVersionManager::find_build_modes_for_installed_version(
+                            EngineVersionManager::find_build_modes_for_installed_flutter_version(
                                 version.clone(),
                             )?;
 
