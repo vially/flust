@@ -1,13 +1,25 @@
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum FlutterBuildMode {
     Debug(CompilerOptimization),
     Profile,
     Release,
 }
 
-#[derive(Debug)]
+impl FlutterBuildMode {
+    pub fn iter() -> impl Iterator<Item = Self> {
+        [
+            Self::Debug(CompilerOptimization::optimized()),
+            Self::Debug(CompilerOptimization::unoptimized()),
+            Self::Profile,
+            Self::Release,
+        ]
+        .into_iter()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct CompilerOptimization {
     pub optimized: bool,
 }

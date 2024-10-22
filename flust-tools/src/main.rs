@@ -89,7 +89,7 @@ fn main() -> Result<(), Error> {
                                 builder.push_record([
                                     current,
                                     &version,
-                                    &build_mode.to_string(),
+                                    &String::from(build_mode),
                                     &path.display().to_string(),
                                 ]);
                             }
@@ -98,7 +98,7 @@ fn main() -> Result<(), Error> {
                                 .into_iter()
                                 .map(|(build_mode, path)| {
                                     Link::new(
-                                        build_mode.to_string(),
+                                        String::from(build_mode),
                                         format!("file://{}", path.display()),
                                     )
                                 })

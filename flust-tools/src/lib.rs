@@ -1,5 +1,5 @@
 use curl::easy::Easy;
-use flust_sdk_api::FlutterRelease;
+use flust_sdk_api::{FlutterBuildMode, FlutterRelease};
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,10 +7,7 @@ use std::fs::{read_to_string, File};
 use std::io::{BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::string::ToString;
 use std::sync::Arc;
-use strum::EnumIter;
-use strum::IntoEnumIterator;
 use tempfile;
 use tracing::warn;
 
@@ -217,26 +214,6 @@ impl FlutterReleaseExt for FlutterRelease {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, strum::Display)]
-pub enum Build {
-    #[strum(serialize = "debug")]
-    Debug,
-    #[strum(serialize = "profile")]
-    Profile,
-    #[strum(serialize = "release")]
-    Release,
-}
-
-impl Build {
-    pub fn build(&self) -> &str {
-        match self {
-            Self::Debug => "debug_unopt",
-            Self::Release => "release",
-            Self::Profile => "profile",
-        }
-    }
-}
-
 pub struct EngineVersionManager {}
 
 impl EngineVersionManager {
@@ -285,9 +262,9 @@ impl EngineVersionManager {
 
     pub fn find_build_modes_for_installed_version<P: AsRef<Path>>(
         version: P,
-    ) -> Result<HashMap<Build, PathBuf>, Error> {
-        let mut build_modes: HashMap<Build, PathBuf> = HashMap::new();
-        for build_mode in Build::iter() {
+    ) -> Result<HashMap<FlutterBuildMode, PathBuf>, Error> {
+        let mut build_modes: HashMap<FlutterBuildMode, PathBuf> = HashMap::new();
+        for build_mode in FlutterBuildMode::iter() {
             if let Ok(path) = Self::find_canonical_path_for_installed_version(&version, build_mode)
             {
                 build_modes.insert(build_mode, path);
@@ -299,12 +276,12 @@ impl EngineVersionManager {
 
     pub fn find_canonical_path_for_installed_version<P: AsRef<Path>>(
         version: P,
-        build: Build,
+        build_mode: FlutterBuildMode,
     ) -> Result<PathBuf, Error> {
         let path = Self::engine_cache_dir()
             .join("by-flutter-version")
             .join(version)
-            .join(build.to_string())
+            .join(String::from(build_mode))
             .join("libflutter_engine.so");
 
         Ok(std::fs::canonicalize(path)?)
@@ -323,7 +300,7 @@ impl EngineVersionManager {
             return Err(Error::FlutterVersionAlreadyInstalled);
         }
 
-        for build_mode in Build::iter() {
+        for build_mode in FlutterBuildMode::iter() {
             let library_path =
                 Engine::new(release.clone(), "x86_64-unknown-linux-gnu", build_mode).download()?;
 
@@ -331,11 +308,11 @@ impl EngineVersionManager {
                 Self::engine_cache_dir()
                     .join("by-flutter-version")
                     .join(&release.flutter_version)
-                    .join(build_mode.to_string()),
+                    .join(String::from(build_mode)),
                 Self::engine_cache_dir()
                     .join("by-engine-version")
                     .join(&release.engine_version)
-                    .join(build_mode.to_string()),
+                    .join(String::from(build_mode)),
             ];
             for library_dir in library_dirs {
                 if !library_dir.exists() {
@@ -400,20 +377,24 @@ impl EngineVersionManager {
 pub struct Engine {
     release: FlutterRelease,
     target: String,
-    build: Build,
+    build_mode: FlutterBuildMode,
 }
 
 impl Engine {
-    pub fn new(release: FlutterRelease, target: impl Into<String>, build: Build) -> Self {
+    pub fn new(
+        release: FlutterRelease,
+        target: impl Into<String>,
+        build_mode: FlutterBuildMode,
+    ) -> Self {
         Self {
             release,
             target: target.into(),
-            build,
+            build_mode,
         }
     }
 
     pub fn download_url(&self) -> String {
-        let build = self.build.build();
+        let build = String::from(self.build_mode);
         let platform = match self.target.as_str() {
             "x86_64-unknown-linux-gnu" => format!("engine-x64-generic-{}", build),
             _ => panic!("unsupported platform"),
@@ -428,7 +409,8 @@ impl Engine {
         match self.target.as_str() {
             "x86_64-unknown-linux-gnu" => format!(
                 "libflutter_engine_{}-{}.so",
-                self.build, &self.release.flutter_version
+                String::from(self.build_mode),
+                &self.release.flutter_version
             ),
             _ => panic!("unsupported platform"),
         }

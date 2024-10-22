@@ -1092,7 +1092,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "strum",
  "supports-hyperlinks",
  "tabled",
  "tar",
