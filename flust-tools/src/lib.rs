@@ -355,7 +355,7 @@ impl EngineVersionManager {
             }
         }
 
-        VersionMappingCache::insert(&release.sdk_version, &release.engine_version)?;
+        VersionMappingCache::insert(release)?;
 
         Ok(())
     }
@@ -389,7 +389,7 @@ impl EngineVersionManager {
             }
         }
 
-        VersionMappingCache::remove(&release.sdk_version, &release.engine_version)?;
+        VersionMappingCache::remove(release)?;
 
         Ok(())
     }
@@ -572,30 +572,28 @@ impl VersionMappingCache {
             .map(|engine_version| engine_version.into())
     }
 
-    fn remove(
-        sdk_version: &FlutterSDKVersion,
-        engine_version: &FlutterEngineVersion,
-    ) -> Result<(), Error> {
+    fn remove(release: &FlutterRelease) -> Result<(), Error> {
         let mut mapping = Self::from_json_file()?;
-        mapping.by_sdk_version.remove(&sdk_version.to_string());
+        mapping
+            .by_sdk_version
+            .remove(&release.sdk_version.to_string());
         mapping
             .by_engine_version
-            .remove(&engine_version.to_string());
+            .remove(&release.engine_version.to_string());
         mapping.write_json_file()?;
         Ok(())
     }
 
-    fn insert(
-        sdk_version: &FlutterSDKVersion,
-        engine_version: &FlutterEngineVersion,
-    ) -> Result<(), Error> {
+    fn insert(release: &FlutterRelease) -> Result<(), Error> {
         let mut mapping = Self::from_json_file()?;
-        mapping
-            .by_sdk_version
-            .insert(sdk_version.to_string(), engine_version.to_string());
-        mapping
-            .by_engine_version
-            .insert(engine_version.to_string(), sdk_version.to_string());
+        mapping.by_sdk_version.insert(
+            release.sdk_version.to_string(),
+            release.engine_version.to_string(),
+        );
+        mapping.by_engine_version.insert(
+            release.engine_version.to_string(),
+            release.sdk_version.to_string(),
+        );
         mapping.write_json_file()?;
         Ok(())
     }
