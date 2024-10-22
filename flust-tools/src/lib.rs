@@ -324,13 +324,8 @@ impl EngineVersionManager {
         }
 
         for build_mode in Build::iter() {
-            let library_path = Engine::new(
-                &release.flutter_version,
-                &release.engine_version,
-                "x86_64-unknown-linux-gnu",
-                build_mode,
-            )
-            .download()?;
+            let library_path =
+                Engine::new(release.clone(), "x86_64-unknown-linux-gnu", build_mode).download()?;
 
             let library_dirs = vec![
                 Self::engine_cache_dir()
@@ -403,22 +398,15 @@ impl EngineVersionManager {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Engine {
-    flutter_version: String,
-    engine_version: String,
+    release: FlutterRelease,
     target: String,
     build: Build,
 }
 
 impl Engine {
-    pub fn new(
-        flutter_version: impl Into<String>,
-        engine_version: impl Into<String>,
-        target: impl Into<String>,
-        build: Build,
-    ) -> Self {
+    pub fn new(release: FlutterRelease, target: impl Into<String>, build: Build) -> Self {
         Self {
-            flutter_version: flutter_version.into(),
-            engine_version: engine_version.into(),
+            release,
             target: target.into(),
             build,
         }
@@ -432,7 +420,7 @@ impl Engine {
         };
         format!(
             "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/{}.tar.xz",
-            &self.engine_version, platform
+            &self.release.engine_version, platform
         )
     }
 
@@ -440,7 +428,7 @@ impl Engine {
         match self.target.as_str() {
             "x86_64-unknown-linux-gnu" => format!(
                 "libflutter_engine_{}-{}.so",
-                self.build, &self.flutter_version
+                self.build, &self.release.flutter_version
             ),
             _ => panic!("unsupported platform"),
         }
