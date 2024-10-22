@@ -1,5 +1,7 @@
 use curl::easy::Easy;
-use flust_sdk_api::{FlutterBuildMode, FlutterRelease};
+use flust_sdk_api::{
+    FlutterBuildMode, FlutterEngineVersion, FlutterRelease, FlutterSDKVersion, FlutterVersion,
+};
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -144,7 +146,7 @@ impl FlutterSDK {
     }
 
     // This method returns the equivalent of `flutter --version | head -1 | awk '{ print $2 }'`
-    fn read_version_from_flutter_output(&self) -> Result<String, Error> {
+    fn read_sdk_version_from_flutter_output(&self) -> Result<FlutterSDKVersion, Error> {
         let first_output_line = Command::new(self.flutter_bin_path())
             .args(["--no-version-check", "--version"])
             .output()?
@@ -156,30 +158,31 @@ impl FlutterSDK {
         let version = first_output_line
             .split_ascii_whitespace()
             .nth(1)
-            .ok_or(Error::FlutterVersionNotFound)?;
+            .ok_or(Error::FlutterVersionNotFound)?
+            .to_owned();
 
         Ok(version.into())
     }
 
-    pub fn version(&self) -> Result<FlutterRelease, Error> {
+    pub fn release(&self) -> Result<FlutterRelease, Error> {
         Ok(FlutterRelease {
-            flutter_version: self.flutter_version()?,
+            sdk_version: self.sdk_version()?,
             engine_version: self.engine_version()?,
         })
     }
 
-    pub fn engine_version(&self) -> Result<String, Error> {
-        read_trimmed_string(self.engine_version_path())
+    pub fn engine_version(&self) -> Result<FlutterEngineVersion, Error> {
+        Ok(read_trimmed_string(self.engine_version_path())?.into())
     }
 
-    pub fn flutter_version(&self) -> Result<String, Error> {
+    pub fn sdk_version(&self) -> Result<FlutterSDKVersion, Error> {
         match read_trimmed_string(self.version_path()) {
-            Ok(version) => Ok(version),
+            Ok(version) => Ok(version.into()),
             Err(err) => match err {
                 // `$FLUTTER_SDK_ROOT/version` does not always exist. If that's
                 // the case, read the version from `flutter --version` output.
                 Error::Io(err) if err.kind() == ErrorKind::NotFound => {
-                    self.read_version_from_flutter_output()
+                    self.read_sdk_version_from_flutter_output()
                 }
                 _ => Err(err),
             },
@@ -189,26 +192,26 @@ impl FlutterSDK {
 
 pub trait FlutterReleaseExt {
     fn for_current_sdk_version() -> Result<FlutterRelease, Error>;
-    fn for_flutter_version(flutter_version: Option<&str>) -> Result<FlutterRelease, Error>;
+    fn for_sdk_version(sdk_version: Option<&FlutterSDKVersion>) -> Result<FlutterRelease, Error>;
 }
 
 impl FlutterReleaseExt for FlutterRelease {
     fn for_current_sdk_version() -> Result<Self, Error> {
-        Ok(FlutterSDK::auto_detect()?.version()?)
+        Ok(FlutterSDK::auto_detect()?.release()?)
     }
 
-    fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
-        let Some(flutter_version) = flutter_version else {
+    fn for_sdk_version(sdk_version: Option<&FlutterSDKVersion>) -> Result<Self, Error> {
+        let Some(sdk_version) = sdk_version else {
             return Self::for_current_sdk_version();
         };
 
-        let engine_version = match VersionMappingCache::find_engine_version(flutter_version) {
+        let engine_version = match VersionMappingCache::find_engine_version(sdk_version) {
             Some(engine_version) => engine_version,
-            None => read_flutter_engine_version_from_github_tag(flutter_version)?,
+            None => read_flutter_engine_version_from_github_tag(sdk_version)?,
         };
 
         Ok(Self {
-            flutter_version: flutter_version.to_owned(),
+            sdk_version: sdk_version.clone(),
             engine_version,
         })
     }
@@ -217,11 +220,11 @@ impl FlutterReleaseExt for FlutterRelease {
 pub struct EngineVersionManager {}
 
 impl EngineVersionManager {
-    pub fn find_installed_flutter_versions() -> Result<Vec<String>, Error> {
+    pub fn find_installed_flutter_versions() -> Result<Vec<FlutterSDKVersion>, Error> {
         let cache_dir = Self::engine_cache_dir().join("by-flutter-version");
         let entries = std::fs::read_dir(cache_dir)?;
 
-        let mut flutter_versions: Vec<String> = Vec::new();
+        let mut flutter_versions: Vec<FlutterSDKVersion> = Vec::new();
 
         for entry in entries {
             match entry {
@@ -236,7 +239,7 @@ impl EngineVersionManager {
 
                     let file_name = entry.file_name();
                     match file_name.to_str() {
-                        Some(version) => flutter_versions.push(version.into()),
+                        Some(version) => flutter_versions.push(version.to_owned().into()),
                         None => {
                             warn!(
                                 "Invalid file name found in Engine library cache directory: {:?}",
@@ -260,15 +263,14 @@ impl EngineVersionManager {
         Ok(flutter_versions)
     }
 
-    pub fn find_build_modes_for_installed_flutter_version<P: AsRef<Path>>(
-        flutter_version: P,
+    pub fn find_build_modes_for_installed_flutter_version(
+        sdk_version: &FlutterSDKVersion,
     ) -> Result<HashMap<FlutterBuildMode, PathBuf>, Error> {
         let mut build_modes: HashMap<FlutterBuildMode, PathBuf> = HashMap::new();
         for build_mode in FlutterBuildMode::iter() {
-            if let Ok(path) = Self::find_canonical_path_for_installed_flutter_version(
-                &flutter_version,
-                build_mode,
-            ) {
+            if let Ok(path) =
+                Self::find_canonical_path_for_installed_flutter_version(sdk_version, &build_mode)
+            {
                 build_modes.insert(build_mode, path);
             }
         }
@@ -276,29 +278,36 @@ impl EngineVersionManager {
         Ok(build_modes)
     }
 
-    pub fn find_canonical_path_for_installed_flutter_version<P: AsRef<Path>>(
-        flutter_version: P,
-        build_mode: FlutterBuildMode,
+    pub fn find_canonical_path_for_installed_flutter_version(
+        sdk_version: &FlutterSDKVersion,
+        build_mode: &FlutterBuildMode,
     ) -> Result<PathBuf, Error> {
         let path = Self::engine_cache_dir()
             .join("by-flutter-version")
-            .join(flutter_version)
-            .join(String::from(build_mode))
+            .join(sdk_version.to_string())
+            .join(build_mode.to_string())
             .join("libflutter_engine.so");
 
         Ok(std::fs::canonicalize(path)?)
     }
 
-    pub fn is_flutter_version_installed<P: AsRef<Path>>(flutter_version: P) -> Result<bool, Error> {
-        let path = Self::engine_cache_dir()
-            .join("by-flutter-version")
-            .join(flutter_version);
+    pub fn is_flutter_version_installed(version: &FlutterVersion) -> Result<bool, Error> {
+        let path = match version {
+            FlutterVersion::SDK(sdk_version) => Self::engine_cache_dir()
+                .join("by-flutter-version")
+                .join(sdk_version.to_string()),
+            FlutterVersion::Engine(engine_version) => Self::engine_cache_dir()
+                .join("by-engine-version")
+                .join(engine_version.to_string()),
+        };
 
         Ok(std::fs::exists(path)?)
     }
 
     pub fn install_version(release: &FlutterRelease) -> Result<(), Error> {
-        if EngineVersionManager::is_flutter_version_installed(&release.flutter_version)? {
+        if EngineVersionManager::is_flutter_version_installed(
+            &release.sdk_version.to_owned().into(),
+        )? {
             return Err(Error::FlutterVersionAlreadyInstalled);
         }
 
@@ -309,12 +318,12 @@ impl EngineVersionManager {
             let library_dirs = vec![
                 Self::engine_cache_dir()
                     .join("by-flutter-version")
-                    .join(&release.flutter_version)
-                    .join(String::from(build_mode)),
+                    .join(release.sdk_version.to_string())
+                    .join(build_mode.to_string()),
                 Self::engine_cache_dir()
                     .join("by-engine-version")
-                    .join(&release.engine_version)
-                    .join(String::from(build_mode)),
+                    .join(release.engine_version.to_string())
+                    .join(build_mode.to_string()),
             ];
             for library_dir in library_dirs {
                 if !library_dir.exists() {
@@ -327,23 +336,25 @@ impl EngineVersionManager {
             }
         }
 
-        VersionMappingCache::insert(&release.flutter_version, &release.engine_version)?;
+        VersionMappingCache::insert(&release.sdk_version, &release.engine_version)?;
 
         Ok(())
     }
 
     pub fn uninstall_version(release: &FlutterRelease) -> Result<(), Error> {
-        if !EngineVersionManager::is_flutter_version_installed(&release.flutter_version)? {
+        if !EngineVersionManager::is_flutter_version_installed(
+            &release.sdk_version.to_owned().into(),
+        )? {
             return Err(Error::FlutterVersionNotFound);
         }
 
         let library_dirs = vec![
             Self::engine_cache_dir()
                 .join("by-flutter-version")
-                .join(&release.flutter_version),
+                .join(release.sdk_version.to_string()),
             Self::engine_cache_dir()
                 .join("by-engine-version")
-                .join(&release.engine_version),
+                .join(release.engine_version.to_string()),
         ];
         for library_dir in library_dirs {
             if library_dir.exists() {
@@ -355,7 +366,7 @@ impl EngineVersionManager {
         for build_mode in build_modes {
             let library_name = format!(
                 "libflutter_engine_{}-{}.so",
-                build_mode, &release.flutter_version
+                build_mode, &release.sdk_version
             );
             let library_path = Self::engine_cache_dir().join(library_name);
             if library_path.exists() {
@@ -363,7 +374,7 @@ impl EngineVersionManager {
             }
         }
 
-        VersionMappingCache::remove(&release.flutter_version, &release.engine_version)?;
+        VersionMappingCache::remove(&release.sdk_version, &release.engine_version)?;
 
         Ok(())
     }
@@ -396,9 +407,8 @@ impl Engine {
     }
 
     pub fn download_url(&self) -> String {
-        let build = String::from(self.build_mode);
         let platform = match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => format!("engine-x64-generic-{}", build),
+            "x86_64-unknown-linux-gnu" => format!("engine-x64-generic-{}", self.build_mode),
             _ => panic!("unsupported platform"),
         };
         format!(
@@ -411,8 +421,7 @@ impl Engine {
         match self.target.as_str() {
             "x86_64-unknown-linux-gnu" => format!(
                 "libflutter_engine_{}-{}.so",
-                String::from(self.build_mode),
-                &self.release.flutter_version
+                self.build_mode, &self.release.sdk_version
             ),
             _ => panic!("unsupported platform"),
         }
@@ -493,13 +502,19 @@ fn unarchive(archive_path: &Path, target_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn read_flutter_engine_version_from_github_tag(flutter_version: &str) -> Result<String, Error> {
+fn read_flutter_engine_version_from_github_tag(
+    sdk_version: &FlutterSDKVersion,
+) -> Result<FlutterEngineVersion, Error> {
     let url = format!(
         "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{}/bin/internal/engine.version",
-        flutter_version
+        sdk_version
     );
 
-    Ok(reqwest::blocking::get(url)?.text()?.trim().to_owned())
+    Ok(reqwest::blocking::get(url)?
+        .text()?
+        .trim()
+        .to_owned()
+        .into())
 }
 
 fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {
@@ -508,7 +523,7 @@ fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {
 
 #[derive(Serialize, Deserialize)]
 struct VersionMappingCache {
-    by_flutter_version: HashMap<String, String>,
+    by_sdk_version: HashMap<String, String>,
     by_engine_version: HashMap<String, String>,
 }
 
@@ -533,30 +548,39 @@ impl VersionMappingCache {
         EngineVersionManager::engine_cache_dir().join("version_mapping.json")
     }
 
-    fn find_engine_version(flutter_version: &str) -> Option<String> {
+    fn find_engine_version(sdk_version: &FlutterSDKVersion) -> Option<FlutterEngineVersion> {
         Self::from_json_file()
             .ok()?
-            .by_flutter_version
-            .get(flutter_version)
+            .by_sdk_version
+            .get(&sdk_version.to_string())
             .cloned()
+            .map(|engine_version| engine_version.into())
     }
 
-    fn remove(flutter_version: &str, engine_version: &str) -> Result<(), Error> {
+    fn remove(
+        sdk_version: &FlutterSDKVersion,
+        engine_version: &FlutterEngineVersion,
+    ) -> Result<(), Error> {
         let mut mapping = Self::from_json_file()?;
-        mapping.by_flutter_version.remove(flutter_version);
-        mapping.by_engine_version.remove(engine_version);
+        mapping.by_sdk_version.remove(&sdk_version.to_string());
+        mapping
+            .by_engine_version
+            .remove(&engine_version.to_string());
         mapping.write_json_file()?;
         Ok(())
     }
 
-    fn insert(flutter_version: &str, engine_version: &str) -> Result<(), Error> {
+    fn insert(
+        sdk_version: &FlutterSDKVersion,
+        engine_version: &FlutterEngineVersion,
+    ) -> Result<(), Error> {
         let mut mapping = Self::from_json_file()?;
         mapping
-            .by_flutter_version
-            .insert(flutter_version.to_owned(), engine_version.to_owned());
+            .by_sdk_version
+            .insert(sdk_version.to_string(), engine_version.to_string());
         mapping
             .by_engine_version
-            .insert(engine_version.to_owned(), flutter_version.to_owned());
+            .insert(engine_version.to_string(), sdk_version.to_string());
         mapping.write_json_file()?;
         Ok(())
     }

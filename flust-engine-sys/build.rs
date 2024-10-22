@@ -69,8 +69,8 @@ impl Cargo {
         dirs::cache_dir()?
             .join("flutter-engine-lib")
             .join("by-engine-version")
-            .join(engine_version)
-            .join(String::from(build_mode))
+            .join(engine_version.to_string())
+            .join(build_mode.to_string())
             .into_os_string()
             .into_string()
             .ok()

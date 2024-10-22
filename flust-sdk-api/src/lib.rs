@@ -1,4 +1,6 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum FlutterBuildMode {
@@ -63,8 +65,8 @@ impl FromStr for FlutterBuildMode {
     }
 }
 
-impl From<FlutterBuildMode> for String {
-    fn from(build_mode: FlutterBuildMode) -> Self {
+impl From<&FlutterBuildMode> for String {
+    fn from(build_mode: &FlutterBuildMode) -> Self {
         match build_mode {
             FlutterBuildMode::Debug(CompilerOptimization { optimized }) => match optimized {
                 true => "debug".to_owned(),
@@ -76,8 +78,74 @@ impl From<FlutterBuildMode> for String {
     }
 }
 
+impl Display for FlutterBuildMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Ord, PartialOrd)]
+pub struct FlutterSDKVersion(String);
+
+impl From<String> for FlutterSDKVersion {
+    fn from(version: String) -> Self {
+        FlutterSDKVersion(version)
+    }
+}
+
+impl From<FlutterSDKVersion> for String {
+    fn from(version: FlutterSDKVersion) -> Self {
+        version.0
+    }
+}
+
+impl Display for FlutterSDKVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Ord, PartialOrd)]
+pub struct FlutterEngineVersion(String);
+
+impl From<String> for FlutterEngineVersion {
+    fn from(version: String) -> Self {
+        FlutterEngineVersion(version)
+    }
+}
+
+impl From<FlutterEngineVersion> for String {
+    fn from(version: FlutterEngineVersion) -> Self {
+        version.0
+    }
+}
+
+impl Display for FlutterEngineVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FlutterVersion {
+    SDK(FlutterSDKVersion),
+    Engine(FlutterEngineVersion),
+}
+
+impl From<FlutterSDKVersion> for FlutterVersion {
+    fn from(sdk_version: FlutterSDKVersion) -> Self {
+        FlutterVersion::SDK(sdk_version)
+    }
+}
+
+impl From<FlutterEngineVersion> for FlutterVersion {
+    fn from(engine_version: FlutterEngineVersion) -> Self {
+        FlutterVersion::Engine(engine_version)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FlutterRelease {
-    pub flutter_version: String,
-    pub engine_version: String,
+    pub sdk_version: FlutterSDKVersion,
+    pub engine_version: FlutterEngineVersion,
 }

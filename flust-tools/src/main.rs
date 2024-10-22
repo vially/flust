@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use clap::{Parser, Subcommand};
-use flust_sdk_api::FlutterRelease;
+use flust_sdk_api::{FlutterRelease, FlutterSDKVersion};
 use flust_tools::{EngineVersionManager, Error, FlutterReleaseExt, FlutterSDK};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
@@ -37,13 +37,13 @@ enum EngineLibraryCommands {
     /// Install a Flutter engine library version
     Install {
         /// The Flutter engine library version to install
-        version: Option<String>,
+        version: Option<FlutterSDKVersion>,
     },
 
     /// Uninstall a Flutter engine library version
     Uninstall {
         /// The Flutter engine library version to uninstall
-        version: Option<String>,
+        version: Option<FlutterSDKVersion>,
     },
 }
 
@@ -56,40 +56,41 @@ fn main() -> Result<(), Error> {
 
     match command {
         Command::Doctor {} => {
-            let flutter = FlutterSDK::auto_detect()?;
-            let version = flutter.flutter_version()?;
-            let engine_version = flutter.engine_version()?;
+            let flutter = FlutterSDK::auto_detect()?.release()?;
 
-            println!("Flutter {}", version);
-            println!("Engine • revision {}", &engine_version[..9]);
+            println!("Flutter {}", flutter.sdk_version);
+            println!(
+                "Engine • revision {}",
+                &String::from(flutter.engine_version)[..9]
+            );
 
             Ok(())
         }
         Command::EngineLibrary { command } => match command {
             Some(command) => match command {
                 EngineLibraryCommands::List { long } => {
-                    let current_version = FlutterSDK::auto_detect()?.flutter_version()?;
+                    let current_version = FlutterSDK::auto_detect()?.sdk_version()?;
 
                     let mut builder = tabled::builder::Builder::default();
 
-                    let versions = EngineVersionManager::find_installed_flutter_versions()?;
-                    for version in versions {
-                        let current = match version == current_version {
+                    let sdk_versions = EngineVersionManager::find_installed_flutter_versions()?;
+                    for sdk_version in sdk_versions {
+                        let current = match sdk_version == current_version {
                             true => "*",
                             false => " ",
                         };
 
                         let build_modes =
                             EngineVersionManager::find_build_modes_for_installed_flutter_version(
-                                version.clone(),
+                                &sdk_version,
                             )?;
 
                         if *long {
                             for (build_mode, path) in build_modes {
                                 builder.push_record([
                                     current,
-                                    &version,
-                                    &String::from(build_mode),
+                                    &sdk_version.to_string(),
+                                    &build_mode.to_string(),
                                     &path.display().to_string(),
                                 ]);
                             }
@@ -98,7 +99,7 @@ fn main() -> Result<(), Error> {
                                 .into_iter()
                                 .map(|(build_mode, path)| {
                                     Link::new(
-                                        String::from(build_mode),
+                                        build_mode.to_string(),
                                         format!("file://{}", path.display()),
                                     )
                                 })
@@ -107,7 +108,7 @@ fn main() -> Result<(), Error> {
 
                             builder.push_record([
                                 current,
-                                &version,
+                                &sdk_version.to_string(),
                                 &build_modes
                                     .iter()
                                     .map(|link| format!("{}", link))
@@ -124,19 +125,19 @@ fn main() -> Result<(), Error> {
                     Ok(())
                 }
                 EngineLibraryCommands::Install { version } => {
-                    let release = FlutterRelease::for_flutter_version(version.as_deref())?;
+                    let release = FlutterRelease::for_sdk_version(version.as_ref())?;
                     match EngineVersionManager::install_version(&release) {
                         Ok(()) => {
                             println!(
                                 "Installed engine library for Flutter {} ({})",
-                                release.flutter_version, release.engine_version
+                                release.sdk_version, release.engine_version
                             );
                             Ok(())
                         }
                         Err(Error::FlutterVersionAlreadyInstalled) => {
                             println!(
                                 "Engine library for Flutter {} ({}) is already installed",
-                                release.flutter_version, release.engine_version
+                                release.sdk_version, release.engine_version
                             );
                             Ok(())
                         }
@@ -147,19 +148,19 @@ fn main() -> Result<(), Error> {
                     }
                 }
                 EngineLibraryCommands::Uninstall { version } => {
-                    let release = FlutterRelease::for_flutter_version(version.as_deref())?;
+                    let release = FlutterRelease::for_sdk_version(version.as_ref())?;
                     match EngineVersionManager::uninstall_version(&release) {
                         Ok(()) => {
                             println!(
                                 "Uninstalled engine library for Flutter {} ({})",
-                                release.flutter_version, release.engine_version
+                                release.sdk_version, release.engine_version
                             );
                             Ok(())
                         }
                         Err(Error::FlutterVersionNotFound) => {
                             println!(
                                 "No existing engine library has been found for Flutter {} ({})",
-                                release.flutter_version, release.engine_version
+                                release.sdk_version, release.engine_version
                             );
                             Ok(())
                         }
