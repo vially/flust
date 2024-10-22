@@ -252,7 +252,11 @@ pub struct EngineVersionManager {}
 impl EngineVersionManager {
     pub fn find_installed_flutter_versions() -> Result<Vec<FlutterSDKVersion>, Error> {
         let cache_dir = Self::engine_cache_dir().join("by-sdk-version");
-        let entries = std::fs::read_dir(cache_dir)?;
+        let entries = match std::fs::read_dir(cache_dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) => return Err(Error::Io(err)),
+        };
 
         let mut flutter_versions: Vec<FlutterSDKVersion> = Vec::new();
 

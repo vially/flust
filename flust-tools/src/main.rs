@@ -71,9 +71,13 @@ fn main() -> Result<(), Error> {
                 EngineLibraryCommands::List { long } => {
                     let current_version = FlutterSDK::auto_detect()?.sdk_version()?;
 
-                    let mut builder = tabled::builder::Builder::default();
-
                     let sdk_versions = EngineVersionManager::find_installed_flutter_versions()?;
+                    if sdk_versions.is_empty() {
+                        println!("No Flutter engine library versions have been installed");
+                        return Ok(());
+                    }
+
+                    let mut builder = tabled::builder::Builder::default();
                     for sdk_version in sdk_versions {
                         let current = match sdk_version == current_version {
                             true => "*",
