@@ -1,4 +1,5 @@
 use curl::easy::Easy;
+use flust_sdk_api::FlutterRelease;
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -189,39 +190,30 @@ impl FlutterSDK {
     }
 }
 
-pub struct FlutterRelease {
-    pub flutter_version: String,
-    pub engine_version: String,
+pub trait FlutterReleaseExt {
+    fn for_current_sdk_version() -> Result<FlutterRelease, Error>;
+    fn for_flutter_version(flutter_version: Option<&str>) -> Result<FlutterRelease, Error>;
 }
 
-impl FlutterRelease {
-    pub fn for_current_sdk_version() -> Result<Self, Error> {
+impl FlutterReleaseExt for FlutterRelease {
+    fn for_current_sdk_version() -> Result<Self, Error> {
         Ok(FlutterSDK::auto_detect()?.version()?)
     }
 
-    pub fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
+    fn for_flutter_version(flutter_version: Option<&str>) -> Result<Self, Error> {
         let Some(flutter_version) = flutter_version else {
             return Self::for_current_sdk_version();
         };
 
         let engine_version = match VersionMappingCache::find_engine_version(flutter_version) {
             Some(engine_version) => engine_version,
-            None => Self::read_engine_version_from_github_tag(flutter_version)?,
+            None => read_flutter_engine_version_from_github_tag(flutter_version)?,
         };
 
         Ok(Self {
             flutter_version: flutter_version.to_owned(),
             engine_version,
         })
-    }
-
-    fn read_engine_version_from_github_tag(flutter_version: &str) -> Result<String, Error> {
-        let url = format!(
-            "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{}/bin/internal/engine.version",
-            flutter_version
-        );
-
-        Ok(reqwest::blocking::get(url)?.text()?.trim().to_owned())
     }
 }
 
@@ -527,6 +519,15 @@ fn unarchive(archive_path: &Path, target_dir: &Path) -> Result<(), Error> {
     archive.unpack(target_dir)?;
 
     Ok(())
+}
+
+fn read_flutter_engine_version_from_github_tag(flutter_version: &str) -> Result<String, Error> {
+    let url = format!(
+        "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{}/bin/internal/engine.version",
+        flutter_version
+    );
+
+    Ok(reqwest::blocking::get(url)?.text()?.trim().to_owned())
 }
 
 fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {

@@ -63,3 +63,9 @@ impl From<FlutterBuildMode> for String {
         }
     }
 }
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FlutterRelease {
+    pub flutter_version: String,
+    pub engine_version: String,
+}

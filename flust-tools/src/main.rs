@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use clap::{Parser, Subcommand};
-use flust_tools::{EngineVersionManager, Error, FlutterRelease, FlutterSDK};
+use flust_sdk_api::FlutterRelease;
+use flust_tools::{EngineVersionManager, Error, FlutterReleaseExt, FlutterSDK};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
 

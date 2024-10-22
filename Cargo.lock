@@ -1087,6 +1087,7 @@ dependencies = [
  "clap",
  "curl",
  "dirs",
+ "flust-sdk-api",
  "indicatif",
  "reqwest",
  "serde",
