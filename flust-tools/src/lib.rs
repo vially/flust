@@ -221,7 +221,7 @@ pub struct EngineVersionManager {}
 
 impl EngineVersionManager {
     pub fn find_installed_flutter_versions() -> Result<Vec<FlutterSDKVersion>, Error> {
-        let cache_dir = Self::engine_cache_dir().join("by-flutter-version");
+        let cache_dir = Self::engine_cache_dir().join("by-sdk-version");
         let entries = std::fs::read_dir(cache_dir)?;
 
         let mut flutter_versions: Vec<FlutterSDKVersion> = Vec::new();
@@ -283,7 +283,7 @@ impl EngineVersionManager {
         build_mode: &FlutterBuildMode,
     ) -> Result<PathBuf, Error> {
         let path = Self::engine_cache_dir()
-            .join("by-flutter-version")
+            .join("by-sdk-version")
             .join(sdk_version.to_string())
             .join(build_mode.to_string())
             .join("libflutter_engine.so");
@@ -294,7 +294,7 @@ impl EngineVersionManager {
     pub fn is_flutter_version_installed(version: &FlutterVersion) -> Result<bool, Error> {
         let path = match version {
             FlutterVersion::SDK(sdk_version) => Self::engine_cache_dir()
-                .join("by-flutter-version")
+                .join("by-sdk-version")
                 .join(sdk_version.to_string()),
             FlutterVersion::Engine(engine_version) => Self::engine_cache_dir()
                 .join("by-engine-version")
@@ -317,7 +317,7 @@ impl EngineVersionManager {
 
             let library_dirs = vec![
                 Self::engine_cache_dir()
-                    .join("by-flutter-version")
+                    .join("by-sdk-version")
                     .join(release.sdk_version.to_string())
                     .join(build_mode.to_string()),
                 Self::engine_cache_dir()
@@ -350,7 +350,7 @@ impl EngineVersionManager {
 
         let library_dirs = vec![
             Self::engine_cache_dir()
-                .join("by-flutter-version")
+                .join("by-sdk-version")
                 .join(release.sdk_version.to_string()),
             Self::engine_cache_dir()
                 .join("by-engine-version")
