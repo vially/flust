@@ -217,6 +217,35 @@ impl FlutterReleaseExt for FlutterRelease {
     }
 }
 
+pub trait EngineLibraryCachePathExt {
+    fn cache_path(&self) -> PathBuf;
+}
+
+impl EngineLibraryCachePathExt for FlutterSDKVersion {
+    fn cache_path(&self) -> PathBuf {
+        EngineVersionManager::engine_cache_dir()
+            .join("by-sdk-version")
+            .join(self.to_string())
+    }
+}
+
+impl EngineLibraryCachePathExt for FlutterEngineVersion {
+    fn cache_path(&self) -> PathBuf {
+        EngineVersionManager::engine_cache_dir()
+            .join("by-engine-version")
+            .join(self.to_string())
+    }
+}
+
+impl EngineLibraryCachePathExt for FlutterVersion {
+    fn cache_path(&self) -> PathBuf {
+        match self {
+            FlutterVersion::SDK(sdk_version) => sdk_version.cache_path(),
+            FlutterVersion::Engine(engine_version) => engine_version.cache_path(),
+        }
+    }
+}
+
 pub struct EngineVersionManager {}
 
 impl EngineVersionManager {
@@ -282,9 +311,8 @@ impl EngineVersionManager {
         sdk_version: &FlutterSDKVersion,
         build_mode: &FlutterBuildMode,
     ) -> Result<PathBuf, Error> {
-        let path = Self::engine_cache_dir()
-            .join("by-sdk-version")
-            .join(sdk_version.to_string())
+        let path = sdk_version
+            .cache_path()
             .join(build_mode.to_string())
             .join("libflutter_engine.so");
 
@@ -292,16 +320,7 @@ impl EngineVersionManager {
     }
 
     pub fn is_flutter_version_installed(version: &FlutterVersion) -> Result<bool, Error> {
-        let path = match version {
-            FlutterVersion::SDK(sdk_version) => Self::engine_cache_dir()
-                .join("by-sdk-version")
-                .join(sdk_version.to_string()),
-            FlutterVersion::Engine(engine_version) => Self::engine_cache_dir()
-                .join("by-engine-version")
-                .join(engine_version.to_string()),
-        };
-
-        Ok(std::fs::exists(path)?)
+        Ok(std::fs::exists(version.cache_path())?)
     }
 
     pub fn install_version(release: &FlutterRelease) -> Result<(), Error> {
@@ -316,13 +335,13 @@ impl EngineVersionManager {
                 Engine::new(release.clone(), "x86_64-unknown-linux-gnu", build_mode).download()?;
 
             let library_dirs = vec![
-                Self::engine_cache_dir()
-                    .join("by-sdk-version")
-                    .join(release.sdk_version.to_string())
+                release
+                    .sdk_version
+                    .cache_path()
                     .join(build_mode.to_string()),
-                Self::engine_cache_dir()
-                    .join("by-engine-version")
-                    .join(release.engine_version.to_string())
+                release
+                    .engine_version
+                    .cache_path()
                     .join(build_mode.to_string()),
             ];
             for library_dir in library_dirs {
@@ -349,12 +368,8 @@ impl EngineVersionManager {
         }
 
         let library_dirs = vec![
-            Self::engine_cache_dir()
-                .join("by-sdk-version")
-                .join(release.sdk_version.to_string()),
-            Self::engine_cache_dir()
-                .join("by-engine-version")
-                .join(release.engine_version.to_string()),
+            release.sdk_version.cache_path(),
+            release.engine_version.cache_path(),
         ];
         for library_dir in library_dirs {
             if library_dir.exists() {

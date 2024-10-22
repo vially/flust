@@ -1,6 +1,6 @@
 use bindgen::EnumVariation;
 use flust_sdk_api::FlutterBuildMode;
-use flust_tools::FlutterSDK;
+use flust_tools::{EngineLibraryCachePathExt, FlutterSDK};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -66,10 +66,8 @@ impl Cargo {
         let build_mode = FlutterBuildMode::from_cargo_profile();
         let engine_version = flutter.as_ref()?.engine_version().ok()?;
 
-        dirs::cache_dir()?
-            .join("flutter-engine-lib")
-            .join("by-engine-version")
-            .join(engine_version.to_string())
+        engine_version
+            .cache_path()
             .join(build_mode.to_string())
             .into_os_string()
             .into_string()
