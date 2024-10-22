@@ -1,6 +1,7 @@
 use curl::easy::Easy;
 use flust_sdk_api::{
-    FlutterBuildMode, FlutterEngineVersion, FlutterRelease, FlutterSDKVersion, FlutterVersion,
+    FlutterBuildMode, FlutterEngineVersion, FlutterRelease, FlutterSDKVersion, FlutterTargetArch,
+    FlutterVersion,
 };
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -331,31 +332,48 @@ impl EngineVersionManager {
         }
 
         for build_mode in FlutterBuildMode::iter() {
-            let library_path =
-                Engine::new(release.clone(), "x86_64-unknown-linux-gnu", build_mode).download()?;
-
-            let library_dirs = vec![
-                release
-                    .sdk_version
-                    .cache_path()
-                    .join(build_mode.to_string()),
-                release
-                    .engine_version
-                    .cache_path()
-                    .join(build_mode.to_string()),
-            ];
-            for library_dir in library_dirs {
-                if !library_dir.exists() {
-                    std::fs::create_dir_all(&library_dir)?;
-                }
-                std::os::unix::fs::symlink(
-                    &library_path,
-                    library_dir.join("libflutter_engine.so"),
-                )?;
-            }
+            Self::install_version_build(release, &build_mode)?;
         }
 
         VersionMappingCache::insert(release)?;
+
+        Ok(())
+    }
+
+    pub fn install_version_build(
+        release: &FlutterRelease,
+        build_mode: &FlutterBuildMode,
+    ) -> Result<(), Error> {
+        let engine_build = EngineLibraryBuild::new(
+            release.clone(),
+            FlutterTargetArch::new(),
+            build_mode.clone(),
+        );
+
+        let library_path_by_sdk_version = engine_build.library_path_by_sdk_version();
+        if !library_path_by_sdk_version.exists() {
+            let target_build_dir = library_path_by_sdk_version.parent().unwrap().to_owned();
+            if !target_build_dir.exists() {
+                std::fs::create_dir_all(&target_build_dir)?;
+            }
+
+            engine_build.download_to(&library_path_by_sdk_version)?;
+        }
+
+        let by_engine_version_cache_dir = release.engine_version.cache_path();
+        if !by_engine_version_cache_dir.exists() {
+            let by_engine_version_parent_dir =
+                by_engine_version_cache_dir.parent().unwrap().to_owned();
+            if !by_engine_version_parent_dir.exists() {
+                std::fs::create_dir_all(&by_engine_version_parent_dir)?;
+            }
+
+            let by_sdk_version_cache_dir = Path::new("..")
+                .join("by-sdk-version")
+                .join(release.sdk_version.to_string());
+
+            std::os::unix::fs::symlink(&by_sdk_version_cache_dir, by_engine_version_cache_dir)?;
+        }
 
         Ok(())
     }
@@ -368,24 +386,12 @@ impl EngineVersionManager {
         }
 
         let library_dirs = vec![
-            release.sdk_version.cache_path(),
             release.engine_version.cache_path(),
+            release.sdk_version.cache_path(),
         ];
         for library_dir in library_dirs {
             if library_dir.exists() {
                 std::fs::remove_dir_all(library_dir)?;
-            }
-        }
-
-        let build_modes = vec!["debug", "debug_unstripped", "profile", "release"];
-        for build_mode in build_modes {
-            let library_name = format!(
-                "libflutter_engine_{}-{}.so",
-                build_mode, &release.sdk_version
-            );
-            let library_path = Self::engine_cache_dir().join(library_name);
-            if library_path.exists() {
-                std::fs::remove_file(library_path)?;
             }
         }
 
@@ -402,71 +408,67 @@ impl EngineVersionManager {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Engine {
+pub struct EngineLibraryBuild {
     release: FlutterRelease,
-    target: String,
+    target: FlutterTargetArch,
     build_mode: FlutterBuildMode,
 }
 
-impl Engine {
+impl EngineLibraryBuild {
     pub fn new(
         release: FlutterRelease,
-        target: impl Into<String>,
+        target: FlutterTargetArch,
         build_mode: FlutterBuildMode,
     ) -> Self {
         Self {
             release,
-            target: target.into(),
+            target,
             build_mode,
         }
     }
 
     pub fn download_url(&self) -> String {
-        let platform = match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => format!("engine-x64-generic-{}", self.build_mode),
-            _ => panic!("unsupported platform"),
+        let platform = match self.target {
+            FlutterTargetArch::X86_64 => "x64",
+            FlutterTargetArch::Aarch64 => "aarch64",
         };
         format!(
-            "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/{}.tar.xz",
-            &self.release.engine_version, platform
+            "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/engine-{}-generic-{}.tar.xz",
+            &self.release.engine_version, platform, self.build_mode
         )
     }
 
-    pub fn library_name(&self) -> String {
-        match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => format!(
-                "libflutter_engine_{}-{}.so",
-                self.build_mode, &self.release.sdk_version
-            ),
-            _ => panic!("unsupported platform"),
-        }
+    pub fn library_path_by_sdk_version(&self) -> PathBuf {
+        self.release
+            .sdk_version
+            .cache_path()
+            .join(self.build_mode.to_string())
+            .join("libflutter_engine.so")
     }
 
-    pub fn library_path(&self) -> PathBuf {
-        EngineVersionManager::engine_cache_dir().join(self.library_name())
+    pub fn library_path_by_engine_version(&self) -> PathBuf {
+        self.release
+            .engine_version
+            .cache_path()
+            .join(self.build_mode.to_string())
+            .join("libflutter_engine.so")
     }
 
-    pub fn download(&self) -> Result<PathBuf, Error> {
-        let url = self.download_url();
-        let path = self.library_path();
-        let dir = path.parent().unwrap().to_owned();
-
-        if path.exists() {
-            return Ok(path);
-        }
-
-        std::fs::create_dir_all(&dir)?;
-
+    pub fn download_to<P: AsRef<Path>>(&self, target_library_path: P) -> Result<(), Error> {
         let tempdir = tempfile::tempdir()?;
         let download_file = tempdir.path().join("engine.tar.xz");
+        let url = self.download_url();
+
         download(&url, &download_file)?;
         unarchive(&download_file, &tempdir.path())?;
 
-        if tempdir.path().join("libflutter_engine.so").exists() {
-            std::fs::copy(tempdir.path().join("libflutter_engine.so"), &path)?;
+        let temp_library_path = tempdir.path().join("libflutter_engine.so");
+        if !temp_library_path.exists() {
+            return Err(Error::DownloadNotFound);
         }
+        std::fs::copy(temp_library_path, target_library_path)?;
 
-        Ok(path)
+        Ok(())
     }
 }
 

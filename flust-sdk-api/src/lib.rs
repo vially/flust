@@ -21,21 +21,6 @@ impl FlutterBuildMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub struct CompilerOptimization {
-    pub optimized: bool,
-}
-
-impl CompilerOptimization {
-    pub fn optimized() -> Self {
-        Self { optimized: true }
-    }
-
-    pub fn unoptimized() -> Self {
-        Self { optimized: false }
-    }
-}
-
 impl FlutterBuildMode {
     // TODO: Find a better way of auto-detecting build modes
     pub fn from_cargo_profile() -> Self {
@@ -81,6 +66,66 @@ impl From<&FlutterBuildMode> for String {
 impl Display for FlutterBuildMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", String::from(self))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub enum FlutterTargetArch {
+    X86_64,
+    Aarch64,
+}
+
+impl FlutterTargetArch {
+    pub fn new() -> Self {
+        if cfg!(target_arch = "x86_64") {
+            Self::X86_64
+        } else if cfg!(target_arch = "aarch64") {
+            Self::Aarch64
+        } else {
+            panic!("unsupported Flutter target architecture");
+        }
+    }
+}
+
+impl FromStr for FlutterTargetArch {
+    type Err = ();
+
+    fn from_str(arch: &str) -> Result<Self, Self::Err> {
+        Ok(match arch {
+            "x86_64" => Self::X86_64,
+            "aarch64" => Self::Aarch64,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl From<&FlutterTargetArch> for String {
+    fn from(arch: &FlutterTargetArch) -> Self {
+        match arch {
+            FlutterTargetArch::X86_64 => "x86_64".to_owned(),
+            FlutterTargetArch::Aarch64 => "aarch64".to_owned(),
+        }
+    }
+}
+
+impl Display for FlutterTargetArch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub struct CompilerOptimization {
+    pub optimized: bool,
+}
+
+impl CompilerOptimization {
+    pub fn optimized() -> Self {
+        Self { optimized: true }
+    }
+
+    pub fn unoptimized() -> Self {
+        Self { optimized: false }
     }
 }
 
