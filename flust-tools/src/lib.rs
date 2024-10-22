@@ -542,7 +542,7 @@ fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {
     Ok(read_to_string(path).map(|v| v.trim().to_owned())?)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 struct VersionMappingCache {
     by_sdk_version: HashMap<String, String>,
     by_engine_version: HashMap<String, String>,
@@ -550,7 +550,12 @@ struct VersionMappingCache {
 
 impl VersionMappingCache {
     fn from_json_file() -> Result<Self, Error> {
-        let mapping_file = File::open(Self::get_file_path())?;
+        let mapping_file = match File::open(Self::get_file_path()) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(err) => return Err(Error::Io(err)),
+        };
+
         Ok(serde_json::from_reader(mapping_file)
             .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?)
     }
