@@ -1,0 +1,6 @@
+[package]
+name = "flust-sdk-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

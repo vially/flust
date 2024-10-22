@@ -1,9 +1,7 @@
 use bindgen::EnumVariation;
+use flust_sdk_api::FlutterBuildMode;
 use flust_tools::FlutterSDK;
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 const FLUTTER_SDK_MISSING_NO_REBUILD_WARNING: &str = "Flutter SDK path could not be determined. \
@@ -15,51 +13,6 @@ fn main() -> Result<(), BuildError> {
     BindingsBuilder::generate("flust-engine-sys.rs")?;
 
     Ok(())
-}
-
-#[derive(Debug)]
-pub enum FlutterBuildMode {
-    Debug,
-    Profile,
-    Release,
-}
-
-impl FlutterBuildMode {
-    // TODO: Find a better way of auto-detecting build modes
-    fn auto_detect() -> Self {
-        // Use the Cargo `profile` as a replacement for Flutter build-mode until
-        // a better solution is implemented.
-        //
-        // Docs: https://doc.rust-lang.org/cargo/reference/profiles.html#debug
-        match std::env::var("DEBUG").as_deref() {
-            // TODO: Add support for auto-detecting `profile` mode
-            Ok("true") => Self::Debug,
-            _ => Self::Release,
-        }
-    }
-}
-
-impl FromStr for FlutterBuildMode {
-    type Err = ();
-
-    fn from_str(mode: &str) -> Result<Self, Self::Err> {
-        match mode {
-            "debug" => Ok(FlutterBuildMode::Debug),
-            "profile" => Ok(FlutterBuildMode::Profile),
-            "release" => Ok(FlutterBuildMode::Release),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<FlutterBuildMode> for String {
-    fn from(build_mode: FlutterBuildMode) -> Self {
-        match build_mode {
-            FlutterBuildMode::Debug => "debug".to_owned(),
-            FlutterBuildMode::Profile => "profile".to_owned(),
-            FlutterBuildMode::Release => "release".to_owned(),
-        }
-    }
 }
 
 #[derive(Error, Debug)]
@@ -110,7 +63,7 @@ impl Cargo {
             return Some(flutter_engine_search_path);
         }
 
-        let build_mode = FlutterBuildMode::auto_detect();
+        let build_mode = FlutterBuildMode::from_cargo_profile();
         let engine_version = flutter.as_ref()?.engine_version().ok()?;
 
         dirs::cache_dir()?

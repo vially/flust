@@ -1011,6 +1011,7 @@ version = "0.4.0"
 dependencies = [
  "bindgen",
  "dirs",
+ "flust-sdk-api",
  "flust-tools",
  "libloading",
  "thiserror",
@@ -1074,6 +1075,10 @@ dependencies = [
  "wayland-backend",
  "wayland-client",
 ]
+
+[[package]]
+name = "flust-sdk-api"
+version = "0.1.0"
 
 [[package]]
 name = "flust-tools"
