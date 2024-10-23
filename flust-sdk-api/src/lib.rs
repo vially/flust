@@ -76,13 +76,32 @@ pub enum FlutterTargetArch {
 }
 
 impl FlutterTargetArch {
-    pub fn new() -> Self {
+    /// Detect the target Flutter architecture from the `cfg!(target_arch)`
+    /// attribute.
+    ///
+    /// ⚠️ Warning ⚠️: This function makes use of `cfg!` attributes which are
+    /// evaluated at *build* time so they are not suitable for use in Cargo
+    /// build scripts. For Cargo build scripts use `from_cargo_target` instead.
+    pub fn from_cfg_target() -> Self {
         if cfg!(target_arch = "x86_64") {
             Self::X86_64
         } else if cfg!(target_arch = "aarch64") {
             Self::Aarch64
         } else {
             panic!("unsupported Flutter target architecture");
+        }
+    }
+
+    /// Detect the target architecture at *runtime* using the [environment
+    /// variables set by Cargo](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
+    ///
+    /// This function is the recommended way of detecting the target Flutter
+    /// architecture in Cargo build scripts.
+    pub fn from_cargo_target() -> Self {
+        match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+            Ok("x86_64") => Self::X86_64,
+            Ok("aarch64") => Self::Aarch64,
+            _ => panic!("unsupported Flutter target architecture"),
         }
     }
 }

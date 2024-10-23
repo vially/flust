@@ -11,8 +11,14 @@ use std::io::{BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
-use tempfile;
 use tracing::warn;
+
+#[cfg(target_os = "linux")]
+const TARGET_OS_LIB: &str = "libflutter_engine.so";
+#[cfg(target_os = "macos")]
+const TARGET_OS_LIB: &str = "libflutter_engine.dylib";
+#[cfg(target_os = "windows")]
+const TARGET_OS_LIB: &str = "flutter_engine.lib";
 
 #[derive(Debug)]
 pub enum Error {
@@ -198,7 +204,7 @@ pub trait FlutterReleaseExt {
 
 impl FlutterReleaseExt for FlutterRelease {
     fn for_current_sdk_version() -> Result<Self, Error> {
-        Ok(FlutterSDK::auto_detect()?.release()?)
+        FlutterSDK::auto_detect()?.release()
     }
 
     fn for_sdk_version(sdk_version: Option<&FlutterSDKVersion>) -> Result<Self, Error> {
@@ -302,9 +308,11 @@ impl EngineVersionManager {
     ) -> Result<HashMap<FlutterBuildMode, PathBuf>, Error> {
         let mut build_modes: HashMap<FlutterBuildMode, PathBuf> = HashMap::new();
         for build_mode in FlutterBuildMode::iter() {
-            if let Ok(path) =
-                Self::find_canonical_path_for_installed_flutter_version(sdk_version, &build_mode)
-            {
+            if let Ok(path) = Self::find_canonical_path_for_installed_flutter_version(
+                sdk_version,
+                &build_mode,
+                TARGET_OS_LIB,
+            ) {
                 build_modes.insert(build_mode, path);
             }
         }
@@ -315,11 +323,12 @@ impl EngineVersionManager {
     pub fn find_canonical_path_for_installed_flutter_version(
         sdk_version: &FlutterSDKVersion,
         build_mode: &FlutterBuildMode,
+        library_name: &str,
     ) -> Result<PathBuf, Error> {
         let path = sdk_version
             .cache_path()
             .join(build_mode.to_string())
-            .join("libflutter_engine.so");
+            .join(library_name);
 
         Ok(std::fs::canonicalize(path)?)
     }
@@ -338,8 +347,9 @@ impl EngineVersionManager {
         for build_mode in FlutterBuildMode::iter() {
             let engine_build = EngineLibraryBuild::new(
                 release.clone(),
-                FlutterTargetArch::new(),
-                build_mode.clone(),
+                FlutterTargetArch::from_cfg_target(),
+                build_mode,
+                TARGET_OS_LIB,
             );
             Self::ensure_library_version_is_installed(&engine_build)?;
         }
@@ -414,18 +424,21 @@ pub struct EngineLibraryBuild {
     release: FlutterRelease,
     target: FlutterTargetArch,
     build_mode: FlutterBuildMode,
+    library_name: String,
 }
 
 impl EngineLibraryBuild {
-    pub fn new(
+    pub fn new<T: Into<String>>(
         release: FlutterRelease,
         target: FlutterTargetArch,
         build_mode: FlutterBuildMode,
+        library_name: T,
     ) -> Self {
         Self {
             release,
             target,
             build_mode,
+            library_name: library_name.into(),
         }
     }
 
@@ -445,7 +458,7 @@ impl EngineLibraryBuild {
             .sdk_version
             .cache_path()
             .join(self.build_mode.to_string())
-            .join("libflutter_engine.so")
+            .join(self.library_name.clone())
     }
 
     pub fn library_path_by_engine_version(&self) -> PathBuf {
@@ -453,7 +466,7 @@ impl EngineLibraryBuild {
             .engine_version
             .cache_path()
             .join(self.build_mode.to_string())
-            .join("libflutter_engine.so")
+            .join(self.library_name.clone())
     }
 
     pub fn download_to<P: AsRef<Path>>(&self, target_library_path: P) -> Result<(), Error> {
@@ -462,9 +475,9 @@ impl EngineLibraryBuild {
         let url = self.download_url();
 
         download(&url, &download_file)?;
-        unarchive(&download_file, &tempdir.path())?;
+        unarchive(&download_file, tempdir.path())?;
 
-        let temp_library_path = tempdir.path().join("libflutter_engine.so");
+        let temp_library_path = tempdir.path().join(self.library_name.clone());
         if !temp_library_path.exists() {
             return Err(Error::DownloadNotFound);
         }
