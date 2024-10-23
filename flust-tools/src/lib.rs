@@ -336,7 +336,12 @@ impl EngineVersionManager {
         }
 
         for build_mode in FlutterBuildMode::iter() {
-            Self::install_version_build(release, &build_mode)?;
+            let engine_build = EngineLibraryBuild::new(
+                release.clone(),
+                FlutterTargetArch::new(),
+                build_mode.clone(),
+            );
+            Self::ensure_library_version_is_installed(&engine_build)?;
         }
 
         VersionMappingCache::insert(release)?;
@@ -344,16 +349,9 @@ impl EngineVersionManager {
         Ok(())
     }
 
-    pub fn install_version_build(
-        release: &FlutterRelease,
-        build_mode: &FlutterBuildMode,
+    pub fn ensure_library_version_is_installed(
+        engine_build: &EngineLibraryBuild,
     ) -> Result<(), Error> {
-        let engine_build = EngineLibraryBuild::new(
-            release.clone(),
-            FlutterTargetArch::new(),
-            build_mode.clone(),
-        );
-
         let library_path_by_sdk_version = engine_build.library_path_by_sdk_version();
         if !library_path_by_sdk_version.exists() {
             let target_build_dir = library_path_by_sdk_version.parent().unwrap().to_owned();
@@ -364,7 +362,7 @@ impl EngineVersionManager {
             engine_build.download_to(&library_path_by_sdk_version)?;
         }
 
-        let by_engine_version_cache_dir = release.engine_version.cache_path();
+        let by_engine_version_cache_dir = engine_build.release.engine_version.cache_path();
         if !by_engine_version_cache_dir.exists() {
             let by_engine_version_parent_dir =
                 by_engine_version_cache_dir.parent().unwrap().to_owned();
@@ -374,7 +372,7 @@ impl EngineVersionManager {
 
             let by_sdk_version_cache_dir = Path::new("..")
                 .join("by-sdk-version")
-                .join(release.sdk_version.to_string());
+                .join(engine_build.release.sdk_version.to_string());
 
             std::os::unix::fs::symlink(&by_sdk_version_cache_dir, by_engine_version_cache_dir)?;
         }
