@@ -90,7 +90,7 @@ impl<'a, 'b> From<PlatformMessage<'a, 'b>> for FlutterPlatformMessage {
     }
 }
 
-impl<'a, 'b> From<FlutterPlatformMessage> for PlatformMessage<'a, 'b> {
+impl From<FlutterPlatformMessage> for PlatformMessage<'_, '_> {
     fn from(platform_message: FlutterPlatformMessage) -> Self {
         debug_assert_eq!(
             platform_message.struct_size,

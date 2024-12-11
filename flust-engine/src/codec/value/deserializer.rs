@@ -32,7 +32,7 @@ where
     T::deserialize(&mut Deserializer::new(value))
 }
 
-impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     type Error = ValueError;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -114,7 +114,7 @@ impl<'a, 'de> SeqAccess<'a, 'de> {
     }
 }
 
-impl<'a, 'de> de::SeqAccess<'de> for SeqAccess<'a, 'de> {
+impl<'de> de::SeqAccess<'de> for SeqAccess<'_, 'de> {
     type Error = ValueError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -193,7 +193,7 @@ impl<'a, 'de> MapAccess<'a, 'de> {
     }
 }
 
-impl<'a, 'de> de::MapAccess<'de> for MapAccess<'a, 'de> {
+impl<'de> de::MapAccess<'de> for MapAccess<'_, 'de> {
     type Error = ValueError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -227,8 +227,8 @@ struct EnumAccess<'de> {
     value_deserializer: Deserializer<'de>,
 }
 
-impl<'a, 'de> EnumAccess<'de> {
-    pub fn new(de: &'a mut Deserializer<'de>) -> Self {
+impl<'de> EnumAccess<'de> {
+    pub fn new(de: &mut Deserializer<'de>) -> Self {
         let map = if let Value::Map(map) = de.value {
             map
         } else {
