@@ -190,6 +190,27 @@ impl Display for FlutterEngineVersion {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Ord, PartialOrd)]
+pub struct FlutterFrameworkVersion(String);
+
+impl From<String> for FlutterFrameworkVersion {
+    fn from(version: String) -> Self {
+        FlutterFrameworkVersion(version)
+    }
+}
+
+impl From<FlutterFrameworkVersion> for String {
+    fn from(version: FlutterFrameworkVersion) -> Self {
+        version.0
+    }
+}
+
+impl Display for FlutterFrameworkVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FlutterVersion {
     SDK(FlutterSDKVersion),
@@ -212,4 +233,5 @@ impl From<FlutterEngineVersion> for FlutterVersion {
 pub struct FlutterRelease {
     pub sdk_version: FlutterSDKVersion,
     pub engine_version: FlutterEngineVersion,
+    pub framework_version: FlutterFrameworkVersion,
 }

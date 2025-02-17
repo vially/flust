@@ -1,16 +1,18 @@
 use curl::easy::Easy;
+use flate2::read::GzDecoder;
 use flust_sdk_api::{
-    FlutterBuildMode, FlutterEngineVersion, FlutterRelease, FlutterSDKVersion, FlutterTargetArch,
-    FlutterVersion,
+    FlutterBuildMode, FlutterEngineVersion, FlutterFrameworkVersion, FlutterRelease,
+    FlutterSDKVersion, FlutterTargetArch, FlutterVersion,
 };
 use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{read_to_string, File};
-use std::io::{BufRead, ErrorKind, Write};
+use std::io::{self, BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tracing::warn;
 
 #[cfg(target_os = "linux")]
@@ -32,6 +34,7 @@ pub enum Error {
     Curl(curl::Error),
     Reqwest(reqwest::Error),
     Indicatif(indicatif::style::TemplateError),
+    Utf8(std::string::FromUtf8Error),
 }
 
 impl std::fmt::Display for Error {
@@ -69,6 +72,7 @@ You'll find the available builds on our github releases page [0].
             Error::Curl(error) => error.fmt(f),
             Error::Reqwest(error) => error.fmt(f),
             Error::Indicatif(error) => error.fmt(f),
+            Error::Utf8(error) => error.fmt(f),
         }
     }
 }
@@ -102,6 +106,12 @@ impl From<reqwest::Error> for Error {
 impl From<indicatif::style::TemplateError> for Error {
     fn from(error: TemplateError) -> Self {
         Error::Indicatif(error)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(error: std::string::FromUtf8Error) -> Self {
+        Error::Utf8(error)
     }
 }
 
@@ -171,10 +181,23 @@ impl FlutterSDK {
         Ok(version.into())
     }
 
+    fn read_framework_version_from_git_head_sha(&self) -> Result<FlutterFrameworkVersion, Error> {
+        let output = Command::new("git")
+            .current_dir(&self.root_path)
+            .args(["rev-parse", "HEAD"])
+            .output()?
+            .stdout;
+
+        let version = String::from_utf8(output)?.trim().to_owned();
+
+        Ok(version.into())
+    }
+
     pub fn release(&self) -> Result<FlutterRelease, Error> {
         Ok(FlutterRelease {
             sdk_version: self.sdk_version()?,
             engine_version: self.engine_version()?,
+            framework_version: self.read_framework_version_from_git_head_sha()?,
         })
     }
 
@@ -217,10 +240,137 @@ impl FlutterReleaseExt for FlutterRelease {
             None => read_flutter_engine_version_from_github_tag(sdk_version)?,
         };
 
+        let framework_version = read_flutter_framework_version_from_github_tag(sdk_version)?;
+
         Ok(Self {
             sdk_version: sdk_version.clone(),
             engine_version,
+            framework_version,
         })
+    }
+}
+
+#[derive(Debug)]
+pub enum EngineDownloadSource {
+    FlutterPi,
+    MetaFlutter,
+}
+
+impl EngineDownloadSource {
+    fn new_from_env() -> Self {
+        match std::env::var("FLUTTER_ENGINE_DOWNLOAD_SOURCE") {
+            Ok(source) => match source.as_str() {
+                "meta-flutter" => Self::MetaFlutter,
+                _ => Self::FlutterPi,
+            },
+            _ => Self::FlutterPi,
+        }
+    }
+
+    pub(crate) fn download_to<P: AsRef<Path>>(
+        &self,
+        build: &EngineLibraryBuild,
+        target_library_path: P,
+    ) -> Result<(), Error> {
+        let tempdir = tempfile::tempdir()?;
+        let filename = match self {
+            Self::FlutterPi => "engine.tar.xz",
+            Self::MetaFlutter => "engine.tar.gz",
+        };
+        let download_file = tempdir.path().join(filename);
+        let url = self.download_url(build);
+
+        download(&url, &download_file)?;
+        let temp_library_path = self.unarchive(&tempdir, &download_file, tempdir.path(), build)?;
+        std::fs::copy(temp_library_path, target_library_path)?;
+
+        Ok(())
+    }
+
+    fn download_url(&self, build: &EngineLibraryBuild) -> String {
+        match self {
+            Self::FlutterPi => {
+                let platform = match build.target {
+                    FlutterTargetArch::X86_64 => "x64",
+                    FlutterTargetArch::Aarch64 => "aarch64",
+                };
+                format!(
+                    "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/engine-{}-generic-{}.tar.xz",
+                    &build.release.engine_version, platform, build.build_mode
+                )
+            }
+            Self::MetaFlutter => {
+                let platform = match build.target {
+                    FlutterTargetArch::X86_64 => "x86_64",
+                    FlutterTargetArch::Aarch64 => "arm64",
+                };
+                // TODO: Add support for `debug_unopt` build mode for `meta-flutter` source
+                let build_mode = match build.build_mode {
+                    FlutterBuildMode::Debug(_) => "debug",
+                    FlutterBuildMode::Profile => "profile",
+                    FlutterBuildMode::Release => "release",
+                };
+                format!(
+                    "https://github.com/meta-flutter/flutter-engine/releases/download/linux-engine-sdk-{}-{}-{}/linux-engine-sdk-{}-{}-{}.tar.gz",
+                    build_mode, platform, &build.release.framework_version, build_mode, platform, &build.release.framework_version,
+                )
+            }
+        }
+    }
+
+    fn unarchive(
+        &self,
+        tempdir: &TempDir,
+        archive_path: &Path,
+        target_dir: &Path,
+        build: &EngineLibraryBuild,
+    ) -> Result<PathBuf, Error> {
+        println!("Extracting {:?}...", archive_path.file_name().unwrap());
+
+        match self {
+            EngineDownloadSource::FlutterPi => {
+                let decoder = xz2::read::XzDecoder::new(File::open(archive_path)?);
+                let mut archive = tar::Archive::new(decoder);
+                archive.unpack(target_dir)?;
+            }
+            EngineDownloadSource::MetaFlutter => {
+                let decoder = GzDecoder::new(File::open(archive_path)?);
+                let mut archive = tar::Archive::new(decoder);
+                archive.unpack(target_dir)?;
+            }
+        };
+
+        let platform = match build.target {
+            FlutterTargetArch::X86_64 => "x64",
+            FlutterTargetArch::Aarch64 => "aarch64",
+        };
+
+        // TODO: Add support for `debug_unopt` build mode for `meta-flutter` source
+        let build_mode = match build.build_mode {
+            FlutterBuildMode::Debug(_) => "debug",
+            FlutterBuildMode::Profile => "profile",
+            FlutterBuildMode::Release => "release",
+        };
+
+        let temp_library_path = match self {
+            EngineDownloadSource::FlutterPi => tempdir.path().join(&build.library_name),
+            EngineDownloadSource::MetaFlutter => tempdir
+                .path()
+                .join("flutter")
+                .join("engine")
+                .join("src")
+                .join("out")
+                .join(format!("linux_{}_{}", build_mode, platform))
+                .join("engine-sdk")
+                .join("lib")
+                .join(&build.library_name),
+        };
+
+        if !temp_library_path.exists() {
+            return Err(Error::DownloadNotFound);
+        }
+
+        Ok(temp_library_path)
     }
 }
 
@@ -442,17 +592,6 @@ impl EngineLibraryBuild {
         }
     }
 
-    pub fn download_url(&self) -> String {
-        let platform = match self.target {
-            FlutterTargetArch::X86_64 => "x64",
-            FlutterTargetArch::Aarch64 => "aarch64",
-        };
-        format!(
-            "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/engine-{}-generic-{}.tar.xz",
-            &self.release.engine_version, platform, self.build_mode
-        )
-    }
-
     pub fn library_path_by_sdk_version(&self) -> PathBuf {
         self.release
             .sdk_version
@@ -470,20 +609,7 @@ impl EngineLibraryBuild {
     }
 
     pub fn download_to<P: AsRef<Path>>(&self, target_library_path: P) -> Result<(), Error> {
-        let tempdir = tempfile::tempdir()?;
-        let download_file = tempdir.path().join("engine.tar.xz");
-        let url = self.download_url();
-
-        download(&url, &download_file)?;
-        unarchive(&download_file, tempdir.path())?;
-
-        let temp_library_path = tempdir.path().join(self.library_name.clone());
-        if !temp_library_path.exists() {
-            return Err(Error::DownloadNotFound);
-        }
-        std::fs::copy(temp_library_path, target_library_path)?;
-
-        Ok(())
+        EngineDownloadSource::new_from_env().download_to(self, target_library_path)
     }
 }
 
@@ -524,16 +650,6 @@ fn download(url: &str, target: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn unarchive(archive_path: &Path, target_dir: &Path) -> Result<(), Error> {
-    println!("Extracting {:?}...", archive_path.file_name().unwrap());
-
-    let decoder = xz2::read::XzDecoder::new(File::open(archive_path)?);
-    let mut archive = tar::Archive::new(decoder);
-    archive.unpack(target_dir)?;
-
-    Ok(())
-}
-
 fn read_flutter_engine_version_from_github_tag(
     sdk_version: &FlutterSDKVersion,
 ) -> Result<FlutterEngineVersion, Error> {
@@ -547,6 +663,25 @@ fn read_flutter_engine_version_from_github_tag(
         .trim()
         .to_owned()
         .into())
+}
+
+fn read_flutter_framework_version_from_github_tag(
+    sdk_version: &FlutterSDKVersion,
+) -> Result<FlutterFrameworkVersion, Error> {
+    let url = format!(
+        "https://api.github.com/repos/flutter/flutter/git/refs/tags/{}",
+        sdk_version
+    );
+
+    let sha = reqwest::blocking::get(url)?
+        .json::<serde_json::Value>()?
+        .pointer("/object/sha")
+        .ok_or(io::Error::from(ErrorKind::InvalidData))?
+        .as_str()
+        .ok_or(io::Error::from(ErrorKind::InvalidData))?
+        .to_owned();
+
+    Ok(sha.into())
 }
 
 fn read_trimmed_string(path: PathBuf) -> Result<String, Error> {
