@@ -93,7 +93,7 @@ impl ContextBuilder {
         let surface = unsafe { display.create_window_surface(&config, &surface_attributes)? };
 
         // Set EGL swap interval (if configured)
-        let render_context = match self.attributes.swap_interval.clone().take() {
+        let render_context = match self.attributes.swap_interval {
             Some(swap_interval) => {
                 let render_context = render_context.make_current(&surface)?;
                 surface.set_swap_interval(&render_context, swap_interval)?;
