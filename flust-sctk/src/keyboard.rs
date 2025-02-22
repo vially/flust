@@ -1,10 +1,10 @@
 use std::ffi::CString;
 
-use flust_plugins::keyevent::{KeyAction, KeyActionType};
 use flust_engine::{
     ffi::{FlutterKeyEvent, FlutterKeyEventDeviceType, FlutterKeyEventType, FlutterLogicalKey},
     FlutterEngine,
 };
+use flust_plugins::keyevent::{KeyAction, KeyActionType};
 use smithay_client_toolkit::seat::keyboard::{KeyCode, KeyEvent, Keysym, Modifiers};
 
 #[derive(Clone, Debug)]
@@ -142,7 +142,7 @@ impl From<Modifiers> for GtkKeyActionModifiers {
         // These values need to be kept in sync with the same values on the framework side.
         // https://github.com/flutter/flutter/blob/1fa6f56b/packages/flutter/lib/src/services/raw_keyboard_linux.dart#L371-L411
         let raw_modifiers =
-            shift | caps_lock << 1 | ctrl << 2 | alt << 3 | num_lock << 4 | logo << 26;
+            shift | (caps_lock << 1) | (ctrl << 2) | (alt << 3) | (num_lock << 4) | (logo << 26);
 
         Self(raw_modifiers)
     }
