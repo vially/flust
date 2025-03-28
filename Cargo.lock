@@ -83,6 +83,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 
 [[package]]
+name = "ansi-str"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cf4578926a981ab0ca955dc023541d19de37112bc24c1a197bd806d3d86ad1d"
+dependencies = [
+ "ansitok",
+]
+
+[[package]]
+name = "ansitok"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "220044e6a1bb31ddee4e3db724d29767f352de47445a6cd75e1a173142136c83"
+dependencies = [
+ "nom",
+ "vte",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -136,6 +155,12 @@ name = "arrayref"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b4930d2cb77ce62f89ee5d5289b4ac049559b1c45539271f5ed4fdc7db34545"
+
+[[package]]
+name = "arrayvec"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrayvec"
@@ -2224,6 +2249,8 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7419ad52a7de9b60d33e11085a0fe3df1fbd5926aa3f93d3dd53afbc9e86725"
 dependencies = [
+ "ansi-str",
+ "ansitok",
  "bytecount",
  "fnv",
  "unicode-width",
@@ -3019,6 +3046,8 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c9303ee60b9bedf722012ea29ae3711ba13a67c9b9ae28993838b63057cb1b"
 dependencies = [
+ "ansi-str",
+ "ansitok",
  "papergrid",
  "tabled_derive",
 ]
@@ -3087,7 +3116,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83d13394d44dae3207b52a326c0c85a8bf87f1541f23b0d143811088497b09ab"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.7.4",
  "bytemuck",
  "cfg-if",
  "log",
@@ -3329,6 +3358,27 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "vte"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cbce692ab4ca2f1f3047fcf732430249c0e971bfdd2b234cf2c47ad93af5983"
+dependencies = [
+ "arrayvec 0.5.2",
+ "utf8parse",
+ "vte_generate_state_changes",
+]
+
+[[package]]
+name = "vte_generate_state_changes"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e369bee1b05d510a7b4ed645f5faa90619e05437111783ea5848f28d97d3c2e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
 
 [[package]]
 name = "walkdir"

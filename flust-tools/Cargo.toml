@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 clap = { version = "4.5.16", features = ["derive"] }
 tracing = "0.1"
-tabled = "0.16.0"
+tabled = { version = "0.16.0", features = ["ansi"] }
 supports-hyperlinks = "3.0.0"
 flust-build = { path = "../flust-build" }
 flust-sdk-api = { path = "../flust-sdk-api" }
