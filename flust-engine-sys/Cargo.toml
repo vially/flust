@@ -13,7 +13,7 @@ links = "flutter_engine"
 bindgen = "0.69.1"
 dirs = "5.0.1"
 thiserror = "1.0.52"
-flust-tools = { path = "../flust-tools" }
+flust-build = { path = "../flust-build" }
 flust-sdk-api = { path = "../flust-sdk-api" }
 
 [dev-dependencies]

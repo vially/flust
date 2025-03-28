@@ -12,5 +12,5 @@ members = [
     "flust-sctk",
     "flust-sdk-api",
     "flust-winit",
-    "flust-tools",
+    "flust-tools", "flust-build",
 ]

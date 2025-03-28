@@ -1002,6 +1002,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "flust-build"
+version = "0.1.0"
+dependencies = [
+ "curl",
+ "dirs",
+ "flate2",
+ "flust-sdk-api",
+ "indicatif",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "tracing",
+ "which 6.0.2",
+ "xz2",
+]
+
+[[package]]
 name = "flust-engine"
 version = "0.4.0"
 dependencies = [
@@ -1030,8 +1049,8 @@ version = "0.4.0"
 dependencies = [
  "bindgen",
  "dirs",
+ "flust-build",
  "flust-sdk-api",
- "flust-tools",
  "libloading",
  "thiserror",
 ]
@@ -1107,21 +1126,11 @@ name = "flust-tools"
 version = "0.1.0"
 dependencies = [
  "clap",
- "curl",
- "dirs",
- "flate2",
+ "flust-build",
  "flust-sdk-api",
- "indicatif",
- "reqwest",
- "serde",
- "serde_json",
  "supports-hyperlinks",
  "tabled",
- "tar",
- "tempfile",
  "tracing",
- "which 6.0.2",
- "xz2",
 ]
 
 [[package]]

@@ -4,10 +4,10 @@ use flust_sdk_api::{
     FlutterBuildMode, FlutterEngineVersion, FlutterFrameworkVersion, FlutterRelease,
     FlutterSDKVersion, FlutterTargetArch, FlutterVersion,
 };
-use indicatif::{style::TemplateError, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle, style::TemplateError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{read_to_string, File};
+use std::fs::{File, read_to_string};
 use std::io::{self, BufRead, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -312,7 +312,12 @@ impl EngineDownloadSource {
                 };
                 format!(
                     "https://github.com/meta-flutter/flutter-engine/releases/download/linux-engine-sdk-{}-{}-{}/linux-engine-sdk-{}-{}-{}.tar.gz",
-                    build_mode, platform, &build.release.framework_version, build_mode, platform, &build.release.framework_version,
+                    build_mode,
+                    platform,
+                    &build.release.framework_version,
+                    build_mode,
+                    platform,
+                    &build.release.framework_version,
                 )
             }
         }

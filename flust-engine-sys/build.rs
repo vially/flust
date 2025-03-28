@@ -1,6 +1,6 @@
 use bindgen::EnumVariation;
+use flust_build::{EngineLibraryBuild, EngineVersionManager, FlutterSDK};
 use flust_sdk_api::{FlutterBuildMode, FlutterTargetArch};
-use flust_tools::{EngineLibraryBuild, EngineVersionManager, FlutterSDK};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -143,7 +143,7 @@ pub enum BuildError {
     IO(#[from] std::io::Error),
 
     #[error(transparent)]
-    Flutter(#[from] flust_tools::Error),
+    Flutter(#[from] flust_build::Error),
 }
 
 struct CargoInstruction {}
