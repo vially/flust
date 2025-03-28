@@ -1,7 +1,10 @@
 use bindgen::EnumVariation;
 use flust_build::{EngineLibraryBuild, EngineVersionManager, FlutterSDK};
 use flust_sdk_api::{FlutterBuildMode, FlutterTargetArch};
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
 const FLUTTER_SDK_MISSING_NO_REBUILD_WARNING: &str = "Flutter SDK path could not be determined. \
@@ -119,7 +122,11 @@ impl EngineLibraryBuildContext {
         let engine_library_path = self.library_path();
 
         let target_engine_library_path = self.target_engine_library_path();
-        if target_engine_library_path.exists() {
+
+        // `target_engine_library_path.exists()` should *not* be used here
+        // because it will return `false` if the path is a symlink that points
+        // to a file that does not exist.
+        if fs::symlink_metadata(&target_engine_library_path).is_ok() {
             std::fs::remove_file(&target_engine_library_path)?;
         }
 
