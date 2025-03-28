@@ -19,6 +19,22 @@ impl FlutterBuildMode {
         ]
         .into_iter()
     }
+
+    pub fn is_debug(&self) -> bool {
+        matches!(self, Self::Debug(_))
+    }
+
+    pub fn is_profile(&self) -> bool {
+        matches!(self, Self::Profile)
+    }
+
+    pub fn is_release(&self) -> bool {
+        matches!(self, Self::Release)
+    }
+
+    pub fn is_aot(&self) -> bool {
+        matches!(self, Self::Release | Self::Profile)
+    }
 }
 
 impl FlutterBuildMode {

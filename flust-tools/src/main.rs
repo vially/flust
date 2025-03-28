@@ -1,8 +1,8 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use flust_build::{EngineVersionManager, Error, FlutterReleaseExt, FlutterSDK};
-use flust_sdk_api::{FlutterRelease, FlutterSDKVersion};
+use flust_sdk_api::{CompilerOptimization, FlutterBuildMode, FlutterRelease, FlutterSDKVersion};
 use supports_hyperlinks::supports_hyperlinks;
 use tabled::settings::Style;
 
@@ -22,6 +22,12 @@ enum Command {
     EngineLibrary {
         #[command(subcommand)]
         command: Option<EngineLibraryCommands>,
+    },
+
+    /// Custom device management commands
+    CustomDevice {
+        #[command(subcommand)]
+        command: CustomDeviceCommands,
     },
 }
 
@@ -45,6 +51,66 @@ enum EngineLibraryCommands {
         /// The Flutter engine library version to uninstall
         version: Option<FlutterSDKVersion>,
     },
+}
+
+#[derive(Subcommand)]
+enum CustomDeviceCommands {
+    /// Copy `flutter_assets`, `lib` and `icudtl.dat` files to the cargo build
+    /// directory. This command should be configured as the `postBuild` command
+    /// in the custom-device JSON.
+    PostBuild {
+        /// Flutter build mode. This typically corresponds to the `${buildMode}`
+        /// string interpolated variable set by the Flutter tool.
+        #[arg(long)]
+        build_mode: BuildMode,
+
+        /// Path to the output directory of the `flutter build bundle` command.
+        /// This typically corresponds to the `${localPath}` string interpolated
+        /// variable set by the Flutter tool.
+        #[arg(long)]
+        bundle_output_path: PathBuf,
+
+        /// Flutter engine revision. This typically corresponds to the
+        /// `${engineRevision}` string interpolated variable set by the Flutter
+        /// tool.
+        #[arg(long)]
+        engine_revision: String,
+
+        /// Path to the `icudtl.dat` file that should be copied to the cargo
+        /// build directory. This typically corresponds to the `${icuDataPath}`
+        /// string interpolated variable set by the Flutter tool.
+        #[arg(long)]
+        icu_data_path: PathBuf,
+    },
+
+    /// Build and run the application using `cargo run`. This command should be
+    /// configured as the `runDebug` command in the custom-device JSON.
+    Run {
+        /// Flutter build mode.
+        #[arg(long)]
+        build_mode: BuildMode,
+
+        /// Flutter engine revision.
+        #[arg(long)]
+        engine_revision: String,
+    },
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+enum BuildMode {
+    Debug,
+    Profile,
+    Release,
+}
+
+impl From<BuildMode> for FlutterBuildMode {
+    fn from(build_mode: BuildMode) -> Self {
+        match build_mode {
+            BuildMode::Debug => FlutterBuildMode::Debug(CompilerOptimization::unoptimized()),
+            BuildMode::Profile => FlutterBuildMode::Profile,
+            BuildMode::Release => FlutterBuildMode::Release,
+        }
+    }
 }
 
 fn main() -> Result<(), Error> {
@@ -179,6 +245,23 @@ fn main() -> Result<(), Error> {
                 }
             },
             None => Ok(()),
+        },
+        Command::CustomDevice { command } => match command {
+            CustomDeviceCommands::PostBuild {
+                build_mode,
+                bundle_output_path,
+                engine_revision,
+                icu_data_path,
+            } => flust_build::CustomDeviceCommands::post_build(
+                (*build_mode).into(),
+                engine_revision,
+                bundle_output_path,
+                icu_data_path,
+            ),
+            CustomDeviceCommands::Run {
+                build_mode,
+                engine_revision,
+            } => flust_build::CustomDeviceCommands::run((*build_mode).into(), engine_revision),
         },
     }
 }

@@ -7,8 +7,9 @@ use flust_sdk_api::{
 use indicatif::{ProgressBar, ProgressStyle, style::TemplateError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{File, read_to_string};
+use std::fs::{self, File, read_to_string};
 use std::io::{self, BufRead, ErrorKind, Write};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -27,6 +28,7 @@ pub enum Error {
     FlutterNotFound,
     FlutterVersionNotFound,
     FlutterVersionAlreadyInstalled,
+    CargoRunFailed,
     DownloadNotFound,
     DartNotFound,
     Io(std::io::Error),
@@ -43,6 +45,7 @@ impl std::fmt::Display for Error {
             Error::FlutterNotFound => write!(f, "Couldn't find flutter sdk"),
             Error::FlutterVersionNotFound => write!(f, "Unable to determine Flutter SDK version"),
             Error::FlutterVersionAlreadyInstalled => write!(f, "Flutter version already installed"),
+            Error::CargoRunFailed => write!(f, "Cargo run failed"),
             Error::DownloadNotFound => write!(
                 f,
                 r#"We couldn't find the requested engine version 'missing'.
@@ -618,6 +621,62 @@ impl EngineLibraryBuild {
     }
 }
 
+pub struct CustomDeviceCommands {}
+
+impl CustomDeviceCommands {
+    pub fn post_build<P: AsRef<Path>>(
+        build_mode: FlutterBuildMode,
+        _engine_revision: &str,
+        bundle_output_path: P,
+        icu_data_path: P,
+    ) -> Result<(), Error> {
+        let bundle_output_path = bundle_output_path.as_ref();
+        let output_path = Path::new("target").join("debug");
+
+        // Remove `./target/debug/data` if already exists
+        let data_path = output_path.join("data");
+        if data_path.exists() {
+            fs::remove_dir_all(&data_path)?;
+        }
+        fs::create_dir_all(&data_path)?;
+
+        // Remove `./target/debug/lib` if already exists and build mode is AOT
+        let lib_path = output_path.join("lib");
+        if lib_path.exists() && build_mode.is_aot() {
+            fs::remove_dir_all(&lib_path)?;
+        }
+
+        // Copy `icudtl.dat` to `./target/debug/data/icudtl.dat`
+        let src_icu_data_path = icu_data_path.as_ref();
+        fs::copy(src_icu_data_path, data_path.join("icudtl.dat"))?;
+
+        // Copy `${localPath}/flutter_assets` to `./target/debug/data/flutter_assets`
+        let src_flutter_assets = bundle_output_path.join("flutter_assets");
+        copy_dir_all(&src_flutter_assets, data_path.join("flutter_assets"))?;
+
+        // Copy `${localPath}/lib` to `./target/debug/lib` if build mode is AOT
+        if build_mode.is_aot() {
+            let src_lib = bundle_output_path.join("lib");
+            copy_dir_all(src_lib, output_path.join("lib"))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn run(build_mode: FlutterBuildMode, engine_revision: &str) -> Result<(), Error> {
+        // It looks like `flutter run` does not connect the stdio streams to the
+        // terminal which breaks cargo's color automatic detection. Therefore,
+        // set the `--color=always` flag as a workaround.
+        Err(Error::Io(
+            Command::new("cargo")
+                .args(["run", "--color=always"])
+                .env("FLUST_BUILD_MODE", build_mode.to_string())
+                .env("FLUST_ENGINE_REVISION", engine_revision)
+                .exec(),
+        ))
+    }
+}
+
 fn download(url: &str, target: &Path) -> Result<(), Error> {
     println!("Starting download from {}", url);
     let mut file = File::create(target)?;
@@ -759,4 +818,19 @@ impl VersionMappingCache {
         mapping.write_json_file()?;
         Ok(())
     }
+}
+
+// Source: https://stackoverflow.com/a/65192210/536113
+fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
