@@ -15,6 +15,7 @@ fn main() -> Result<(), BuildError> {
     CargoInstruction::rustc_link_lib("flutter_engine");
     CargoInstruction::rerun_if_changed("embedder.h");
     CargoInstruction::rerun_if_changed("src/lib.rs");
+    CargoInstruction::rerun_if_env_changed("FLUST_BUILD_MODE");
 
     let engine_build_context = EngineLibraryBuildContext::from_cargo_build_env();
     engine_build_context.print_extra_cargo_instructions();
@@ -52,7 +53,7 @@ impl EngineLibraryBuildContext {
                     .as_ref()
                     .and_then(|flutter| flutter.release().ok())
                     .expect("Failed to determine Flutter release");
-                let build_mode = FlutterBuildMode::from_cargo_profile();
+                let build_mode = FlutterBuildMode::from_env();
                 let target = FlutterTargetArch::from_cargo_target();
 
                 EngineLibraryLocation::Build(EngineLibraryBuild::new(
@@ -154,6 +155,10 @@ impl CargoInstruction {
 
     fn rerun_if_changed(path: &str) {
         println!("cargo::rerun-if-changed={path}");
+    }
+
+    fn rerun_if_env_changed(name: &str) {
+        println!("cargo::rerun-if-env-changed={name}");
     }
 
     fn rustc_link_search(path: &str) {

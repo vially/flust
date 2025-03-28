@@ -22,6 +22,15 @@ impl FlutterBuildMode {
 }
 
 impl FlutterBuildMode {
+    pub fn from_env() -> Self {
+        let Ok(build_mode) = std::env::var("FLUST_BUILD_MODE") else {
+            return FlutterBuildMode::Debug(CompilerOptimization::optimized());
+        };
+
+        FlutterBuildMode::from_str(&build_mode)
+            .unwrap_or(FlutterBuildMode::Debug(CompilerOptimization::optimized()))
+    }
+
     // TODO: Find a better way of auto-detecting build modes
     pub fn from_cargo_profile() -> Self {
         // Use the Cargo `profile` as a replacement for Flutter build-mode until
