@@ -640,12 +640,6 @@ impl CustomDeviceCommands {
         }
         fs::create_dir_all(&data_path)?;
 
-        // Remove `./target/debug/lib` if already exists and build mode is AOT
-        let lib_path = output_path.join("lib");
-        if lib_path.exists() && build_mode.is_aot() {
-            fs::remove_dir_all(&lib_path)?;
-        }
-
         // Copy `icudtl.dat` to `./target/debug/data/icudtl.dat`
         let src_icu_data_path = icu_data_path.as_ref();
         fs::copy(src_icu_data_path, data_path.join("icudtl.dat"))?;
@@ -655,6 +649,11 @@ impl CustomDeviceCommands {
         copy_dir_all(&src_flutter_assets, data_path.join("flutter_assets"))?;
 
         // Copy `${localPath}/lib` to `./target/debug/lib` if build mode is AOT
+        //
+        // `./target/debug/lib` is intentionally kept around in between
+        // `post-build` runs because it contains the `libflutter_engine.so` file
+        // which is only generated when the `flust-engine-sys` build script runs
+        // (which does *not* always happen in between `flutter run` calls).
         if build_mode.is_aot() {
             let src_lib = bundle_output_path.join("lib");
             copy_dir_all(src_lib, output_path.join("lib"))?;
