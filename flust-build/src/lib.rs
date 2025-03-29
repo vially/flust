@@ -668,7 +668,16 @@ impl CustomDeviceCommands {
         // set the `--color=always` flag as a workaround.
         Err(Error::Io(
             Command::new("cargo")
-                .args(["run", "--color=always"])
+                .args([
+                    "run",
+                    "--color=always",
+                    // Set `$ORIGIN/lib` library runpath on the app binary. This
+                    // makes the application more portable and allows it to find
+                    // the engine and AOT libraries without having to set the
+                    // `LD_LIBRARY_PATH` environment variable.
+                    "--config",
+                    "build.rustflags = ['-C', 'link-arg=-Wl,-rpath=$ORIGIN/lib']",
+                ])
                 .env("FLUST_BUILD_MODE", build_mode.to_string())
                 .env("FLUST_ENGINE_REVISION", engine_revision)
                 .exec(),
