@@ -98,10 +98,6 @@ impl EngineLibraryBuildContext {
             .into()
     }
 
-    fn target_engine_library_path(&self) -> PathBuf {
-        self.target_build_dir().join(self.library_name)
-    }
-
     fn print_extra_cargo_instructions(&self) {
         CargoInstruction::rustc_link_search(&self.library_path_dir().display().to_string());
 
@@ -119,9 +115,11 @@ impl EngineLibraryBuildContext {
             EngineVersionManager::ensure_library_version_is_installed(engine_build)?;
         }
 
-        let engine_library_path = self.library_path();
+        let target_lib_dir = self.target_build_dir().join("lib");
+        std::fs::create_dir_all(&target_lib_dir)?;
 
-        let target_engine_library_path = self.target_engine_library_path();
+        let source_engine_library_path = self.library_path();
+        let target_engine_library_path = target_lib_dir.join(self.library_name);
 
         // `target_engine_library_path.exists()` should *not* be used here
         // because it will return `false` if the path is a symlink that points
@@ -135,7 +133,7 @@ impl EngineLibraryBuildContext {
         // without having to set the `LD_LIBRARY_PATH` environment variable.
         //
         // Docs: https://doc.rust-lang.org/cargo/reference/environment-variables.html#dynamic-library-paths
-        std::os::unix::fs::symlink(&engine_library_path, self.target_engine_library_path())?;
+        std::os::unix::fs::symlink(&source_engine_library_path, target_engine_library_path)?;
 
         Ok(())
     }
