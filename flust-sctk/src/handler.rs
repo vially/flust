@@ -559,16 +559,16 @@ pub extern "C" fn destruction_callback(_user_data: *mut c_void) {
 
 #[derive(Clone)]
 enum SctkOpenGLCompositor {
-    Framebuffer(SctkOpenGLCompositorHandlerFramebuffer),
+    Framebuffer(Box<SctkOpenGLCompositorHandlerFramebuffer>),
     Surface(SctkOpenGLCompositorHandlerSurface),
 }
 
 impl SctkOpenGLCompositor {
     pub fn new(context: Arc<Mutex<Context>>, opengl_target_type: FlutterOpenGLTargetType) -> Self {
         match opengl_target_type {
-            FlutterOpenGLTargetType::Framebuffer => {
-                Self::Framebuffer(SctkOpenGLCompositorHandlerFramebuffer::new(context))
-            }
+            FlutterOpenGLTargetType::Framebuffer => Self::Framebuffer(Box::new(
+                SctkOpenGLCompositorHandlerFramebuffer::new(context),
+            )),
             FlutterOpenGLTargetType::Texture => unimplemented!(
                 "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
             ),
