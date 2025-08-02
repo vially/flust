@@ -368,7 +368,7 @@ impl EngineDownloadSource {
                 .join("engine")
                 .join("src")
                 .join("out")
-                .join(format!("linux_{}_{}", build_mode, platform))
+                .join(format!("linux_{build_mode}_{platform}"))
                 .join("engine-sdk")
                 .join("lib")
                 .join(&build.library_name),
@@ -686,7 +686,7 @@ impl CustomDeviceCommands {
 }
 
 fn download(url: &str, target: &Path) -> Result<(), Error> {
-    println!("Starting download from {}", url);
+    println!("Starting download from {url}");
     let mut file = File::create(target)?;
     let mut last_done = 0.0;
 
@@ -726,8 +726,7 @@ fn read_flutter_engine_version_from_github_tag(
     sdk_version: &FlutterSDKVersion,
 ) -> Result<FlutterEngineVersion, Error> {
     let url = format!(
-        "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{}/bin/internal/engine.version",
-        sdk_version
+        "https://raw.githubusercontent.com/flutter/flutter/refs/tags/{sdk_version}/bin/internal/engine.version"
     );
 
     Ok(reqwest::blocking::get(url)?
@@ -741,8 +740,7 @@ fn read_flutter_framework_version_from_github_tag(
     sdk_version: &FlutterSDKVersion,
 ) -> Result<FlutterFrameworkVersion, Error> {
     let url = format!(
-        "https://api.github.com/repos/flutter/flutter/git/refs/tags/{}",
-        sdk_version
+        "https://api.github.com/repos/flutter/flutter/git/refs/tags/{sdk_version}"
     );
 
     let sha = reqwest::blocking::get(url)?

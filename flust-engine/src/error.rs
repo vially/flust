@@ -19,8 +19,7 @@ impl fmt::Display for MethodArgsError {
             }
             MethodArgsError::WrongType(expected, actual) => write!(
                 f,
-                "expected value for type \"{}\", but found {:?}",
-                expected, actual
+                "expected value for type \"{expected}\", but found {actual:?}"
             ),
         }
     }
@@ -37,8 +36,8 @@ pub enum RuntimeMessageError {
 impl fmt::Display for RuntimeMessageError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RuntimeMessageError::SendError(error) => write!(f, "send error: {}", error),
-            RuntimeMessageError::RecvError(error) => write!(f, "receive error: {}", error),
+            RuntimeMessageError::SendError(error) => write!(f, "send error: {error}"),
+            RuntimeMessageError::RecvError(error) => write!(f, "receive error: {error}"),
         }
     }
 }
@@ -47,7 +46,7 @@ impl error::Error for RuntimeMessageError {}
 
 impl<T> From<SendError<T>> for RuntimeMessageError {
     fn from(error: SendError<T>) -> Self {
-        RuntimeMessageError::SendError(format!("{}", error))
+        RuntimeMessageError::SendError(format!("{error}"))
     }
 }
 
@@ -80,13 +79,13 @@ impl fmt::Display for MessageError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             MessageError::ChannelClosed => write!(f, "channel already closed"),
-            MessageError::RustError(error) => write!(f, "rust error: {}", error),
-            MessageError::MessageError(msg) => write!(f, "{}", msg),
+            MessageError::RustError(error) => write!(f, "rust error: {error}"),
+            MessageError::MessageError(msg) => write!(f, "{msg}"),
             MessageError::CustomError {
                 code,
                 message,
                 details,
-            } => write!(f, "{} ({})\ndetails: {:?}", message, code, details),
+            } => write!(f, "{message} ({code})\ndetails: {details:?}"),
             MessageError::UnspecifiedError => write!(f, "unspecified error"),
         }
     }
@@ -151,18 +150,18 @@ impl fmt::Display for MethodCallError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             MethodCallError::NotImplemented => write!(f, "method not implemented"),
-            MethodCallError::ArgParseError(err) => write!(f, "failed to parse arguments: {}", err),
+            MethodCallError::ArgParseError(err) => write!(f, "failed to parse arguments: {err}"),
             MethodCallError::DeserializeError(err) => {
-                write!(f, "failed to deserialize value: {}", err)
+                write!(f, "failed to deserialize value: {err}")
             }
             MethodCallError::ChannelClosed => write!(f, "channel already closed"),
-            MethodCallError::MessageError(msg) => write!(f, "{}", msg),
-            MethodCallError::RustError(error) => write!(f, "rust error: {}", error),
+            MethodCallError::MessageError(msg) => write!(f, "{msg}"),
+            MethodCallError::RustError(error) => write!(f, "rust error: {error}"),
             MethodCallError::CustomError {
                 code,
                 message,
                 details,
-            } => write!(f, "{} ({})\ndetails: {:?}", message, code, details),
+            } => write!(f, "{message} ({code})\ndetails: {details:?}"),
             MethodCallError::UnspecifiedError => write!(f, "unspecified error"),
         }
     }
@@ -192,7 +191,7 @@ impl From<MethodCallError> for MethodCallResult {
             },
             error => MethodCallResult::Err {
                 code: "".into(),
-                message: format!("{}", error),
+                message: format!("{error}"),
                 details: Value::Null,
             },
         }
@@ -210,7 +209,7 @@ pub enum ValueError {
 impl fmt::Display for ValueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ValueError::Message(s) => write!(f, "{}", s),
+            ValueError::Message(s) => write!(f, "{s}"),
             ValueError::WrongType => write!(f, "wrong type"),
             ValueError::NoList => write!(f, "value is not a list"),
             ValueError::NoMap => write!(f, "value is not a map"),

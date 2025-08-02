@@ -211,7 +211,7 @@ impl BindingsBuilder {
             args.push(sdk_path);
         }
 
-        args.push(format!("--target={}", target));
+        args.push(format!("--target={target}"));
 
         args
     }

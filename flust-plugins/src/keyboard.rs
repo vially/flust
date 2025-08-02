@@ -91,7 +91,7 @@ impl MethodCallHandler for Handler {
                     }
                     Err(error) => call.error(
                         "Get keyboard state failure",
-                        format!("{}", error),
+                        format!("{error}"),
                         Value::Null,
                     ),
                 };

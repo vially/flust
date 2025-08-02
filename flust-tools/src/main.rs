@@ -181,7 +181,7 @@ fn main() -> Result<(), Error> {
                                 &sdk_version.to_string(),
                                 &build_modes
                                     .iter()
-                                    .map(|link| format!("{}", link))
+                                    .map(|link| format!("{link}"))
                                     .collect::<Vec<_>>()
                                     .join(" • "),
                             ]);
@@ -190,7 +190,7 @@ fn main() -> Result<(), Error> {
 
                     let mut table = builder.build();
                     table.with(Style::blank());
-                    println!("{}", table);
+                    println!("{table}");
 
                     Ok(())
                 }
@@ -212,7 +212,7 @@ fn main() -> Result<(), Error> {
                             Ok(())
                         }
                         Err(err) => {
-                            println!("Failed to install Flutter engine library version: {}", err);
+                            println!("Failed to install Flutter engine library version: {err}");
                             Err(err)
                         }
                     }
@@ -236,8 +236,7 @@ fn main() -> Result<(), Error> {
                         }
                         Err(err) => {
                             println!(
-                                "Failed to uninstall Flutter engine library version: {}",
-                                err
+                                "Failed to uninstall Flutter engine library version: {err}"
                             );
                             Err(err)
                         }
