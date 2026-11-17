@@ -299,7 +299,7 @@ impl EngineDownloadSource {
                 };
                 format!(
                     "https://github.com/ardera/flutter-ci/releases/download/engine%2F{}/engine-{}-generic-{}.tar.xz",
-                    &build.release.engine_version, platform, build.build_mode
+                    build.release.engine_version, platform, build.build_mode
                 )
             }
             Self::MetaFlutter => {
@@ -317,10 +317,10 @@ impl EngineDownloadSource {
                     "https://github.com/meta-flutter/flutter-engine/releases/download/linux-engine-sdk-{}-{}-{}/linux-engine-sdk-{}-{}-{}.tar.gz",
                     build_mode,
                     platform,
-                    &build.release.framework_version,
+                    build.release.framework_version,
                     build_mode,
                     platform,
-                    &build.release.framework_version,
+                    build.release.framework_version,
                 )
             }
         }
