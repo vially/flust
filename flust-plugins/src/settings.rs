@@ -80,7 +80,7 @@ impl SettingsMessage<'_> {
 }
 
 impl SettingsPlugin {
-    pub fn start_message(&self) -> SettingsMessage {
+    pub fn start_message(&self) -> SettingsMessage<'_> {
         debug!("Starting to build message");
         SettingsMessage {
             plugin: self,
