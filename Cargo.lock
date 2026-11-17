@@ -1085,7 +1085,6 @@ name = "flust-glutin"
 version = "0.1.0"
 dependencies = [
  "dpi",
- "flust-engine",
  "flust-engine-api",
  "gl_generator",
  "glutin",
