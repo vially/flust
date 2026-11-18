@@ -231,6 +231,11 @@ impl SctkApplication {
             insert_timer_source(&state.loop_handle, next_task_timer);
         })?;
 
+        // Stops the engine's threads before the window they draw to, and
+        // everything else they use, is torn down. They would otherwise still
+        // be running when the process exits.
+        self.state.engine.shutdown();
+
         Ok(())
     }
 
