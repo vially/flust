@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     ffi::{c_void, CStr, CString},
     iter::zip,
+    num::NonZeroU32,
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
@@ -51,7 +52,7 @@ use wayland_client::{protocol::wl_display::WlDisplay, Connection, Proxy};
 
 use crate::keyboard::{SctkKeyEvent, SctkLogicalKey, SctkPhysicalKey};
 
-use crate::{frame_clock::FrameClock, window::SctkFlutterWindowInner};
+use crate::{egl::NonZeroU32PhysicalSize, frame_clock::FrameClock, window::SctkFlutterWindowInner};
 
 const WINDOW_FRAMEBUFFER_ID: u32 = 0;
 
@@ -132,7 +133,8 @@ impl SctkCompositorHandler {
         context: Arc<Mutex<Context>>,
         opengl_target_type: FlutterOpenGLTargetType,
     ) -> Self {
-        let opengl_compositor = SctkOpenGLCompositor::new(context, opengl_target_type);
+        let opengl_compositor =
+            SctkOpenGLCompositor::new(window.clone(), context, opengl_target_type);
 
         Self {
             window,
@@ -158,6 +160,11 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
                 layer.size.height.round() as u32,
             )
         });
+
+        if !self.opengl_compositor.can_present(&window, frame_size) {
+            trace!("frame {:?} was not drawn: not presenting it", frame_size);
+            return Ok(());
+        }
 
         window.present_frame(frame_size, || match frame_size {
             Some(_) => self.opengl_compositor.draw_opengl_view(&info),
@@ -201,6 +208,16 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
 /// `SctkFlutterWindowInner::present_frame`, with the window's context
 /// current and its lock held. The window swaps the buffers afterwards.
 trait SctkOpenGLCompositorHandler {
+    /// Whether there is a frame of this size (`None`: without content) to
+    /// present.
+    fn can_present(
+        &self,
+        _window: &SctkFlutterWindowInner,
+        _frame_size: Option<PhysicalSize<u32>>,
+    ) -> bool {
+        true
+    }
+
     /// Puts the frame into the window's framebuffer.
     fn draw_opengl_view(&self, info: &FlutterPresentViewInfo)
         -> Result<(), CompositorPresentError>;
@@ -390,16 +407,28 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
 
 #[derive(Clone)]
 struct SctkOpenGLCompositorHandlerSurface {
-    context: Arc<Mutex<Context>>,
+    window: Weak<SctkFlutterWindowInner>,
 }
 
 impl SctkOpenGLCompositorHandlerSurface {
-    pub fn new(context: Arc<Mutex<Context>>) -> Self {
-        Self { context }
+    pub fn new(window: Weak<SctkFlutterWindowInner>) -> Self {
+        Self { window }
     }
 }
 
 impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
+    fn can_present(
+        &self,
+        window: &SctkFlutterWindowInner,
+        frame_size: Option<PhysicalSize<u32>>,
+    ) -> bool {
+        // Only what the engine has drawn into the window's framebuffer: a
+        // frame that `make_current_callback` turned down is not in it, and
+        // neither is a frame without content.
+        let drawn = window.take_surface_frame();
+        drawn.is_some() && drawn == frame_size
+    }
+
     fn draw_opengl_view(
         &self,
         _info: &FlutterPresentViewInfo,
@@ -417,7 +446,20 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
             config.size.width,
             config.size.height
         );
-        let user_data = Arc::downgrade(&self.context).into_raw() as *mut std::ffi::c_void;
+        let size = PhysicalSize::<u32>::new(
+            config.size.width.round() as u32,
+            config.size.height.round() as u32,
+        )
+        .non_zero()
+        .ok_or(CompositorCreateBackingStoreError::CreateFailed(
+            "Backing store without a size".into(),
+        ))?;
+
+        let target = Box::new(SurfaceTarget {
+            window: self.window.clone(),
+            size,
+        });
+        let user_data = Box::into_raw(target) as *mut std::ffi::c_void;
 
         let surface = FlutterOpenGLSurface {
             user_data,
@@ -443,7 +485,7 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
             ));
         };
 
-        unsafe { drop(Weak::from_raw(surface.user_data as *const Mutex<Context>)) };
+        unsafe { drop(Box::from_raw(surface.user_data as *mut SurfaceTarget)) };
 
         Ok(())
     }
@@ -453,37 +495,40 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
     }
 
     fn frame_presented(&self) -> Result<(), CompositorPresentError> {
-        // TODO: Investigate if this is expected after a present.
-        if !self.context.lock().unwrap().make_not_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context not current".into(),
-            ));
-        }
-
         Ok(())
     }
 }
 
+/// User data of a backing store that is the window's surface itself: what
+/// the engine draws into it goes to the window's framebuffer.
+struct SurfaceTarget {
+    window: Weak<SctkFlutterWindowInner>,
+    /// The size of the frames the engine draws into this backing store.
+    size: PhysicalSize<NonZeroU32>,
+}
+
+/// Called before the engine draws a frame into the window's surface.
+/// Returning false cancels the frame.
 pub extern "C" fn make_current_callback(
     user_data: *mut c_void,
     _opengl_state_changed: *mut bool,
 ) -> bool {
-    trace!("make_current_callback");
-    unsafe {
-        let context = &*(user_data as *const Mutex<Context>);
-        context.lock().unwrap().make_current()
-    }
+    let target = unsafe { &*(user_data as *const SurfaceTarget) };
+    target
+        .window
+        .upgrade()
+        .is_some_and(|window| window.begin_surface_frame(target.size))
 }
 
+/// Called when the engine is done drawing into the window's surface.
 pub extern "C" fn clear_current_callback(
-    user_data: *mut c_void,
+    _user_data: *mut c_void,
     _opengl_state_changed: *mut bool,
 ) -> bool {
-    trace!("clear_current_callback");
-    unsafe {
-        let context = &*(user_data as *const Mutex<Context>);
-        context.lock().unwrap().make_not_current()
-    }
+    // The context stays current: making it current again would have Mesa
+    // pick the buffer for the next frame before the size of that frame is
+    // known. See `SctkFlutterWindowInner::present_frame`.
+    true
 }
 
 pub extern "C" fn destruction_callback(_user_data: *mut c_void) {
@@ -497,7 +542,11 @@ enum SctkOpenGLCompositor {
 }
 
 impl SctkOpenGLCompositor {
-    pub fn new(context: Arc<Mutex<Context>>, opengl_target_type: FlutterOpenGLTargetType) -> Self {
+    pub fn new(
+        window: Weak<SctkFlutterWindowInner>,
+        context: Arc<Mutex<Context>>,
+        opengl_target_type: FlutterOpenGLTargetType,
+    ) -> Self {
         match opengl_target_type {
             FlutterOpenGLTargetType::Framebuffer => Self::Framebuffer(Box::new(
                 SctkOpenGLCompositorHandlerFramebuffer::new(context),
@@ -506,13 +555,24 @@ impl SctkOpenGLCompositor {
                 "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
             ),
             FlutterOpenGLTargetType::Surface => {
-                Self::Surface(SctkOpenGLCompositorHandlerSurface::new(context))
+                Self::Surface(SctkOpenGLCompositorHandlerSurface::new(window))
             }
         }
     }
 }
 
 impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
+    fn can_present(
+        &self,
+        window: &SctkFlutterWindowInner,
+        frame_size: Option<PhysicalSize<u32>>,
+    ) -> bool {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => handler.can_present(window, frame_size),
+            SctkOpenGLCompositor::Surface(handler) => handler.can_present(window, frame_size),
+        }
+    }
+
     fn draw_opengl_view(
         &self,
         info: &FlutterPresentViewInfo,

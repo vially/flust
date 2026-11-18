@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    num::NonZeroU32,
     sync::{Arc, Mutex, RwLock},
     time::Instant,
 };
@@ -60,6 +61,10 @@ pub(crate) struct SctkFlutterWindowInner {
     /// the surface state it was drawn for and the acknowledgement of the
     /// configure it answers reach the compositor in one commit.
     sync: Mutex<SurfaceSync>,
+    /// The size of the frame the engine has drawn straight into the window's
+    /// framebuffer and not presented yet. Only used with
+    /// `FlutterOpenGLTargetType::Surface`.
+    surface_frame: Mutex<Option<PhysicalSize<u32>>>,
 }
 
 impl SctkFlutterWindowInner {
@@ -176,6 +181,45 @@ impl SctkFlutterWindowInner {
         Ok(())
     }
 
+    /// The engine is about to draw a frame of this size straight into the
+    /// window's framebuffer (`FlutterOpenGLTargetType::Surface`). Returns
+    /// false if it should not: the frame would not be shown.
+    ///
+    /// The framebuffer has to have the frame's size before the frame is
+    /// drawn, which is here. A frame that has been drawn can not be dropped
+    /// any more (it would be in the way of the next one), so whether it is
+    /// shown is decided here as well, and `present_frame` follows.
+    ///
+    /// Note: This is executed on the *render* thread.
+    pub(super) fn begin_surface_frame(&self, size: PhysicalSize<NonZeroU32>) -> bool {
+        let frame_size = PhysicalSize::new(size.width.get(), size.height.get());
+
+        let admitted = self.sync.lock().unwrap().admit(frame_size, Instant::now());
+        *self.surface_frame.lock().unwrap() = admitted.then_some(frame_size);
+        trace!(
+            "begin surface frame {:?}: admitted: {}",
+            frame_size,
+            admitted
+        );
+
+        if !admitted {
+            return false;
+        }
+
+        let mut context = self.context.lock().unwrap();
+        // Before the context is made current: see `present_frame`.
+        context.resize(size);
+        context.make_current()
+    }
+
+    /// The size of the frame that was drawn into the window's framebuffer
+    /// since the last call, if one was.
+    ///
+    /// Note: This is executed on the *render* thread.
+    pub(super) fn take_surface_frame(&self) -> Option<PhysicalSize<u32>> {
+        self.surface_frame.lock().unwrap().take()
+    }
+
     /// Note: Must be called on the *platform* thread.
     fn send_window_metrics(&self, geometry: SurfaceGeometry) {
         let Some(engine) = self.engine.upgrade() else {
@@ -269,6 +313,7 @@ impl SctkFlutterWindow {
             context,
             frame_clock,
             sync: Default::default(),
+            surface_frame: Default::default(),
             pointers: Default::default(),
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),

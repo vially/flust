@@ -208,6 +208,25 @@ impl SurfaceSync {
         (PlatformAction::Request(wanted), Some(deadline))
     }
 
+    /// Whether a frame of this size would be shown if it were presented now.
+    /// Called on the raster thread, before the engine draws a frame that
+    /// can not be dropped once it is drawn (one drawn straight into the
+    /// window's framebuffer).
+    ///
+    /// The answer holds for as long as a request is waited for: a frame
+    /// that is admitted for the request in flight gives the request that
+    /// time again.
+    pub(crate) fn admit(&mut self, size: PhysicalSize<u32>, now: Instant) -> bool {
+        if let Some(request) = self.in_flight.as_mut() {
+            if request.geometry.size == size {
+                request.deadline = Some(now + REQUEST_TIMEOUT);
+                return true;
+            }
+        }
+
+        self.committed.is_some_and(|geometry| geometry.size == size)
+    }
+
     /// The engine has a frame of this size to present (`None` for a frame
     /// without content, which has no size). Called on the raster thread,
     /// which then does what is returned before it lets go of the lock this
@@ -546,6 +565,39 @@ mod tests {
         assert_eq!(sync.engine_geometry(), Some(g(A)));
 
         assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(B)));
+    }
+
+    #[test]
+    fn admitted_frame_is_not_overtaken() {
+        let now = Instant::now();
+        let mut sync = settled(now);
+        let size = |size: (u32, u32)| PhysicalSize::new(size.0, size.1);
+
+        assert!(sync.admit(size(A), now));
+        assert!(!sync.admit(size(B), now));
+
+        sync.configure(2, g(B));
+        assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(B)));
+        sync.configure(3, g(C));
+        assert!(sync.admit(size(A), now));
+        assert!(!sync.admit(size(C), now));
+
+        // The frame for B is being drawn when the request would have run
+        // out: C waits for it.
+        let late = now + REQUEST_TIMEOUT - Duration::from_millis(1);
+        assert!(sync.admit(size(B), late));
+        assert_eq!(
+            sync.poll(now + REQUEST_TIMEOUT, true),
+            (PlatformAction::None, Some(late + REQUEST_TIMEOUT))
+        );
+        assert_eq!(
+            sync.frame(s(B)),
+            FrameAction::Commit {
+                geometry: g(B),
+                acknowledge: Some(2)
+            }
+        );
+        assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(C)));
     }
 
     #[test]
