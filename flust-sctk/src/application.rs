@@ -18,8 +18,12 @@ use parking_lot::{Mutex, RwLock};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, SurfaceData},
     delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
+    delegate_seat, delegate_shm,
+    globals::GlobalData,
     output::{OutputHandler, OutputState},
+    reexports::protocols::xdg::shell::client::{
+        xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base::XdgWmBase,
+    },
     reexports::{
         calloop::{
             self,
@@ -35,16 +39,14 @@ use smithay_client_toolkit::{
         pointer::{PointerEvent, PointerHandler, ThemeSpec},
         Capability, SeatHandler, SeatState,
     },
-    shell::xdg::{
-        window::{Window, WindowConfigure, WindowHandler},
-        XdgShell,
-    },
+    shell::xdg::XdgShell,
     shm::{Shm, ShmHandler},
 };
 use thiserror::Error;
 use tracing::{error, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
+    delegate_dispatch,
     globals::{registry_queue_init, BindError, GlobalError},
     protocol::{
         wl_keyboard::WlKeyboard,
@@ -64,6 +66,7 @@ use crate::{
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
+    toplevel::ToplevelConfigure,
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
 
@@ -472,8 +475,9 @@ delegate_compositor!(SctkApplicationState);
 delegate_output!(SctkApplicationState);
 delegate_shm!(SctkApplicationState);
 
-delegate_xdg_shell!(SctkApplicationState);
-delegate_xdg_window!(SctkApplicationState);
+// `XdgShell` answers `xdg_wm_base.ping`. The toplevel's own objects are
+// handled in `toplevel.rs`.
+delegate_dispatch!(SctkApplicationState: [XdgWmBase: GlobalData] => XdgShell);
 
 delegate_seat!(SctkApplicationState);
 delegate_pointer!(SctkApplicationState);
@@ -859,39 +863,47 @@ impl OutputHandler for SctkApplicationState {
     }
 }
 
-impl WindowHandler for SctkApplicationState {
-    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
+impl SctkApplicationState {
+    pub(crate) fn toplevel_close_requested(&mut self, _xdg_toplevel: &XdgToplevel) {
         self.loop_signal.stop();
     }
 
-    fn configure(
+    pub(crate) fn toplevel_configured(
         &mut self,
-        conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        window: &Window,
-        configure: WindowConfigure,
+        xdg_surface: &XdgSurface,
+        configure: ToplevelConfigure,
         serial: u32,
     ) {
-        let xdg_toplevel_id = window.xdg_toplevel().id();
-        trace!(
-            "[{}] configure: {}x{}",
-            xdg_toplevel_id,
-            configure.new_size.0.map_or(0, |v| v.get()),
-            configure.new_size.1.map_or(0, |v| v.get()),
-        );
+        // Acknowledged at once, as SCTK's `Window` did.
+        xdg_surface.ack_configure(serial);
 
-        self.maybe_update_lifecycle_state(xdg_toplevel_id.clone(), configure.is_activated());
-
-        let Some(window) = self.windows.get_mut(&xdg_toplevel_id) else {
+        let Some(xdg_toplevel_id) = self
+            .windows
+            .iter()
+            .find(|(_, window)| window.xdg_surface_id() == xdg_surface.id())
+            .map(|(id, _)| id.clone())
+        else {
             warn!(
                 "[{}] ignoring `configure` event for unknown flutter window",
-                xdg_toplevel_id,
+                xdg_surface.id(),
             );
             return;
         };
 
+        trace!(
+            "[{}] configure: {}x{}",
+            xdg_toplevel_id,
+            configure.size.map_or(0, |size| size.0.get()),
+            configure.size.map_or(0, |size| size.1.get()),
+        );
+
+        self.maybe_update_lifecycle_state(xdg_toplevel_id.clone(), configure.activated);
+
         if self.startup_synchronizer.is_engine_running {
-            window.configure(conn, configure, serial);
+            let conn = self.conn.clone();
+            if let Some(window) = self.windows.get_mut(&xdg_toplevel_id) {
+                window.configure(&conn, configure, serial);
+            }
         } else {
             trace!("Skipped sending window metrics event because engine is not running yet");
             self.startup_synchronizer
@@ -965,7 +977,7 @@ fn insert_timer_source<Data>(handle: &LoopHandle<'static, Data>, timer: Option<T
 // [1]: https://github.com/flutter/flutter/issues/144806
 #[derive(Default)]
 struct ImplicitWindowStartupSynchronizer {
-    pending_configure: Option<(WindowConfigure, u32)>,
+    pending_configure: Option<(ToplevelConfigure, u32)>,
     is_engine_running: bool,
 }
 
@@ -974,7 +986,7 @@ impl ImplicitWindowStartupSynchronizer {
         Default::default()
     }
 
-    fn set_pending_configure(&mut self, configure: WindowConfigure, serial: u32) {
+    fn set_pending_configure(&mut self, configure: ToplevelConfigure, serial: u32) {
         self.pending_configure = Some((configure, serial));
     }
 }

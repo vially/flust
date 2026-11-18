@@ -17,13 +17,7 @@ use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
     seat::pointer::{PointerEvent, PointerEventKind},
-    shell::{
-        xdg::{
-            window::{Window, WindowConfigure, WindowDecorations},
-            XdgShell,
-        },
-        WaylandSurface,
-    },
+    shell::xdg::XdgShell,
 };
 use thiserror::Error;
 use tracing::{error, trace, warn};
@@ -38,6 +32,7 @@ use crate::{
     egl::CreateWaylandContextError,
     handler::{SctkCompositorHandler, SctkOpenGLHandler, SctkVsyncHandler},
     pointer::SctkPointerEvent,
+    toplevel::{Toplevel, ToplevelConfigure},
 };
 use crate::{
     egl::{FlutterEGLContextWaylandExt, NonZeroU32PhysicalSize},
@@ -61,7 +56,7 @@ pub(crate) enum ResizeState {
 
 pub(crate) struct SctkFlutterWindowInner {
     id: FlutterViewId,
-    window: Window,
+    window: Toplevel,
     engine: FlutterEngineWeakRef,
     current_size: RwLock<Option<Size>>,
     current_scale_factor: RwLock<f64>,
@@ -221,18 +216,20 @@ impl SctkFlutterWindow {
         config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
         let surface = compositor_state.create_surface(qh);
-        let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, qh);
+        let window = Toplevel::new(xdg_shell_state, surface, qh);
 
         if let Some(title) = attributes.title {
-            window.set_title(title);
+            window.xdg_toplevel().set_title(title);
         }
 
         if let Some(app_id) = attributes.app_id {
-            window.set_app_id(app_id);
+            window.xdg_toplevel().set_app_id(app_id);
         }
 
-        window.set_min_size(Some((256, 256)));
-        window.commit();
+        window.xdg_toplevel().set_min_size(256, 256);
+        // The initial commit, without a buffer: the compositor answers it
+        // with the first configure.
+        window.wl_surface().commit();
 
         let default_size = attributes
             .inner_size
@@ -279,6 +276,10 @@ impl SctkFlutterWindow {
 
     pub fn wl_surface(&self) -> WlSurface {
         self.inner.window.wl_surface().clone()
+    }
+
+    pub(crate) fn xdg_surface_id(&self) -> ObjectId {
+        self.inner.window.xdg_surface().id()
     }
 
     pub fn wl_surface_id(&self) -> ObjectId {
@@ -343,13 +344,14 @@ impl SctkFlutterWindow {
     pub(crate) fn configure(
         &mut self,
         _conn: &Connection,
-        configure: WindowConfigure,
+        configure: ToplevelConfigure,
         _serial: u32,
     ) {
         let _resize_mutex = self.inner.resize_mutex.lock().unwrap();
 
-        let new_logical_size = WindowLogicalSize::try_from(configure.new_size)
-            .map(|size| size.into())
+        let new_logical_size = configure
+            .size
+            .map(|(width, height)| LogicalSize::new(width.get(), height.get()).into())
             .unwrap_or(self.inner.default_size);
 
         self.inner.store_current_size(new_logical_size);
@@ -463,32 +465,4 @@ impl SctkFlutterWindow {
 pub enum SctkFlutterWindowCreateError {
     #[error("Failed to create Wayland EGL context")]
     CreateWaylandContextError(#[from] CreateWaylandContextError),
-}
-
-type ConfigureSize = (Option<NonZeroU32>, Option<NonZeroU32>);
-
-struct WindowLogicalSize(LogicalSize<u32>);
-
-impl TryFrom<ConfigureSize> for WindowLogicalSize {
-    type Error = SizeConversionError;
-
-    fn try_from(value: ConfigureSize) -> Result<Self, Self::Error> {
-        let (Some(width), Some(height)) = value else {
-            return Err(SizeConversionError::Invalid);
-        };
-
-        Ok(Self(LogicalSize::new(width.get(), height.get())))
-    }
-}
-
-impl From<WindowLogicalSize> for Size {
-    fn from(val: WindowLogicalSize) -> Self {
-        val.0.into()
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum SizeConversionError {
-    #[error("Invalid size")]
-    Invalid,
 }
