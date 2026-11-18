@@ -1,5 +1,6 @@
 pub mod application;
 mod egl;
+mod frame_clock;
 mod handler;
 mod key_mapping_gen;
 mod keyboard;

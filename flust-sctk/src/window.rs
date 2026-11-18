@@ -10,7 +10,7 @@ use flust_engine::{
     view::FlutterView,
     FlutterEngineWeakRef,
 };
-use flust_engine_sys::FlutterEngineDisplayId;
+use flust_engine_sys::{FlutterEngineDisplayId, FlutterEngineGetCurrentTime};
 use flust_glutin::builder::FlutterEGLContext;
 use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use smithay_client_toolkit::{
@@ -30,7 +30,8 @@ use wayland_client::{
 use crate::{
     application::SctkApplicationState,
     egl::CreateWaylandContextError,
-    handler::{SctkCompositorHandler, SctkOpenGLHandler, SctkVsyncHandler},
+    frame_clock::FrameClock,
+    handler::{SctkCompositorHandler, SctkOpenGLHandler},
     pointer::SctkPointerEvent,
     toplevel::{Toplevel, ToplevelConfigure},
 };
@@ -64,7 +65,8 @@ pub(crate) struct SctkFlutterWindowInner {
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     opengl_handler: SctkOpenGLHandler,
     compositor_handler: SctkCompositorHandler,
-    vsync_handler: Arc<parking_lot::Mutex<SctkVsyncHandler>>,
+    frame_clock: FrameClock,
+    qh: QueueHandle<SctkApplicationState>,
     resize_mutex: Mutex<()>,
     resize_status: RwLock<ResizeState>,
     pending_size: RwLock<Option<PhysicalSize<NonZeroU32>>>,
@@ -162,12 +164,22 @@ impl SctkFlutterWindowInner {
         true
     }
 
+    /// Requests the `wl_surface.frame` callback that the engine's next vsync
+    /// comes from: see `FrameClock`. The request is committed by the buffer
+    /// swap that follows, together with the frame.
+    ///
+    /// Note: This is executed on the *render* thread.
+    pub(super) fn request_frame_callback(&self) {
+        let surface = self.window.wl_surface();
+        surface.frame(&self.qh, surface.clone());
+        self.frame_clock
+            .frame_callback_requested(unsafe { FlutterEngineGetCurrentTime() });
+    }
+
     // Note: This callback is executed on the *render* thread.
     pub(super) fn on_frame_presented(&self) {
         trace!("window frame presented");
         let _resize_mutex = self.resize_mutex.lock().unwrap();
-
-        self.vsync_handler.lock().notify_present();
 
         let resize_status = self.load_resize_status();
         match resize_status {
@@ -206,12 +218,12 @@ pub struct SctkFlutterWindow {
 }
 
 impl SctkFlutterWindow {
-    pub fn new(
+    pub(crate) fn new(
         engine: FlutterEngineWeakRef,
         qh: &QueueHandle<SctkApplicationState>,
         compositor_state: &CompositorState,
         xdg_shell_state: &XdgShell,
-        vsync_handler: Arc<parking_lot::Mutex<SctkVsyncHandler>>,
+        frame_clock: FrameClock,
         attributes: ApplicationAttributes,
         config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
@@ -257,7 +269,8 @@ impl SctkFlutterWindow {
                 context,
                 config.opengl_target_type,
             ),
-            vsync_handler,
+            frame_clock,
+            qh: qh.clone(),
             resize_mutex: Default::default(),
             resize_status: Default::default(),
             pointers: Default::default(),

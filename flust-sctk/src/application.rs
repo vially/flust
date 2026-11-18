@@ -1,4 +1,10 @@
-use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use calloop::futures::{Executor, Scheduler};
 use flust_engine::{
@@ -7,6 +13,7 @@ use flust_engine::{
     plugins::{Plugin, PluginRegistrar},
     CreateError, FlutterEngine,
 };
+use flust_engine_sys::FlutterEngineGetCurrentTime;
 use flust_plugins::{
     isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
     localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
@@ -59,10 +66,11 @@ use wayland_client::{
 };
 
 use crate::{
+    frame_clock::FrameClock,
     handler::{
-        get_flutter_frame_time_nanos, SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler,
-        SctkPlatformHandler, SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler,
-        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler, SctkPlatformHandler,
+        SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler, SctkVsyncHandler,
+        FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
@@ -94,7 +102,7 @@ pub struct SctkApplicationState {
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
     keyboard_handler: Arc<Mutex<SctkKeyboardHandler>>,
-    vsync_handler: Arc<Mutex<SctkVsyncHandler>>,
+    frame_clock: FrameClock,
     async_scheduler: Scheduler<SctkAsyncResult>,
     modifiers: Modifiers,
 }
@@ -128,11 +136,12 @@ impl SctkApplication {
         let shm_state = Shm::bind(&globals, &qh)?;
 
         let platform_task_handler = Arc::new(SctkPlatformTaskHandler::new(event_loop.get_signal()));
-        let vsync_handler = Arc::new(Mutex::new(SctkVsyncHandler::new(qh.clone())));
+        let frame_clock = FrameClock::new(event_loop.get_signal());
+        let vsync_handler = Arc::new(Mutex::new(SctkVsyncHandler::new(frame_clock.clone())));
 
         let engine = FlutterEngineBuilder::new()
             .with_platform_handler(platform_task_handler)
-            .with_vsync_handler(vsync_handler.clone())
+            .with_vsync_handler(vsync_handler)
             .with_aot_library_path(attributes.aot_library_path.clone())
             .with_asset_path(attributes.assets_path.clone())
             .with_icu_data_path(attributes.icu_data_path.clone())
@@ -146,16 +155,12 @@ impl SctkApplication {
             &qh,
             &compositor_state,
             &xdg_shell_state,
-            vsync_handler.clone(),
+            frame_clock.clone(),
             attributes,
             config,
         )?;
 
         engine.add_view(implicit_window.create_flutter_view());
-
-        vsync_handler
-            .lock()
-            .init(engine.downgrade(), implicit_window.wl_surface());
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
         let platform_handler =
@@ -199,7 +204,7 @@ impl SctkApplication {
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
             keyboard_handler,
-            vsync_handler,
+            frame_clock,
             async_scheduler,
             modifiers: Modifiers::default(),
         };
@@ -227,12 +232,18 @@ impl SctkApplication {
             })?;
 
         while self.state.running {
-            // Engine tasks wait for a point in time, and the event loop
-            // sleeps until the earliest of them is due. Other threads wake
-            // it up when they have posted a task for this one.
+            // Everything that waits for a point in time (engine tasks, the
+            // frame clock) is polled here, and the event loop sleeps until
+            // the earliest of them is due. Other threads wake it up when
+            // they have something for this one.
             let next_task = self.state.engine.execute_platform_tasks();
-            let timeout =
-                next_task.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+            let next_poll = self.state.poll();
+
+            let timeout = [next_task, next_poll]
+                .into_iter()
+                .flatten()
+                .min()
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
             self.event_loop.dispatch(timeout, &mut self.state)?;
         }
@@ -292,6 +303,30 @@ impl SctkApplicationState {
 
     fn get_implicit_window_mut(&mut self) -> Option<&mut SctkFlutterWindow> {
         self.windows.iter_mut().last().map(|(_key, window)| window)
+    }
+
+    /// Returns the engine's vsync baton if that is due. Returns when to call
+    /// this again, if nothing else happens before then.
+    fn poll(&mut self) -> Option<Instant> {
+        let frame_interval = self.get_frame_interval_in_nanos();
+        let now = unsafe { FlutterEngineGetCurrentTime() };
+        let (baton, deadline) = self.frame_clock.poll(now, frame_interval);
+
+        if let Some(baton) = baton {
+            self.engine.on_vsync(baton, now, now + frame_interval);
+        }
+
+        deadline.map(|deadline| Instant::now() + Duration::from_nanos(deadline.saturating_sub(now)))
+    }
+
+    /// The frame interval of the implicit window: of the fastest output it
+    /// is on, or 60Hz as long as it is on none.
+    fn get_frame_interval_in_nanos(&self) -> u64 {
+        self.windows
+            .values()
+            .last()
+            .and_then(|window| self.get_surface_frame_interval_in_nanos(&window.wl_surface()))
+            .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS)
     }
 
     fn maybe_send_startup_pending_configure(&mut self) {
@@ -542,23 +577,13 @@ impl CompositorHandler for SctkApplicationState {
         surface: &WlSurface,
         time: u32,
     ) {
-        let baton = self.vsync_handler.lock().load_pending_baton();
-        trace!(
-            "[{} baton: {} time: {}] frame callback",
-            surface.id(),
-            baton,
-            time
-        );
+        trace!("[{} time: {}] frame callback", surface.id(), time);
 
-        let frame_interval = self
-            .get_surface_frame_interval_in_nanos(surface)
-            .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS);
-
-        let (frame_start_time_nanos, frame_target_time_nanos) =
-            get_flutter_frame_time_nanos(frame_interval);
-
-        self.engine
-            .on_vsync(baton, frame_start_time_nanos, frame_target_time_nanos);
+        // The baton is returned by `poll`, after the rest of what the
+        // compositor sent with this callback.
+        let now = unsafe { FlutterEngineGetCurrentTime() };
+        let frame_interval = self.get_frame_interval_in_nanos();
+        self.frame_clock.frame_callback_done(now, frame_interval);
     }
 
     fn surface_enter(

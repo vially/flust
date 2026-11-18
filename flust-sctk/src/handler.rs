@@ -3,10 +3,7 @@ use std::{
     ffi::{c_void, CStr, CString},
     iter::zip,
     num::NonZeroU32,
-    sync::{
-        atomic::{AtomicBool, AtomicIsize, Ordering},
-        Arc, Mutex, RwLock, Weak,
-    },
+    sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
 
@@ -24,7 +21,7 @@ use flust_engine::{
         FlutterOpenGLSurface, FlutterOpenGLTargetType, FlutterPhysicalKey, FlutterPresentViewInfo,
     },
     tasks::TaskRunnerHandler,
-    FlutterEngineWeakRef, FlutterVsyncHandler,
+    FlutterVsyncHandler,
 };
 use flust_engine_api::FlutterOpenGLHandler;
 use flust_engine_sys::FlutterEngineGetCurrentTime;
@@ -49,19 +46,13 @@ use smithay_client_toolkit::{
 };
 use smithay_clipboard::Clipboard;
 use thiserror::Error;
-use tracing::{error, trace, warn};
+use tracing::{trace, warn};
 use wayland_backend::client::ObjectId;
-use wayland_client::{
-    protocol::{wl_display::WlDisplay, wl_surface::WlSurface},
-    Connection, Proxy, QueueHandle,
-};
+use wayland_client::{protocol::wl_display::WlDisplay, Connection, Proxy};
 
-use crate::{
-    application::SctkApplicationState,
-    keyboard::{SctkKeyEvent, SctkLogicalKey, SctkPhysicalKey},
-};
+use crate::keyboard::{SctkKeyEvent, SctkLogicalKey, SctkPhysicalKey};
 
-use crate::window::SctkFlutterWindowInner;
+use crate::{frame_clock::FrameClock, window::SctkFlutterWindowInner};
 
 const WINDOW_FRAMEBUFFER_ID: u32 = 0;
 
@@ -113,6 +104,8 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
         {
             return false;
         }
+
+        self.window.upgrade().unwrap().request_frame_callback();
 
         if !self.context.lock().unwrap().present() {
             return false;
@@ -176,6 +169,7 @@ impl SctkCompositorHandler {
             ));
         }
 
+        window.request_frame_callback();
         self.opengl_compositor.clear()?;
 
         window.on_frame_presented();
@@ -208,6 +202,7 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
             ));
         }
 
+        window.request_frame_callback();
         self.opengl_compositor.present_opengl_view(info)?;
 
         window.on_frame_presented();
@@ -628,89 +623,20 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
 // upstream:
 // https://github.com/flutter/flutter/issues/142845#issuecomment-1955345110
 pub struct SctkVsyncHandler {
-    qh: QueueHandle<SctkApplicationState>,
-    engine: FlutterEngineWeakRef,
-    implicit_window_surface: Option<WlSurface>,
-    pending_baton: AtomicIsize,
-    can_schedule_frames: AtomicBool,
+    frame_clock: FrameClock,
 }
 
 impl SctkVsyncHandler {
-    pub(crate) fn new(qh: QueueHandle<SctkApplicationState>) -> Self {
-        Self {
-            qh,
-            engine: Default::default(),
-            implicit_window_surface: Default::default(),
-            pending_baton: Default::default(),
-            can_schedule_frames: Default::default(),
-        }
-    }
-
-    pub(crate) fn init(&mut self, engine: FlutterEngineWeakRef, surface: WlSurface) {
-        if self.engine.upgrade().is_some() {
-            error!("Vsync handler engine was already initialized");
-        }
-        self.engine = engine;
-
-        if self.implicit_window_surface.is_some() {
-            error!("Vsync handler surface was already initialized");
-        }
-        self.implicit_window_surface = Some(surface)
-    }
-
-    pub(crate) fn load_pending_baton(&mut self) -> isize {
-        self.pending_baton.load(Ordering::Relaxed)
-    }
-
-    pub(crate) fn notify_present(&self) {
-        self.can_schedule_frames.store(true, Ordering::Relaxed);
+    pub(crate) fn new(frame_clock: FrameClock) -> Self {
+        Self { frame_clock }
     }
 }
 
 impl FlutterVsyncHandler for SctkVsyncHandler {
     // Note: This callback is executed on an internal engine-managed thread.
     fn request_frame_callback(&self, baton: isize) {
-        trace!("[baton: {}] requesting frame callback", baton);
-
-        self.pending_baton.store(baton, Ordering::Relaxed);
-
-        let Some(engine) = self.engine.upgrade() else {
-            error!("Engine upgrade failed while requesting frame callback");
-            return;
-        };
-
-        // Note: Frame callbacks do not fire for unmapped surfaces on Wayland.
-        // Therefore, pass back the `baton` to `FlutterEngineOnVsync` directly
-        // until the surface is mapped (e.g.: until the first `present()`).
-        let can_schedule_frames = self.can_schedule_frames.load(Ordering::Relaxed);
-        if !can_schedule_frames {
-            engine.run_on_platform_thread(move |engine| {
-                trace!(
-                    "[baton: {}] frames can not be scheduled yet: returning baton to engine",
-                    baton
-                );
-
-                // Once the surface is mapped, the `wl_output`'s refresh rate
-                // will be used for determining the frame interval. But until
-                // then, 60hz seems like a reasonable default.
-                let (frame_start_time_nanos, frame_target_time_nanos) =
-                    get_flutter_frame_time_nanos(FRAME_INTERVAL_60_HZ_IN_NANOS);
-                engine.on_vsync(baton, frame_start_time_nanos, frame_target_time_nanos);
-            });
-            return;
-        }
-
-        let Some(surface) = self.implicit_window_surface.clone() else {
-            error!("Missing window surface while requesting frame callback");
-            return;
-        };
-
-        let qh = self.qh.clone();
-
-        engine.run_on_platform_thread(move |_engine| {
-            surface.frame(&qh, surface.clone());
-            surface.commit();
-        });
+        trace!("[baton: {}] vsync requested", baton);
+        self.frame_clock.request_vsync(baton);
     }
 }
 
@@ -1001,14 +927,6 @@ impl KeyboardStateHandler for SctkKeyboardHandler {
 
         Ok(state)
     }
-}
-
-pub(crate) fn get_flutter_frame_time_nanos(frame_interval: u64) -> (u64, u64) {
-    let current_time = unsafe { FlutterEngineGetCurrentTime() };
-    let frame_start_time_nanos = current_time;
-    let frame_target_time_nanos = frame_start_time_nanos + frame_interval;
-
-    (frame_start_time_nanos, frame_target_time_nanos)
 }
 
 pub type SctkAsyncResult = Result<(), SctkAsyncError>;
