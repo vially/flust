@@ -50,6 +50,10 @@ steps:
 
 analyze:
   - run: python3 ../analyzers/probe_frames.py
-  - run: python3 ../analyzers/probe_cadence.py
+  # Sway shows a window's saved content while it waits for the frame that
+  # answers a resize, so a frame of the old size committed in that time is
+  # never displayed. That costs up to one frame per step of the drag, which
+  # no app can avoid: with these drags, 4 to 6% (Flutter's GTK embedder: 26%).
+  - run: python3 ../analyzers/probe_cadence.py --max-dropped 10
   - run: python3 ../analyzers/protocol.py
   - run: python3 ../analyzers/app_log.py

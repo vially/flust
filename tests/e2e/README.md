@@ -12,8 +12,9 @@ your own desktop session.
 
 Most of them were written for
 [the resize issue](https://forge.lab.vially.dev/vially/flust/issues/1).
-They describe what a Flutter embedder should do, so **Flust fails them
-today**: see [Results](#results).
+They describe what a Flutter embedder should do. Flust failed all of them
+before that issue was worked on and passes all of them now: see
+[Results](#results).
 
 ## Directory structure
 
@@ -50,6 +51,8 @@ Then, from the repository root:
 ```sh
 tests/e2e/run.py                      # every probe scenario, one line each
 tests/e2e/run.py drag-edges steps     # some of them
+tests/e2e/run.py --target surface     # all of them, with the other render target
+tests/e2e/run.py --repeat 5 storm     # five times, to catch what is rare
 
 waytape run tests/e2e/scenarios/drag-edges.yaml       # one, in full
 waytape check tests/e2e/scenarios/*.yaml              # validate, don't run
@@ -62,9 +65,16 @@ its verdict. The contact sheets are in `sheets/`, the frames in `frames/`,
 and `waytape frames <run> --range 37-48 --zoom` writes a closer look at a
 range of them.
 
-To render straight into the window surface instead of a framebuffer
-(`FlutterOpenGLTargetType::Surface`), add `--env PROBE_TARGET=surface` to
-a `waytape run`.
+Flust can have the engine render into a framebuffer that it then copies
+to the window (`FlutterOpenGLTargetType::Framebuffer`, the default here),
+or straight into the window's surface (`Surface`). The two take different
+paths through a resize, so run both: `--target surface` does the second,
+into `.waytape/runs/<scenario>-surface`. With `waytape run`, that is
+`--env PROBE_TARGET=surface`.
+
+To see what the app did in a run, add `--env
+RUST_LOG=info,flust_sctk=trace` to a `waytape run`: `app.log` then has
+Flust's decisions between the lines of the protocol trace.
 
 ### The reference
 
@@ -121,6 +131,7 @@ For the probe app:
 | `input` | Taps land where the pointer is after resizes |
 | `hidden` | The window is hidden, resized while hidden, and shown again |
 | `scale` | Startup, taps and resizes on an output with scale 2 |
+| `scale-change` | The output's scale changes while the app runs, to 2 and back |
 | `close` | Closing the window in the middle of a resize |
 
 For the template app (`flust-app-template`, built with `cargo build`
@@ -138,7 +149,7 @@ app's surface belongs exactly inside that border.
 
 | Analyzer | Fails when |
 |---|---|
-| `probe_frames.py` | In any displayed frame, the app's picture is not at the window's position and size, or not all of it is there. Reports `size`, `offset`, `damaged`, `no-content` per frame in `probe-frames.tsv` |
+| `probe_frames.py` | In any displayed frame, the app's picture is not at the window's position and size, or not all of it is there. Reports `size`, `offset`, `damaged`, `no-content` per frame in `probe-frames.tsv`. `--scale` and `--scale-from` tell it the output's scale |
 | `probe_cadence.py` | While animating: the picture stands still for more than 100 ms, more than 5% of the frames the app painted were never displayed, or frames are displayed out of order |
 | `protocol.py` | The app answers a configure with a commit that has no buffer of the configured size, commits a buffer that does not fit the buffer scale, commits buffers faster than the output refreshes, or gets a protocol error. Reads the `WAYLAND_DEBUG` trace in `app.log` |
 | `app_log.py` | The app logs a warning, an error or a panic |
@@ -150,58 +161,66 @@ and are not checked by the `probe_*` analyzers.
 
 ## Results
 
-On 2026-11-18, Flust at `8b3fe3b` and Flutter 3.47.9, both in debug mode.
-"Frames" is displayed frames whose picture did not match the window, of
-those checked. "Protocol" is the number of violations.
+On 2026-11-18, with Flutter 3.47.9, everything in debug mode. "Before" is
+Flust at `8b3fe3b`, before the resize handling was reworked. "Frames" is
+displayed frames whose picture did not match the window, of those checked.
+"Protocol" is the number of violations.
 
-| Scenario | Flust: frames | Flust: protocol | Flust: also | Reference |
-|---|---|---|---|---|
-| `startup` | 0 of 1 | 1 | | passes |
-| `drag-edges` | 857 of 940 | 881 | 20 warnings | passes |
-| `drag-speeds` | 492 of 543 | 507 | 11 warnings | passes |
-| `drag-animated` | 361 of 679 | 384 | 84% of frames dropped, 273 ms stall | frames and protocol pass; 26% dropped, 199 ms stall |
-| `steps` | 8 of 32 | 9 | | passes |
-| `storm` | 13 of 29 | 20 | 1 warning | passes |
-| `states` | 6 of 23 | 7 | | passes |
-| `input` | 58 of 72 | 63 | 4 warnings; every tap lands | passes |
-| `hidden` | 1 of 251 | 3 | | passes |
-| `scale` | 94 of 110 | 98 | 1 warning | passes |
-| `close` | 1 of 63 | 2 | 1 error at exit; exits with 0 | passes |
+| Scenario | Before: frames | Before: protocol | Now: frames | Now: protocol | Reference |
+|---|---|---|---|---|---|
+| `startup` | 0 of 1 | 1 | 0 of 1 | 0 | passes |
+| `drag-edges` | 857 of 940 | 881 | 0 of 990 | 0 | passes |
+| `drag-speeds` | 492 of 543 | 507 | 0 of 558 | 0 | passes |
+| `drag-animated` | 361 of 679 | 384 | 0 of 735 | 0 | frames and protocol pass |
+| `steps` | 8 of 32 | 9 | 0 of 16 | 0 | passes |
+| `storm` | 13 of 29 | 20 | 0 of 28 | 0 | passes |
+| `states` | 6 of 23 | 7 | 0 of 12 | 0 | passes |
+| `input` | 58 of 72 | 63 | 0 of 66 | 0 | passes |
+| `hidden` | 1 of 251 | 3 | 0 of 246 | 0 | passes |
+| `scale` | 94 of 110 | 98 | 0 of 125 | 0 | passes |
+| `scale-change` | | | 2 of 10 (4 allowed) | 0 | not run |
+| `close` | 1 of 63 | 2 | 0 of 61 | 0 | passes |
 
-What that shows about Flust, in the terms of the issue:
+All twelve pass, with both render targets, and the app logs no warnings or
+errors in any of them (before: in at least six). The animation in `drag-animated`:
 
-- **Configures are answered with stale content** (finding 2). Nearly every
-  configure is acknowledged and then committed with no new buffer, by the
-  commit that requests the frame callback. Sway takes that as the answer,
-  applies the new window size, and displays the old buffer in it: the
-  `size` frames. During a drag the picture is one size behind its window
-  in almost every frame. The reference commits a buffer of the configured
-  size for every configure it answers, and sway never has to show a
-  mismatch.
-- **Frames are thrown away** (finding 1). In `drag-animated` the app
-  paints, and commits buffers for, 500 to 1000 frames in some seconds of
-  a drag, on a 60 Hz output: `protocol.py` reports the pacing, and
-  `probe_cadence.py` the 84% that were never displayed. In `drag-edges`,
-  where the app paints only what a resize asks for, the picture stands
-  still for up to 114 ms at a time during a drag (the reference: 33 ms).
-- **A hidden window stops** (finding 4). In `hidden` no buffer is
-  committed while the window is on another workspace, and the resize sent
-  meanwhile is applied 2 s later, one frame after the window is back.
-- **The scale is committed without a buffer for it** (finding 2):
-  `scale`, at startup.
-- `flust_sctk::window` logs "A frame of the wrong size might have been
-  presented after a resize was started" in every drag scenario (finding
-  3).
+| | Before | Now | Reference |
+|---|---|---|---|
+| Painted frames never displayed | 84% | 4 to 6% | 26% |
+| Longest the picture stood still | 273 ms | 33 to 50 ms | 199 ms |
 
-What it does not show:
+The "now" numbers are of one run of the suite, and those of the animation
+of the ten runs made while it was worked on. During a drag, a configure is
+answered with a buffer of its size after 16 ms (median) and 26 ms at worst.
 
-- Frames that are shifted vertically or copied into a buffer of another
-  size (finding 3) would be reported as `damaged`. None were, in these
-  runs on sway.
-- The reference fails `probe_cadence.py` in `drag-animated` too: it halves
-  its frame rate while the window grows. The limits are what an embedder
-  should manage, and nothing has been seen to pass them yet. They are
-  `--max-stall-ms` and `--max-dropped` in the scenario's `analyze` entry.
+What the suite found on the way, beyond what the issue describes:
+
+- **Sway waits for one particular configure.** It holds a resize back
+  until a commit acknowledges exactly the configure it sent for it, and
+  shows the window's old content for up to 200 ms otherwise. xdg-shell
+  lets a client acknowledge only the last of several configures, but then
+  the end of every drag, where sway sends three for the same size, stalls
+  for those 200 ms. That is the 199 ms of the reference, which
+  acknowledges what it has received when it commits. Flust acknowledges
+  each configure with a commit of its own.
+- **Sway sends a frame callback right after every commit it does not
+  show**, which is every commit while it holds a resize back. Taken as a
+  vsync, that made Flust draw several hundred frames a second.
+- **Mesa picks the buffer for a frame when the context is made current**,
+  if it was not current before, and not only when the frame is first
+  drawn to. The window's size has to be set before that, or it takes
+  effect a frame late.
+
+What is left:
+
+- The frames `drag-animated` still loses are frames of the old size that
+  Flust commits while sway holds a resize back and shows the old content.
+  That is up to one per step of the drag. `--max-dropped` is 10 there for
+  that reason; the default of 5 is what an app that is not being resized
+  should stay under.
+- In `scale-change`, the frame in which the output's scale changes shows
+  the app's old buffer at the new scale. Only the compositor could avoid
+  that.
 
 ## Writing a scenario
 
@@ -225,8 +244,9 @@ reference as well.
   (it holds the new window size back until the client commits for it, or a
   timeout passes). Other compositors may behave differently, so a clean
   run here does not prove a resize is clean everywhere.
-- The output is 60Hz. Fractional scales and scale changes while the app
-  runs are not covered.
+- The output is 60Hz. Fractional scales are not covered.
+- waytape places the pointer by the scale the session started with, so
+  `scale-change` has no taps or drags after the change.
 - Times are when waytape received a frame. They are good for spotting
   stalls of several frames, not for measuring latency.
 - `window_fill.py` does not detect content that is offset, stretched or
