@@ -1,0 +1,65 @@
+# Changes of window state, each of which is a resize that does not come
+# from a drag: fullscreen and back, tiled and back.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - wait: stable
+  - mark: fullscreen
+  - fullscreen: true
+  - wait: { for: window, fullscreen: true }
+  - wait: stable
+  - screenshot: fullscreen
+  - mark: windowed
+  - fullscreen: false
+  - wait: { for: window, size: 624x464 }
+  - wait: stable
+  - screenshot: windowed
+  - mark: tiled
+  - floating: false
+  - wait: { for: window, floating: false }
+  - wait: stable
+  - screenshot: tiled
+  - mark: floating
+  - floating: true
+  - wait: { for: window, floating: true }
+  - wait: stable
+  - screenshot: floating
+  - mark: fullscreen again
+  - fullscreen: true
+  - wait: stable
+  - fullscreen: false
+  - wait: stable
+  - screenshot: end
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

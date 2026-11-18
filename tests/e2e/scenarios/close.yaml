@@ -1,0 +1,46 @@
+# Close the window in the middle of a resize, while the app is animating.
+# It has to exit cleanly.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+    PROBE_ANIMATE: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - sleep: 1s
+  - mark: resize and close
+  - resize: 800x600
+  - resize: 500x400
+  - close
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

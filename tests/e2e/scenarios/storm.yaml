@@ -1,0 +1,89 @@
+# Resizes that arrive faster than the app can draw: back to back, and then
+# one every other frame. The app may skip sizes, but what it shows has to
+# be right for the window at every moment, and it has to end at the last
+# size.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - wait: stable
+  - mark: storm
+  - resize: 784x584
+  - resize: 485x385
+  - resize: 886x286
+  - resize: 303x603
+  - resize: 788x588
+  - resize: 489x389
+  - resize: 890x290
+  - resize: 307x607
+  - resize: 792x592
+  - resize: 493x393
+  - resize: 894x294
+  - resize: 311x611
+  - resize: 624x464
+  - mark: settled
+  - wait: { for: window, size: 624x464 }
+  - wait: stable
+  - screenshot: end
+  - mark: paced storm
+  - resize: 784x584
+  - sleep: 30ms
+  - resize: 485x385
+  - sleep: 30ms
+  - resize: 886x286
+  - sleep: 30ms
+  - resize: 303x603
+  - sleep: 30ms
+  - resize: 788x588
+  - sleep: 30ms
+  - resize: 489x389
+  - sleep: 30ms
+  - resize: 890x290
+  - sleep: 30ms
+  - resize: 307x607
+  - sleep: 30ms
+  - resize: 792x592
+  - sleep: 30ms
+  - resize: 493x393
+  - sleep: 30ms
+  - resize: 894x294
+  - sleep: 30ms
+  - resize: 311x611
+  - sleep: 30ms
+  - resize: 624x464
+  - mark: settled again
+  - wait: { for: window, size: 624x464 }
+  - wait: stable
+  - screenshot: end-paced
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

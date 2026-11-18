@@ -1,0 +1,55 @@
+# Drag the window while the app is animating, painting a frame on every
+# vsync. A resize must not cost the animation its frames: the picture has
+# to keep advancing, at the size of the window, the whole way through.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+    PROBE_ANIMATE: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - sleep: 1s
+  - mark: idle
+  - sleep: 2s
+  - mark: bottom-right grow
+  - drag_resize: { edge: bottom-right, by: [300, 200], duration: 2s, steps: 120 }
+  - mark: bottom-right shrink
+  - drag_resize: { edge: bottom-right, by: [-300, -200], duration: 2s, steps: 120 }
+  - mark: top-left grow
+  - drag_resize: { edge: top-left, by: [-90, -90], duration: 2s, steps: 120 }
+  - mark: top-left shrink
+  - drag_resize: { edge: top-left, by: [90, 90], duration: 2s, steps: 120 }
+  - mark: settled
+  - sleep: 1s
+  - screenshot: end
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/probe_cadence.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

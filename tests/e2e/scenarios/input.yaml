@@ -1,0 +1,62 @@
+# Pointer input after resizes. A tap has to land where the pointer is: the
+# app prints where it received each one, in its own coordinates.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - wait: stable
+  - mark: before
+  - click: [20, 30]
+  - wait: { for: log, match: "probe: tap 1 at 20,30" }
+  - mark: after a resize
+  - resize: 800x500
+  - wait: stable
+  - click: [780, 480]
+  - wait: { for: log, match: "probe: tap 2 at 780,480" }
+  - mark: after a drag from the top-left
+  - drag_resize: { edge: top-left, by: [-60, -60] }
+  - wait: stable
+  - click: [20, 30]
+  - wait: { for: log, match: "probe: tap 3 at 20,30" }
+  - click: [840, 540]
+  - wait: { for: log, match: "probe: tap 4 at 840,540" }
+  - mark: fullscreen
+  - fullscreen: true
+  - wait: stable
+  - click: [1270, 790]
+  - wait: { for: log, match: "probe: tap 5 at 1270,790" }
+  - fullscreen: false
+  - wait: stable
+  - screenshot: end
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

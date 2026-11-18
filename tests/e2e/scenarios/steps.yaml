@@ -1,0 +1,80 @@
+# One-shot resizes, a single configure each, with time to settle in between:
+# larger, smaller, wide, tall, odd sizes, close to the output's size and
+# close to the app's minimum size (256x256).
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - wait: stable
+  - mark: to 784x584
+  - resize: 784x584
+  - wait: { for: window, size: 784x584 }
+  - wait: stable
+  - screenshot: 784x584
+  - mark: to 484x384
+  - resize: 484x384
+  - wait: { for: window, size: 484x384 }
+  - wait: stable
+  - screenshot: 484x384
+  - mark: to 884x284
+  - resize: 884x284
+  - wait: { for: window, size: 884x284 }
+  - wait: stable
+  - screenshot: 884x284
+  - mark: to 301x603
+  - resize: 301x603
+  - wait: { for: window, size: 301x603 }
+  - wait: stable
+  - screenshot: 301x603
+  - mark: to 701x503
+  - resize: 701x503
+  - wait: { for: window, size: 701x503 }
+  - wait: stable
+  - screenshot: 701x503
+  - mark: to 1100x650
+  - resize: 1100x650
+  - wait: { for: window, size: 1100x650 }
+  - wait: stable
+  - screenshot: 1100x650
+  - mark: to 272x272
+  - resize: 272x272
+  - wait: { for: window, size: 272x272 }
+  - wait: stable
+  - screenshot: 272x272
+  - mark: to 624x464
+  - resize: 624x464
+  - wait: { for: window, size: 624x464 }
+  - wait: stable
+  - screenshot: 624x464
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py
