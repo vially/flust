@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::Arc, time::Instant};
 
 use calloop::futures::{Executor, Scheduler};
 use flust_engine::{
@@ -28,7 +28,7 @@ use smithay_client_toolkit::{
         calloop::{
             self,
             timer::{TimeoutAction, Timer},
-            EventLoop, LoopHandle, LoopSignal,
+            EventLoop, LoopHandle,
         },
         calloop_wayland_source::WaylandSource,
     },
@@ -78,7 +78,8 @@ pub struct SctkApplication {
 pub struct SctkApplicationState {
     conn: Connection,
     loop_handle: LoopHandle<'static, SctkApplicationState>,
-    loop_signal: LoopSignal,
+    /// Cleared to leave the event loop.
+    running: bool,
     registry_state: RegistryState,
     compositor_state: CompositorState,
     shm_state: Shm,
@@ -183,7 +184,7 @@ impl SctkApplication {
         let state = SctkApplicationState {
             conn,
             loop_handle: event_loop.handle(),
-            loop_signal: event_loop.get_signal(),
+            running: true,
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
             keyboards: HashMap::new(),
@@ -225,14 +226,16 @@ impl SctkApplication {
                 TimeoutAction::Drop
             })?;
 
-        self.event_loop.run(None, &mut self.state, |state| {
-            let next_task_timer = state
-                .engine
-                .execute_platform_tasks()
-                .map(Timer::from_deadline);
+        while self.state.running {
+            // Engine tasks wait for a point in time, and the event loop
+            // sleeps until the earliest of them is due. Other threads wake
+            // it up when they have posted a task for this one.
+            let next_task = self.state.engine.execute_platform_tasks();
+            let timeout =
+                next_task.map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
-            insert_timer_source(&state.loop_handle, next_task_timer);
-        })?;
+            self.event_loop.dispatch(timeout, &mut self.state)?;
+        }
 
         // Stops the engine's threads before the window they draw to, and
         // everything else they use, is torn down. They would otherwise still
@@ -865,7 +868,7 @@ impl OutputHandler for SctkApplicationState {
 
 impl SctkApplicationState {
     pub(crate) fn toplevel_close_requested(&mut self, _xdg_toplevel: &XdgToplevel) {
-        self.loop_signal.stop();
+        self.running = false;
     }
 
     pub(crate) fn toplevel_configured(
@@ -948,16 +951,6 @@ pub enum SctkApplicationRunError {
 
     #[error(transparent)]
     InsertError(#[from] calloop::InsertError<Timer>),
-}
-
-fn insert_timer_source<Data>(handle: &LoopHandle<'static, Data>, timer: Option<Timer>) {
-    let Some(timer) = timer else {
-        return;
-    };
-
-    handle
-        .insert_source(timer, |_, _, _| TimeoutAction::Drop)
-        .expect("Unable to insert timer source");
 }
 
 // Trying to send a `WindowMetricsEvent` before the engine is running results in
