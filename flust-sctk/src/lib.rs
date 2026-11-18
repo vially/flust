@@ -6,5 +6,6 @@ mod key_mapping_gen;
 mod keyboard;
 mod output;
 mod pointer;
+mod sync;
 mod toplevel;
 pub mod window;

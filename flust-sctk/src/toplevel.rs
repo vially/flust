@@ -5,8 +5,8 @@
 //! its handler runs. An acknowledgement takes effect at the next
 //! `wl_surface.commit`, and that commit is expected to carry content drawn
 //! for the acknowledged configure. Flutter draws on another thread, some
-//! frames later, so the acknowledgement has to be able to wait for that
-//! frame.
+//! frames later, so the acknowledgement has to wait for that frame: see
+//! `SurfaceSync`.
 
 use std::{
     num::NonZeroU32,

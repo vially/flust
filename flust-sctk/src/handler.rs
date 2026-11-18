@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     ffi::{c_void, CStr, CString},
     iter::zip,
-    num::NonZeroU32,
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
@@ -80,11 +79,6 @@ impl SctkOpenGLHandler {
         }
     }
 
-    // Note: This callback is executed on the *platform* thread.
-    pub(crate) fn resize(&self, size: PhysicalSize<NonZeroU32>) {
-        self.context.lock().unwrap().resize(size);
-    }
-
     fn load_current_frame_size(&self) -> PhysicalSize<u32> {
         *self.current_frame_size.read().unwrap()
     }
@@ -93,27 +87,13 @@ impl SctkOpenGLHandler {
 // Note: These callbacks are executed on the *render* thread.
 impl FlutterOpenGLHandler for SctkOpenGLHandler {
     fn present(&self) -> bool {
+        // The engine has drawn the frame into the window's framebuffer.
         let frame_size = self.load_current_frame_size();
-        // Check if this frame can be presented. This resizes the surface if a
-        // resize is pending and |frame_size| matches the target size.
-        if !self
-            .window
+        self.window
             .upgrade()
             .unwrap()
-            .on_frame_generated(frame_size)
-        {
-            return false;
-        }
-
-        self.window.upgrade().unwrap().request_frame_callback();
-
-        if !self.context.lock().unwrap().present() {
-            return false;
-        }
-
-        self.window.upgrade().unwrap().on_frame_presented();
-
-        true
+            .present_frame(Some(frame_size), || Ok(()))
+            .is_ok()
     }
 
     fn make_current(&self) -> bool {
@@ -159,54 +139,32 @@ impl SctkCompositorHandler {
             opengl_compositor,
         }
     }
-
-    fn clear(&self) -> Result<(), CompositorPresentError> {
-        let window = self.window.upgrade().unwrap();
-
-        if !window.on_empty_frame_generated() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Empty frame generated callback failed".into(),
-            ));
-        }
-
-        window.request_frame_callback();
-        self.opengl_compositor.clear()?;
-
-        window.on_frame_presented();
-        Ok(())
-    }
 }
 
 impl FlutterCompositorHandler for SctkCompositorHandler {
     fn present_view(&self, info: FlutterPresentViewInfo) -> Result<(), CompositorPresentError> {
-        if info.layers.is_empty() {
-            return self.clear();
-        }
-
-        // TODO: Support compositing layers and platform views.
-        debug_assert_eq!(info.layers.len(), 1);
-        let layer = info.layers.first().unwrap();
-        debug_assert!(layer.offset.x == 0.0 && layer.offset.y == 0.0);
-
-        // TODO: Investigate if conversion to `u32` is correct
-        let frame_size = PhysicalSize::<u32>::new(
-            layer.size.width.round() as u32,
-            layer.size.height.round() as u32,
-        );
-
         let window = self.window.upgrade().unwrap();
 
-        if !window.on_frame_generated(frame_size) {
-            return Err(CompositorPresentError::PresentFailed(
-                "Frame generated callback failed".into(),
-            ));
-        }
+        // TODO: Support compositing layers and platform views.
+        debug_assert!(info.layers.len() <= 1);
 
-        window.request_frame_callback();
-        self.opengl_compositor.present_opengl_view(info)?;
+        // A frame without content has no size.
+        let frame_size = info.layers.first().map(|layer| {
+            debug_assert!(layer.offset.x == 0.0 && layer.offset.y == 0.0);
 
-        window.on_frame_presented();
-        Ok(())
+            // TODO: Investigate if conversion to `u32` is correct
+            PhysicalSize::<u32>::new(
+                layer.size.width.round() as u32,
+                layer.size.height.round() as u32,
+            )
+        });
+
+        window.present_frame(frame_size, || match frame_size {
+            Some(_) => self.opengl_compositor.draw_opengl_view(&info),
+            None => self.opengl_compositor.clear(),
+        })?;
+
+        self.opengl_compositor.frame_presented()
     }
 
     fn create_backing_store(
@@ -239,11 +197,13 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
     }
 }
 
+/// The `draw_opengl_view` and `clear` callbacks are run by
+/// `SctkFlutterWindowInner::present_frame`, with the window's context
+/// current and its lock held. The window swaps the buffers afterwards.
 trait SctkOpenGLCompositorHandler {
-    fn present_opengl_view(
-        &self,
-        info: FlutterPresentViewInfo,
-    ) -> Result<(), CompositorPresentError>;
+    /// Puts the frame into the window's framebuffer.
+    fn draw_opengl_view(&self, info: &FlutterPresentViewInfo)
+        -> Result<(), CompositorPresentError>;
 
     fn create_opengl_backing_store(
         &self,
@@ -255,12 +215,15 @@ trait SctkOpenGLCompositorHandler {
         backing_store: FlutterOpenGLBackingStore,
     ) -> Result<(), CompositorCollectBackingStoreError>;
 
+    /// Puts a frame without content into the window's framebuffer.
     fn clear(&self) -> Result<(), CompositorPresentError>;
+
+    /// Called after a frame was presented or dropped.
+    fn frame_presented(&self) -> Result<(), CompositorPresentError>;
 }
 
 #[derive(Clone)]
 struct SctkOpenGLCompositorHandlerFramebuffer {
-    context: Arc<Mutex<Context>>,
     gl: gl::Gl,
     format: u32,
 }
@@ -277,7 +240,6 @@ impl SctkOpenGLCompositorHandlerFramebuffer {
         context.lock().unwrap().make_not_current();
 
         Self {
-            context,
             gl,
             format: Context::get_supported_format(),
         }
@@ -285,9 +247,9 @@ impl SctkOpenGLCompositorHandlerFramebuffer {
 }
 
 impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
-    fn present_opengl_view(
+    fn draw_opengl_view(
         &self,
-        info: FlutterPresentViewInfo,
+        info: &FlutterPresentViewInfo,
     ) -> Result<(), CompositorPresentError> {
         let layer = info.layers.first().unwrap();
         let source_id = layer
@@ -296,12 +258,6 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
             .ok_or(CompositorPresentError::PresentFailed(
                 "Unable to retrieve framebuffer name from layer".into(),
             ))?;
-
-        if !self.context.lock().unwrap().make_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context current".into(),
-            ));
-        }
 
         unsafe {
             // Disable the scissor test as it can affect blit operations.
@@ -316,6 +272,8 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
             let width = layer.size.width.round() as i32;
             let height = layer.size.height.round() as i32;
 
+            // The window's framebuffer has the size of the frame: the window
+            // resizes it to the frame it is about to present.
             self.gl.BlitFramebuffer(
                 0,                    // srcX0
                 0,                    // srcY0
@@ -328,12 +286,6 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
                 gl::COLOR_BUFFER_BIT, // mask
                 gl::NEAREST,          // filter
             );
-        }
-
-        if !self.context.lock().unwrap().present() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Present failed".into(),
-            ));
         }
 
         Ok(())
@@ -420,24 +372,18 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
     }
 
     fn clear(&self) -> Result<(), CompositorPresentError> {
-        if !self.context.lock().unwrap().make_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context current".into(),
-            ));
-        }
-
         unsafe {
+            self.gl
+                .BindFramebuffer(gl::DRAW_FRAMEBUFFER, WINDOW_FRAMEBUFFER_ID);
             self.gl.ClearColor(0.0, 0.0, 0.0, 0.0);
             self.gl
                 .Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
         };
 
-        if !self.context.lock().unwrap().present() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Present failed".into(),
-            ));
-        }
+        Ok(())
+    }
 
+    fn frame_presented(&self) -> Result<(), CompositorPresentError> {
         Ok(())
     }
 }
@@ -454,30 +400,11 @@ impl SctkOpenGLCompositorHandlerSurface {
 }
 
 impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
-    fn present_opengl_view(
+    fn draw_opengl_view(
         &self,
-        _info: FlutterPresentViewInfo,
+        _info: &FlutterPresentViewInfo,
     ) -> Result<(), CompositorPresentError> {
-        // TODO: Investigate if wrapping the present call with
-        // `make_current`/`make_not_current` is expected.
-        if !self.context.lock().unwrap().make_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context current".into(),
-            ));
-        }
-
-        if !self.context.lock().unwrap().present() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Present failed".into(),
-            ));
-        }
-
-        if !self.context.lock().unwrap().make_not_current() {
-            return Err(CompositorPresentError::PresentFailed(
-                "Unable to make context not current".into(),
-            ));
-        }
-
+        // The engine has drawn the frame into the window's framebuffer.
         Ok(())
     }
 
@@ -523,6 +450,17 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerSurface {
 
     fn clear(&self) -> Result<(), CompositorPresentError> {
         Ok(()) // no-op
+    }
+
+    fn frame_presented(&self) -> Result<(), CompositorPresentError> {
+        // TODO: Investigate if this is expected after a present.
+        if !self.context.lock().unwrap().make_not_current() {
+            return Err(CompositorPresentError::PresentFailed(
+                "Unable to make context not current".into(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -575,13 +513,13 @@ impl SctkOpenGLCompositor {
 }
 
 impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
-    fn present_opengl_view(
+    fn draw_opengl_view(
         &self,
-        info: FlutterPresentViewInfo,
+        info: &FlutterPresentViewInfo,
     ) -> Result<(), CompositorPresentError> {
         match self {
-            SctkOpenGLCompositor::Framebuffer(handler) => handler.present_opengl_view(info),
-            SctkOpenGLCompositor::Surface(handler) => handler.present_opengl_view(info),
+            SctkOpenGLCompositor::Framebuffer(handler) => handler.draw_opengl_view(info),
+            SctkOpenGLCompositor::Surface(handler) => handler.draw_opengl_view(info),
         }
     }
 
@@ -615,6 +553,13 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositor {
         match self {
             SctkOpenGLCompositor::Framebuffer(handler) => handler.clear(),
             SctkOpenGLCompositor::Surface(handler) => handler.clear(),
+        }
+    }
+
+    fn frame_presented(&self) -> Result<(), CompositorPresentError> {
+        match self {
+            SctkOpenGLCompositor::Framebuffer(handler) => handler.frame_presented(),
+            SctkOpenGLCompositor::Surface(handler) => handler.frame_presented(),
         }
     }
 }

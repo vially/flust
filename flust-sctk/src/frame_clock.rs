@@ -4,7 +4,7 @@
 //! answer comes from the compositor when it has one to give: the
 //! `wl_surface.frame` callback requested by the commit of the previous frame.
 //! That callback is requested by the raster thread together with the buffer
-//! (see `SctkFlutterWindowInner::request_frame_callback`), never by a commit of its
+//! (see `SctkFlutterWindowInner::present_frame`), never by a commit of its
 //! own, so asking for a vsync never changes what the compositor shows.
 //!
 //! When no such callback is on its way (nothing has been committed since the
@@ -43,6 +43,11 @@ pub(crate) struct FrameClockState {
 impl FrameClockState {
     pub(crate) fn request_vsync(&mut self, baton: isize) {
         self.baton = Some(baton);
+    }
+
+    /// Whether the engine is waiting for a vsync.
+    pub(crate) fn is_vsync_requested(&self) -> bool {
+        self.baton.is_some()
     }
 
     /// A `wl_surface.frame` callback was requested, for the commit that
@@ -121,6 +126,11 @@ impl FrameClock {
     pub(crate) fn request_vsync(&self, baton: isize) {
         self.state.lock().request_vsync(baton);
         self.wake_platform_thread();
+    }
+
+    /// Called on the platform thread.
+    pub(crate) fn is_vsync_requested(&self) -> bool {
+        self.state.lock().is_vsync_requested()
     }
 
     /// Called on the raster thread.

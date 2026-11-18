@@ -84,10 +84,13 @@ pub struct SctkApplication {
 }
 
 pub struct SctkApplicationState {
-    conn: Connection,
     loop_handle: LoopHandle<'static, SctkApplicationState>,
     /// Cleared to leave the event loop.
     running: bool,
+    /// Window metrics can not be sent before the engine is running: that
+    /// results in a `Viewport metrics were invalid` embedder error. Until it
+    /// is, the windows are not polled, so the first configure waits.
+    is_engine_running: bool,
     registry_state: RegistryState,
     compositor_state: CompositorState,
     shm_state: Shm,
@@ -98,7 +101,6 @@ pub struct SctkApplicationState {
     active_state: HashMap<ObjectId, bool>,
     pointers: HashMap<ObjectId, WlPointer>,
     keyboards: HashMap<ObjectId, WlKeyboard>,
-    startup_synchronizer: ImplicitWindowStartupSynchronizer,
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
     keyboard_handler: Arc<Mutex<SctkKeyboardHandler>>,
@@ -187,9 +189,9 @@ impl SctkApplication {
         );
 
         let state = SctkApplicationState {
-            conn,
             loop_handle: event_loop.handle(),
             running: true,
+            is_engine_running: false,
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
             keyboards: HashMap::new(),
@@ -200,7 +202,6 @@ impl SctkApplication {
             output_state,
             seat_state,
             engine,
-            startup_synchronizer: ImplicitWindowStartupSynchronizer::new(),
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
             keyboard_handler,
@@ -226,16 +227,17 @@ impl SctkApplication {
 
                 state.schedule_async_startup_tasks();
 
-                state.maybe_send_startup_pending_configure();
+                state.is_engine_running = true;
+                state.notify_display_update();
 
                 TimeoutAction::Drop
             })?;
 
         while self.state.running {
             // Everything that waits for a point in time (engine tasks, the
-            // frame clock) is polled here, and the event loop sleeps until
-            // the earliest of them is due. Other threads wake it up when
-            // they have something for this one.
+            // frame clock, a window's frame) is polled here, and the event
+            // loop sleeps until the earliest of them. Other threads wake it
+            // up when they have something for this one.
             let next_task = self.state.engine.execute_platform_tasks();
             let next_poll = self.state.poll();
 
@@ -301,22 +303,43 @@ impl SctkApplicationState {
         })
     }
 
-    fn get_implicit_window_mut(&mut self) -> Option<&mut SctkFlutterWindow> {
-        self.windows.iter_mut().last().map(|(_key, window)| window)
-    }
-
-    /// Returns the engine's vsync baton if that is due. Returns when to call
-    /// this again, if nothing else happens before then.
+    /// Returns the engine's vsync baton and lets the windows act on their
+    /// surface state, as far as they are due. Returns when to call this
+    /// again, if nothing else happens before then.
     fn poll(&mut self) -> Option<Instant> {
+        if !self.is_engine_running {
+            return None;
+        }
+
         let frame_interval = self.get_frame_interval_in_nanos();
         let now = unsafe { FlutterEngineGetCurrentTime() };
-        let (baton, deadline) = self.frame_clock.poll(now, frame_interval);
+        let (baton, vsync_deadline) = self.frame_clock.poll(now, frame_interval);
+
+        // A new size is sent to the engine between two of its frames: right
+        // before it is told to start one, or while it is not waiting to
+        // start one at all. At any other time it would have to throw away
+        // the frame it is working on.
+        let may_request = baton.is_some() || !self.frame_clock.is_vsync_requested();
+        let window_deadline = self.poll_windows(may_request);
 
         if let Some(baton) = baton {
             self.engine.on_vsync(baton, now, now + frame_interval);
         }
+        let vsync_deadline = vsync_deadline
+            .map(|deadline| Instant::now() + Duration::from_nanos(deadline.saturating_sub(now)));
 
-        deadline.map(|deadline| Instant::now() + Duration::from_nanos(deadline.saturating_sub(now)))
+        [window_deadline, vsync_deadline]
+            .into_iter()
+            .flatten()
+            .min()
+    }
+
+    fn poll_windows(&self, may_request: bool) -> Option<Instant> {
+        let now = Instant::now();
+        self.windows
+            .values()
+            .filter_map(|window| window.poll(now, may_request))
+            .min()
     }
 
     /// The frame interval of the implicit window: of the fastest output it
@@ -329,27 +352,12 @@ impl SctkApplicationState {
             .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS)
     }
 
-    fn maybe_send_startup_pending_configure(&mut self) {
-        self.startup_synchronizer.is_engine_running = true;
-
-        self.notify_display_update();
-
-        let Some((configure, serial)) = self.startup_synchronizer.pending_configure.take() else {
-            return;
-        };
-
-        let conn = self.conn.clone();
-        if let Some(window) = self.get_implicit_window_mut() {
-            window.configure(&conn, configure, serial);
-        };
-    }
-
     fn maybe_update_lifecycle_state(&mut self, xdg_toplevel_id: ObjectId, is_active: bool) {
         let was_active = self.active_state.iter().any(|(_, &active)| active);
 
         self.active_state.insert(xdg_toplevel_id, is_active);
 
-        if was_active != is_active && self.startup_synchronizer.is_engine_running {
+        if was_active != is_active && self.is_engine_running {
             self.with_plugin(|lifecycle: &LifecyclePlugin| match is_active {
                 true => lifecycle.send_app_is_resumed(),
                 false => lifecycle.send_app_is_inactive(),
@@ -399,7 +407,7 @@ impl SctkApplicationState {
         // Ignore display update events if the engine is not running. This
         // method will be called again once the engine is running to ensure the
         // display state is up-to-date on the engine side.
-        if !self.startup_synchronizer.is_engine_running {
+        if !self.is_engine_running {
             return;
         }
 
@@ -534,7 +542,7 @@ impl ProvidesRegistryState for SctkApplicationState {
 impl CompositorHandler for SctkApplicationState {
     fn scale_factor_changed(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         _qh: &QueueHandle<Self>,
         surface: &WlSurface,
         new_scale_factor: i32,
@@ -553,7 +561,7 @@ impl CompositorHandler for SctkApplicationState {
             return;
         };
 
-        window.scale_factor_changed(conn, surface, new_scale_factor);
+        window.scale_factor_changed(new_scale_factor);
     }
 
     fn transform_changed(
@@ -579,16 +587,16 @@ impl CompositorHandler for SctkApplicationState {
     ) {
         trace!("[{} time: {}] frame callback", surface.id(), time);
 
+        let now = unsafe { FlutterEngineGetCurrentTime() };
         // The baton is returned by `poll`, after the rest of what the
         // compositor sent with this callback.
-        let now = unsafe { FlutterEngineGetCurrentTime() };
         let frame_interval = self.get_frame_interval_in_nanos();
         self.frame_clock.frame_callback_done(now, frame_interval);
     }
 
     fn surface_enter(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         _qh: &QueueHandle<Self>,
         surface: &wayland_client::protocol::wl_surface::WlSurface,
         output: &wayland_client::protocol::wl_output::WlOutput,
@@ -603,12 +611,12 @@ impl CompositorHandler for SctkApplicationState {
             return;
         };
 
-        window.surface_outputs_changed(conn, surface);
+        window.surface_outputs_changed();
     }
 
     fn surface_leave(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         _qh: &QueueHandle<Self>,
         surface: &wayland_client::protocol::wl_surface::WlSurface,
         output: &wayland_client::protocol::wl_output::WlOutput,
@@ -623,7 +631,7 @@ impl CompositorHandler for SctkApplicationState {
             return;
         };
 
-        window.surface_outputs_changed(conn, surface);
+        window.surface_outputs_changed();
     }
 }
 
@@ -636,7 +644,7 @@ impl ShmHandler for SctkApplicationState {
 impl PointerHandler for SctkApplicationState {
     fn pointer_frame(
         &mut self,
-        conn: &Connection,
+        _conn: &Connection,
         _qh: &QueueHandle<Self>,
         pointer: &WlPointer,
         events: &[PointerEvent],
@@ -650,7 +658,7 @@ impl PointerHandler for SctkApplicationState {
                 continue;
             };
 
-            window.pointer_event(conn, pointer, event);
+            window.pointer_event(pointer, event);
         }
     }
 }
@@ -902,9 +910,6 @@ impl SctkApplicationState {
         configure: ToplevelConfigure,
         serial: u32,
     ) {
-        // Acknowledged at once, as SCTK's `Window` did.
-        xdg_surface.ack_configure(serial);
-
         let Some(xdg_toplevel_id) = self
             .windows
             .iter()
@@ -927,15 +932,10 @@ impl SctkApplicationState {
 
         self.maybe_update_lifecycle_state(xdg_toplevel_id.clone(), configure.activated);
 
-        if self.startup_synchronizer.is_engine_running {
-            let conn = self.conn.clone();
-            if let Some(window) = self.windows.get_mut(&xdg_toplevel_id) {
-                window.configure(&conn, configure, serial);
-            }
-        } else {
-            trace!("Skipped sending window metrics event because engine is not running yet");
-            self.startup_synchronizer
-                .set_pending_configure(configure, serial);
+        // The window acknowledges the configure when it commits a frame for
+        // it: see `SurfaceSync`.
+        if let Some(window) = self.windows.get_mut(&xdg_toplevel_id) {
+            window.configure(configure, serial);
         }
     }
 }
@@ -976,35 +976,4 @@ pub enum SctkApplicationRunError {
 
     #[error(transparent)]
     InsertError(#[from] calloop::InsertError<Timer>),
-}
-
-// Trying to send a `WindowMetricsEvent` before the engine is running results in
-// a `Viewport metrics were invalid` [embedder error][0]. This could happen when
-// the first `window.configure` event arrives before the engine is fully
-// running.
-//
-// The `ImplicitWindowStartupSynchronizer` is used as a way to synchronize the
-// engine startup events in order to make sure that the initial window metrics
-// event is only sent once a) the engine is running and b) the first configure
-// event has been received.
-//
-// TODO: Get rid of this hack once Flutter supports disabling the implicit view
-// as part of the [multi-view embedder APIs][1].
-//
-// [0]: https://github.com/flutter/engine/blob/e76c956498841e1ab458577d3892003e553e4f3c/shell/platform/embedder/embedder.cc#L2173-L2174
-// [1]: https://github.com/flutter/flutter/issues/144806
-#[derive(Default)]
-struct ImplicitWindowStartupSynchronizer {
-    pending_configure: Option<(ToplevelConfigure, u32)>,
-    is_engine_running: bool,
-}
-
-impl ImplicitWindowStartupSynchronizer {
-    fn new() -> Self {
-        Default::default()
-    }
-
-    fn set_pending_configure(&mut self, configure: ToplevelConfigure, serial: u32) {
-        self.pending_configure = Some((configure, serial));
-    }
 }

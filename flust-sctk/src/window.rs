@@ -1,17 +1,18 @@
 use std::{
     collections::HashMap,
-    num::NonZeroU32,
     sync::{Arc, Mutex, RwLock},
+    time::Instant,
 };
 
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flust_engine::{
+    compositor::CompositorPresentError,
     ffi::{FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
     view::FlutterView,
     FlutterEngineWeakRef,
 };
 use flust_engine_sys::{FlutterEngineDisplayId, FlutterEngineGetCurrentTime};
-use flust_glutin::builder::FlutterEGLContext;
+use flust_glutin::{builder::FlutterEGLContext, context::Context};
 use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
@@ -20,11 +21,11 @@ use smithay_client_toolkit::{
     shell::xdg::XdgShell,
 };
 use thiserror::Error;
-use tracing::{error, trace, warn};
+use tracing::{error, trace};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     protocol::{wl_pointer::WlPointer, wl_surface::WlSurface},
-    Connection, Proxy, QueueHandle,
+    Proxy, QueueHandle,
 };
 
 use crate::{
@@ -33,6 +34,7 @@ use crate::{
     frame_clock::FrameClock,
     handler::{SctkCompositorHandler, SctkOpenGLHandler},
     pointer::SctkPointerEvent,
+    sync::{FrameAction, PlatformAction, SurfaceGeometry, SurfaceSync},
     toplevel::{Toplevel, ToplevelConfigure},
 };
 use crate::{
@@ -40,166 +42,160 @@ use crate::{
     pointer::Pointer,
 };
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-/// States a resize event can be in.
-pub(crate) enum ResizeState {
-    /// Default state for when no resize is in progress. Also used to indicate
-    /// that during a resize event, a frame with the right size has been
-    /// rendered and the buffers have been swapped.
-    #[default]
-    Done,
-    /// When a resize event has started but is in progress.
-    ResizeStarted,
-    /// After a resize event starts and the framework has been notified to
-    /// generate a frame for the right size.
-    FrameGenerated,
-}
-
 pub(crate) struct SctkFlutterWindowInner {
     id: FlutterViewId,
     window: Toplevel,
     engine: FlutterEngineWeakRef,
+    qh: QueueHandle<SctkApplicationState>,
     current_size: RwLock<Option<Size>>,
     current_scale_factor: RwLock<f64>,
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     opengl_handler: SctkOpenGLHandler,
     compositor_handler: SctkCompositorHandler,
+    context: Arc<Mutex<Context>>,
     frame_clock: FrameClock,
-    qh: QueueHandle<SctkApplicationState>,
-    resize_mutex: Mutex<()>,
-    resize_status: RwLock<ResizeState>,
-    pending_size: RwLock<Option<PhysicalSize<NonZeroU32>>>,
+    /// What the surface shows and what it was asked to show. The raster
+    /// thread holds this lock for the whole of a present, so that a frame,
+    /// the surface state it was drawn for and the acknowledgement of the
+    /// configure it answers reach the compositor in one commit.
+    sync: Mutex<SurfaceSync>,
 }
 
 impl SctkFlutterWindowInner {
-    pub(super) fn store_current_scale_factor(&self, new_scale_factor: f64) {
+    fn store_current_scale_factor(&self, new_scale_factor: f64) {
         let mut current_scale_factor = self.current_scale_factor.write().unwrap();
         *current_scale_factor = new_scale_factor;
     }
 
-    pub(super) fn load_current_scale_factor(&self) -> f64 {
+    fn load_current_scale_factor(&self) -> f64 {
         *self.current_scale_factor.read().unwrap()
     }
 
-    pub(super) fn store_current_size(&self, new_size: Size) {
+    fn store_current_size(&self, new_size: Size) {
         let mut current_size = self.current_size.write().unwrap();
         *current_size = Some(new_size);
     }
 
-    fn store_resize_status(&self, new_resize_status: ResizeState) {
-        let mut resize_status = self.resize_status.write().unwrap();
-        *resize_status = new_resize_status;
+    fn load_current_size(&self) -> Option<Size> {
+        *self.current_size.read().unwrap()
     }
 
-    pub(super) fn load_resize_status(&self) -> ResizeState {
-        *self.resize_status.read().unwrap()
+    /// The geometry of a buffer for the window's current size and scale.
+    fn current_geometry(&self) -> Option<SurfaceGeometry> {
+        let scale_factor = self.load_current_scale_factor();
+        let size = self.load_current_size()?.to_physical::<u32>(scale_factor);
+        size.non_zero()?;
+
+        Some(SurfaceGeometry {
+            size,
+            scale: scale_factor as u32,
+        })
     }
 
-    pub(super) fn store_pending_size(&self, new_pending_size: Option<PhysicalSize<NonZeroU32>>) {
-        let mut pending_size = self.pending_size.write().unwrap();
-        *pending_size = new_pending_size;
-    }
-
-    pub(super) fn load_pending_size(&self) -> Option<PhysicalSize<NonZeroU32>> {
-        *self.pending_size.read().unwrap()
-    }
-
-    pub(super) fn scale_internal_size(&self, new_scale_factor: f64) {
-        self.store_current_scale_factor(new_scale_factor);
-
-        let mut current_size = self.current_size.write().unwrap();
-        *current_size = current_size.map(|size| size.to_logical::<u32>(new_scale_factor).into());
-    }
-
-    pub(super) fn non_zero_physical_size(&self) -> Option<PhysicalSize<NonZeroU32>> {
-        let scale_factor = self.current_scale_factor.read().unwrap();
-        self.current_size
-            .read()
-            .unwrap()
-            .and_then(|size| size.to_physical::<u32>(*scale_factor).non_zero())
-    }
-
-    // Note: This callback is executed on the *render* thread.
-    pub(super) fn on_frame_generated(&self, size: PhysicalSize<u32>) -> bool {
-        trace!("window frame generated: {}x{}", size.width, size.height);
-        let _resize_mutex = self.resize_mutex.lock().unwrap();
-
-        let resize_status = self.load_resize_status();
-        if resize_status != ResizeState::ResizeStarted {
-            return true;
-        }
-
-        let Some(pending_size) = self.load_pending_size() else {
-            error!("[on_frame_generated] Invalid resize state: pending size not found");
-            return false;
-        };
-
-        if size.width != pending_size.width.get() || size.height != pending_size.height.get() {
-            trace!(
-                "[on_frame_generated]: Frame size does not match expected size: {}x{} != {}x{}",
-                size.width,
-                size.height,
-                pending_size.width,
-                pending_size.height
-            );
-            return false;
-        }
-
-        self.store_resize_status(ResizeState::FrameGenerated);
-        true
-    }
-
-    // Note: This callback is executed on the *render* thread.
-    pub(super) fn on_empty_frame_generated(&self) -> bool {
-        trace!("window empty frame generated");
-        let _resize_mutex = self.resize_mutex.lock().unwrap();
-
-        let resize_status = self.load_resize_status();
-        if resize_status != ResizeState::ResizeStarted {
-            return true;
-        }
-
-        self.store_resize_status(ResizeState::FrameGenerated);
-        true
-    }
-
-    /// Requests the `wl_surface.frame` callback that the engine's next vsync
-    /// comes from: see `FrameClock`. The request is committed by the buffer
-    /// swap that follows, together with the frame.
+    /// Presents a frame of the engine, or drops it if it is not one the
+    /// surface can show: see `SurfaceSync::frame`.
+    ///
+    /// `size` is the size of the frame, `None` for a frame without content.
+    /// `draw` puts the frame into the window's framebuffer, which has that
+    /// size by then.
     ///
     /// Note: This is executed on the *render* thread.
-    pub(super) fn request_frame_callback(&self) {
+    pub(super) fn present_frame(
+        &self,
+        size: Option<PhysicalSize<u32>>,
+        draw: impl FnOnce() -> Result<(), CompositorPresentError>,
+    ) -> Result<(), CompositorPresentError> {
+        let present_failed = |reason: &str| CompositorPresentError::PresentFailed(reason.into());
+
+        let mut sync = self.sync.lock().unwrap();
+        let action = sync.frame(size);
+        trace!("present frame {:?}: {:?}", size, action);
+
+        if action == FrameAction::Drop {
+            // Not an error for the engine: there is nothing it could do
+            // about it, and the frame that was asked for is on its way.
+            return Ok(());
+        }
+
+        let mut context = self.context.lock().unwrap();
+
+        if let FrameAction::Commit { geometry, .. } = action {
+            // The window's framebuffer gets the size of the frame. Nothing
+            // has been drawn into it since the last swap, so this takes
+            // effect for the frame that is about to be drawn.
+            //
+            // Mesa picks the buffer for a frame, at the size the window has
+            // by then, when the frame is first drawn to or when the context
+            // is made current while it was not: so this comes first, and
+            // the context is left current after a present.
+            if let Some(size) = geometry.size.non_zero() {
+                context.resize(size);
+            }
+        }
+
+        if !context.make_current() {
+            return Err(present_failed("Unable to make context current"));
+        }
+
         let surface = self.window.wl_surface();
+
+        // Everything below is pending surface state until `eglSwapBuffers`
+        // commits it, together with the buffer.
+        if let FrameAction::Commit {
+            geometry,
+            acknowledge,
+        } = action
+        {
+            surface.set_buffer_scale(geometry.scale as i32);
+
+            if let Some(serial) = acknowledge {
+                self.window.xdg_surface().ack_configure(serial);
+            }
+        }
+
+        draw()?;
+
+        // The engine's next vsync: see `FrameClock`.
         surface.frame(&self.qh, surface.clone());
         self.frame_clock
             .frame_callback_requested(unsafe { FlutterEngineGetCurrentTime() });
+
+        if !context.present() {
+            return Err(present_failed("Present failed"));
+        }
+
+        drop(context);
+        drop(sync);
+
+        if matches!(action, FrameAction::Commit { .. }) {
+            // The platform thread may have a newer size to ask for.
+            self.frame_clock.wake_platform_thread();
+        }
+
+        Ok(())
     }
 
-    // Note: This callback is executed on the *render* thread.
-    pub(super) fn on_frame_presented(&self) {
-        trace!("window frame presented");
-        let _resize_mutex = self.resize_mutex.lock().unwrap();
+    /// Note: Must be called on the *platform* thread.
+    fn send_window_metrics(&self, geometry: SurfaceGeometry) {
+        let Some(engine) = self.engine.upgrade() else {
+            return;
+        };
 
-        let resize_status = self.load_resize_status();
-        match resize_status {
-            ResizeState::ResizeStarted => {
-                // The caller must first call `on_frame_generated` before
-                // calling this method. This indicates one of the following:
-                //
-                // 1. The caller did not call this method.
-                // 2. The caller ignored this method's result.
-                // 3. The platform thread started a resize after the caller
-                //    called these methods. We might have presented a frame of
-                //    the wrong size to the view.
-                warn!("A frame of the wrong size might have been presented after a resize was started");
-            }
-            ResizeState::FrameGenerated => {
-                // A frame was generated for a pending resize. Mark the resize as done.
-                self.store_resize_status(ResizeState::Done);
-            }
-            ResizeState::Done => {}
-        }
+        trace!(
+            "sending window metrics event: {}x{} (scale: {})",
+            geometry.size.width,
+            geometry.size.height,
+            geometry.scale
+        );
+
+        engine.send_window_metrics_event(
+            self.id,
+            usize::try_from(geometry.size.width).unwrap(),
+            usize::try_from(geometry.size.height).unwrap(),
+            geometry.scale.into(),
+            self.get_display_id().unwrap_or_default(),
+        );
     }
 
     /// A surface can be present on multiple outputs, but currently Flutter only
@@ -259,6 +255,7 @@ impl SctkFlutterWindow {
             id: IMPLICIT_VIEW_ID,
             window,
             engine,
+            qh: qh.clone(),
             opengl_handler: SctkOpenGLHandler::new(
                 inner.clone(),
                 context.clone(),
@@ -266,17 +263,15 @@ impl SctkFlutterWindow {
             ),
             compositor_handler: SctkCompositorHandler::new(
                 inner.clone(),
-                context,
+                context.clone(),
                 config.opengl_target_type,
             ),
+            context,
             frame_clock,
-            qh: qh.clone(),
-            resize_mutex: Default::default(),
-            resize_status: Default::default(),
+            sync: Default::default(),
             pointers: Default::default(),
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),
-            pending_size: Default::default(),
             default_size,
         });
 
@@ -287,12 +282,12 @@ impl SctkFlutterWindow {
         self.inner.window.xdg_toplevel().id()
     }
 
-    pub fn wl_surface(&self) -> WlSurface {
-        self.inner.window.wl_surface().clone()
-    }
-
     pub(crate) fn xdg_surface_id(&self) -> ObjectId {
         self.inner.window.xdg_surface().id()
+    }
+
+    pub fn wl_surface(&self) -> WlSurface {
+        self.inner.window.wl_surface().clone()
     }
 
     pub fn wl_surface_id(&self) -> ObjectId {
@@ -311,139 +306,85 @@ impl SctkFlutterWindow {
         )
     }
 
-    pub(crate) fn scale_factor_changed(
-        &mut self,
-        _conn: &Connection,
-        surface: &WlSurface,
-        new_scale_factor: i32,
-    ) {
-        let _resize_mutex = self.inner.resize_mutex.lock().unwrap();
+    /// Does what the surface's state asks of the platform thread: sends the
+    /// engine a new size, or acknowledges a configure that needs no new
+    /// frame. Returns when to call this again, if nothing else happens
+    /// before then.
+    ///
+    /// A new size is only sent if `may_request` is set: see
+    /// `SurfaceSync::poll`.
+    ///
+    /// Must only be called while the engine is running.
+    pub(crate) fn poll(&self, now: Instant, may_request: bool) -> Option<Instant> {
+        loop {
+            let mut sync = self.inner.sync.lock().unwrap();
 
-        self.inner.scale_internal_size(new_scale_factor.into());
-
-        let Some(physical_size) = self.inner.non_zero_physical_size() else {
-            error!("Invalid physical size while handling `scale_factor_changed` event");
-            return;
-        };
-
-        self.inner.store_resize_status(ResizeState::ResizeStarted);
-        self.inner.store_pending_size(Some(physical_size));
-
-        // Note: Comment related to `opengl_handler.resize()` call from the
-        // `SctkFlutterWindow.configure()` method also applies here.
-        self.inner.opengl_handler.resize(physical_size);
-        surface.set_buffer_scale(new_scale_factor);
-
-        let display_id = self.inner.get_display_id().unwrap_or_default();
-
-        if let Some(engine) = self.inner.engine.upgrade() {
-            trace!(
-                "[preferred_buffer_scale event] sending window metrics event: {}x{} (scale: {})",
-                physical_size.width,
-                physical_size.height,
-                new_scale_factor
-            );
-
-            engine.send_window_metrics_event(
-                self.inner.id,
-                usize::try_from(physical_size.width.get()).unwrap(),
-                usize::try_from(physical_size.height.get()).unwrap(),
-                new_scale_factor as f64,
-                display_id,
-            );
+            match sync.poll(now, may_request) {
+                (PlatformAction::None, deadline) => return deadline,
+                (PlatformAction::Request(geometry), _) => {
+                    drop(sync);
+                    self.inner.send_window_metrics(geometry);
+                }
+                (PlatformAction::Acknowledge(serial), _) => {
+                    // The surface already shows what this configure asked
+                    // for (only the window's state changed, or its size
+                    // changed back), so no frame will come to acknowledge
+                    // it with. The raster thread is kept from committing in
+                    // between by the lock.
+                    trace!("acknowledging configure {} without a new frame", serial);
+                    self.inner.window.xdg_surface().ack_configure(serial);
+                    self.inner.window.wl_surface().commit();
+                }
+            }
         }
     }
 
-    pub(crate) fn configure(
-        &mut self,
-        _conn: &Connection,
-        configure: ToplevelConfigure,
-        _serial: u32,
-    ) {
-        let _resize_mutex = self.inner.resize_mutex.lock().unwrap();
+    pub(crate) fn scale_factor_changed(&mut self, new_scale_factor: i32) {
+        // Keep the size the same in surface coordinates.
+        let scale_factor = self.inner.load_current_scale_factor();
+        if let Some(size) = self.inner.load_current_size() {
+            self.inner
+                .store_current_size(size.to_logical::<f64>(scale_factor).into());
+        }
+        self.inner
+            .store_current_scale_factor(new_scale_factor.into());
 
+        // The buffer scale is set by the raster thread, in the commit of the
+        // first frame that was drawn for it.
+        if let Some(geometry) = self.inner.current_geometry() {
+            self.inner.sync.lock().unwrap().set_geometry(geometry);
+        }
+    }
+
+    pub(crate) fn configure(&mut self, configure: ToplevelConfigure, serial: u32) {
+        // A configure without a size leaves it to the window.
         let new_logical_size = configure
             .size
             .map(|(width, height)| LogicalSize::new(width.get(), height.get()).into())
+            .or(self.inner.load_current_size())
             .unwrap_or(self.inner.default_size);
 
         self.inner.store_current_size(new_logical_size);
 
-        let scale_factor = self.inner.load_current_scale_factor();
-
-        let Some(physical_size) = new_logical_size.to_physical(scale_factor).non_zero() else {
+        let Some(geometry) = self.inner.current_geometry() else {
             error!("Unable to convert window configure event to a physical size");
             return;
         };
 
-        self.inner.store_resize_status(ResizeState::ResizeStarted);
-        self.inner.store_pending_size(Some(physical_size));
+        // Neither acknowledged nor sent to the engine here: see `poll`.
+        self.inner.sync.lock().unwrap().configure(serial, geometry);
+    }
 
-        // The resize logic is based on Flutter's Windows embedder
-        // implementation. However, one notable difference between the two is
-        // that the Windows implementation resizes the EGL surface *after*
-        // sending the window metrics event to the engine (e.g.: as part of the
-        // `CompositorOpenGL::Present` callback [0]), while flust-sctk's
-        // implementation resizes it *prior* to sending the window metrics
-        // event.
-        //
-        // This change in flust-sctk's implementation was done to avoid some
-        // visual glitches that were observed when the EGL surface was resized
-        // too late (e.g.: as part of the `on_frame_generated` callback).
-        //
-        // TODO: Investigate when is the *correct* time to resize the EGL
-        // surface and update the implementation if needed.
-        //
-        // [0]: https://github.com/flutter/engine/blob/605b3f3/shell/platform/windows/flutter_windows_view.cc#L701-L711
-        self.inner.opengl_handler.resize(physical_size);
-
-        let display_id = self.inner.get_display_id().unwrap_or_default();
-
-        if let Some(engine) = self.inner.engine.upgrade() {
-            trace!(
-                "[configure event] sending window metrics event: {}x{} (scale: {})",
-                physical_size.width,
-                physical_size.height,
-                scale_factor
-            );
-
-            engine.send_window_metrics_event(
-                self.inner.id,
-                usize::try_from(physical_size.width.get()).unwrap(),
-                usize::try_from(physical_size.height.get()).unwrap(),
-                scale_factor,
-                display_id,
-            );
+    pub(crate) fn surface_outputs_changed(&mut self) {
+        // Only the display changed: tell the engine, for the size it is
+        // drawing at.
+        let geometry = self.inner.sync.lock().unwrap().engine_geometry();
+        if let Some(geometry) = geometry {
+            self.inner.send_window_metrics(geometry);
         }
     }
 
-    pub(crate) fn surface_outputs_changed(&mut self, _conn: &Connection, _surface: &WlSurface) {
-        let scale_factor = self.inner.load_current_scale_factor();
-
-        let Some(physical_size) = self.inner.non_zero_physical_size() else {
-            error!("Invalid physical size while handling `surface_outputs_changed` event");
-            return;
-        };
-
-        let display_id = self.inner.get_display_id().unwrap_or_default();
-
-        if let Some(engine) = self.inner.engine.upgrade() {
-            engine.send_window_metrics_event(
-                self.inner.id,
-                usize::try_from(physical_size.width.get()).unwrap(),
-                usize::try_from(physical_size.height.get()).unwrap(),
-                scale_factor,
-                display_id,
-            );
-        }
-    }
-
-    pub(crate) fn pointer_event(
-        &mut self,
-        _conn: &Connection,
-        pointer: &WlPointer,
-        event: &PointerEvent,
-    ) {
+    pub(crate) fn pointer_event(&mut self, pointer: &WlPointer, event: &PointerEvent) {
         let sctk_pointer_event = {
             let mut pointers = self.inner.pointers.write().unwrap();
             let pointer = pointers
