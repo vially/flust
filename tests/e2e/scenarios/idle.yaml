@@ -1,0 +1,32 @@
+# Just start the app and let it sit: startup and steady-state rendering.
+# The app is the template app, run from its build directory, where the
+# Flutter bundle (data/) and the engine library (lib/) sit next to it.
+app:
+  command: ./flust-app-template
+  cwd: ../../../flust-app-template/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+
+# What analyzers/window_fill.py relies on: a magenta background, and a green border
+# that sway draws around the window at the size it has given it.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# window_fill.py reads the frames as images.
+capture:
+  frames: true
+
+steps:
+  - sleep: 3s
+  - screenshot: idle
+
+analyze:
+  - run: python3 ../analyzers/window_fill.py
