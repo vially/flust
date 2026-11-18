@@ -4,10 +4,13 @@
     tests/e2e/run.py                      # all of them, against Flust
     tests/e2e/run.py drag-edges steps     # some of them
     tests/e2e/run.py --reference          # against Flutter's GTK embedder
+    tests/e2e/run.py --target surface     # rendering straight into the window
+    tests/e2e/run.py --repeat 5 storm     # five times, to catch what is rare
 
 Each scenario is a `waytape run`; its run directory is kept under
-`.waytape/runs/<scenario>[-reference]`, replacing the previous one. Exits
-with 1 if any scenario failed.
+`.waytape/runs/<scenario>[-reference|-surface]`, replacing the previous
+one (with --repeat, the last failed run of a scenario is the one kept).
+Exits with 1 if any run failed.
 """
 
 import argparse
@@ -44,7 +47,17 @@ def main():
         action="store_true",
         help="run Flutter's own Linux embedder (see build-reference.sh) instead of Flust",
     )
+    parser.add_argument(
+        "--target",
+        choices=["framebuffer", "surface"],
+        default="framebuffer",
+        help="what Flust has the engine render into: a framebuffer that is then copied to the window "
+        "(the default), or the window's surface itself",
+    )
+    parser.add_argument("--repeat", type=int, default=1, metavar="N", help="run each scenario N times")
     args = parser.parse_args()
+    if args.reference and args.target != "framebuffer":
+        parser.error("--target is for Flust, not for the reference")
 
     app = HERE / "app/target/debug/flust-e2e-probe"
     build = "build-app.sh"
@@ -53,34 +66,53 @@ def main():
     if not app.exists():
         sys.exit(f"{app} is missing: run tests/e2e/{build} first")
 
-    failed = 0
+    suffix = "-reference" if args.reference else "-surface" if args.target == "surface" else ""
+    runs = failed = 0
     for name in args.scenarios:
-        out = ROOT / ".waytape/runs" / (name + ("-reference" if args.reference else ""))
-        shutil.rmtree(out, ignore_errors=True)
+        out = ROOT / ".waytape/runs" / (name + suffix)
         command = ["waytape", "run", str(HERE / "scenarios" / f"{name}.yaml"), "--quiet", "--out", str(out)]
         if args.reference:
             command += ["--app", str(app)]
-        subprocess.run(command, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if args.target == "surface":
+            command += ["--env", "PROBE_TARGET=surface"]
 
-        try:
-            report = json.loads((out / "report.json").read_text())
-        except (OSError, ValueError):
-            print(f"FAILED  {name}: no report; run `{' '.join(command)}` by hand")
-            failed += 1
-            continue
-        notes = [
-            f'step {step["index"]} ({step["step"]})' for step in report["steps"] if step["result"] == "failed"
-        ]
-        for analyzer in report["analyzers"]:
-            if analyzer["exit_code"] != 0:
-                # "python3 ../analyzers/protocol.py --scale 2" -> "protocol"
-                script = next(word for word in analyzer["command"].split() if word.endswith(".py"))
-                notes.append(Path(script).stem)
-        result = report["result"]
-        failed += result != "passed"
-        print(f"{result.upper():7} {name}" + (": " + ", ".join(notes) if notes else ""))
+        for attempt in range(args.repeat):
+            # Keep a failed run for inspection unless this one fails as well.
+            scratch = out.with_name(out.name + ".new")
+            shutil.rmtree(scratch, ignore_errors=True)
+            command[command.index("--out") + 1] = str(scratch)
+            subprocess.run(command, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            runs += 1
 
-    print(f"{len(args.scenarios) - failed} passed, {failed} failed; run directories in .waytape/runs/")
+            label = name + (f" [{attempt + 1}/{args.repeat}]" if args.repeat > 1 else "")
+            try:
+                report = json.loads((scratch / "report.json").read_text())
+            except (OSError, ValueError):
+                shown = " ".join(command).replace(str(scratch), str(out))
+                print(f"FAILED  {label}: no report; run `{shown}` by hand")
+                failed += 1
+                continue
+            notes = [
+                f'step {step["index"]} ({step["step"]})' for step in report["steps"] if step["result"] == "failed"
+            ]
+            for analyzer in report["analyzers"]:
+                if analyzer["exit_code"] != 0:
+                    # "python3 ../analyzers/protocol.py --scale 2" -> "protocol"
+                    script = next(word for word in analyzer["command"].split() if word.endswith(".py"))
+                    notes.append(Path(script).stem)
+            result = report["result"]
+            print(f"{result.upper():7} {label}" + (": " + ", ".join(notes) if notes else ""), flush=True)
+
+            kept_failure = out.exists() and json.loads((out / "report.json").read_text())["result"] != "passed"
+            if result != "passed":
+                failed += 1
+            if result != "passed" or attempt == 0 or not kept_failure:
+                shutil.rmtree(out, ignore_errors=True)
+                scratch.rename(out)
+            else:
+                shutil.rmtree(scratch)
+
+    print(f"{runs - failed} passed, {failed} failed; run directories in .waytape/runs/")
     return 1 if failed else 0
 
 
