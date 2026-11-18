@@ -12,9 +12,9 @@ your own desktop session.
 
 Most of them were written for
 [the resize issue](https://forge.lab.vially.dev/vially/flust/issues/1).
-They describe what a Flutter embedder should do. Flust failed all of them
-before that issue was worked on and passes all of them now: see
-[Results](#results).
+They describe what a Flutter embedder should do, and Flust is expected to
+pass all of them. The issue has the results from before and after its
+resize handling was reworked.
 
 ## Directory structure
 
@@ -158,69 +158,6 @@ app's surface belongs exactly inside that border.
 Only frames with damage are recorded, so a gap in timestamps means
 nothing changed on screen. Frames from before the first step are startup
 and are not checked by the `probe_*` analyzers.
-
-## Results
-
-On 2026-11-18, with Flutter 3.47.9, everything in debug mode. "Before" is
-Flust at `8b3fe3b`, before the resize handling was reworked. "Frames" is
-displayed frames whose picture did not match the window, of those checked.
-"Protocol" is the number of violations.
-
-| Scenario | Before: frames | Before: protocol | Now: frames | Now: protocol | Reference |
-|---|---|---|---|---|---|
-| `startup` | 0 of 1 | 1 | 0 of 1 | 0 | passes |
-| `drag-edges` | 857 of 940 | 881 | 0 of 990 | 0 | passes |
-| `drag-speeds` | 492 of 543 | 507 | 0 of 558 | 0 | passes |
-| `drag-animated` | 361 of 679 | 384 | 0 of 735 | 0 | frames and protocol pass |
-| `steps` | 8 of 32 | 9 | 0 of 16 | 0 | passes |
-| `storm` | 13 of 29 | 20 | 0 of 28 | 0 | passes |
-| `states` | 6 of 23 | 7 | 0 of 12 | 0 | passes |
-| `input` | 58 of 72 | 63 | 0 of 66 | 0 | passes |
-| `hidden` | 1 of 251 | 3 | 0 of 246 | 0 | passes |
-| `scale` | 94 of 110 | 98 | 0 of 125 | 0 | passes |
-| `scale-change` | | | 2 of 10 (4 allowed) | 0 | not run |
-| `close` | 1 of 63 | 2 | 0 of 61 | 0 | passes |
-
-All twelve pass, with both render targets, and the app logs no warnings or
-errors in any of them (before: in at least six). The animation in `drag-animated`:
-
-| | Before | Now | Reference |
-|---|---|---|---|
-| Painted frames never displayed | 84% | 4 to 6% | 26% |
-| Longest the picture stood still | 273 ms | 33 to 50 ms | 199 ms |
-
-The "now" numbers are of one run of the suite, and those of the animation
-of the ten runs made while it was worked on. During a drag, a configure is
-answered with a buffer of its size after 16 ms (median) and 26 ms at worst.
-
-What the suite found on the way, beyond what the issue describes:
-
-- **Sway waits for one particular configure.** It holds a resize back
-  until a commit acknowledges exactly the configure it sent for it, and
-  shows the window's old content for up to 200 ms otherwise. xdg-shell
-  lets a client acknowledge only the last of several configures, but then
-  the end of every drag, where sway sends three for the same size, stalls
-  for those 200 ms. That is the 199 ms of the reference, which
-  acknowledges what it has received when it commits. Flust acknowledges
-  each configure with a commit of its own.
-- **Sway sends a frame callback right after every commit it does not
-  show**, which is every commit while it holds a resize back. Taken as a
-  vsync, that made Flust draw several hundred frames a second.
-- **Mesa picks the buffer for a frame when the context is made current**,
-  if it was not current before, and not only when the frame is first
-  drawn to. The window's size has to be set before that, or it takes
-  effect a frame late.
-
-What is left:
-
-- The frames `drag-animated` still loses are frames of the old size that
-  Flust commits while sway holds a resize back and shows the old content.
-  That is up to one per step of the drag. `--max-dropped` is 10 there for
-  that reason; the default of 5 is what an app that is not being resized
-  should stay under.
-- In `scale-change`, the frame in which the output's scale changes shows
-  the app's old buffer at the new scale. Only the compositor could avoid
-  that.
 
 ## Writing a scenario
 
