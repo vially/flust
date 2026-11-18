@@ -76,6 +76,22 @@ def run_dir_argument(parser):
         default=1.0,
         help="the output's scale in the scenario (default: 1)",
     )
+    parser.add_argument(
+        "--scale-from",
+        action="append",
+        default=[],
+        metavar="MARK=SCALE",
+        help="the output's scale from the scenario's mark MARK on, for scenarios that change it",
+    )
+
+
+def scale_changes(args):
+    """The --scale-from options as {mark: scale}, for `load_run`."""
+    changes = {}
+    for option in args.scale_from:
+        mark, _, scale = option.rpartition("=")
+        changes[mark] = float(scale)
+    return changes
 
 
 def _bounding_box(mask):
@@ -207,11 +223,17 @@ def read_frame(pixels, frame, border_width):
         frame.problems.append("damaged(" + ", ".join(damaged) + ")")
 
 
-def load_run(run_dir, scale=1.0, only_steps=True):
-    """The frames of a run, read. Pre-step frames are startup: skipped by default."""
+def load_run(run_dir, scale=1.0, only_steps=True, scale_from=None):
+    """The frames of a run, read. Pre-step frames are startup: skipped by default.
+
+    `scale` is the output's scale, and `scale_from` ({mark: scale}) what it
+    is from each of those marks on.
+    """
     run_dir = Path(run_dir)
+    scale_from = scale_from or {}
     # Reading the frames takes a while, and several analyzers want them.
-    cache = run_dir / f"probe-frames-{scale:g}.json"
+    changes = "".join(f"-{mark}={to:g}" for mark, to in sorted(scale_from.items()))
+    cache = run_dir / f"probe-frames-{scale:g}{changes.replace('/', '_')}.json"
     if cache.exists():
         frames = [Frame(**entry) for entry in json.loads(cache.read_text())]
         for frame in frames:
@@ -231,15 +253,17 @@ def load_run(run_dir, scale=1.0, only_steps=True):
             if event.get("type") == "mark":
                 marks.append((event["t_ms"], event["text"]))
 
-    border_width = round(BORDER_WIDTH * scale)
     frames = []
     with open(run_dir / "frames.tsv", newline="") as table:
         for row in csv.DictReader(table, delimiter="\t"):
             time_ms = float(row["time_ms"])
             section = "-"
+            frame_scale = scale
             for at, text in marks:
                 if at <= time_ms:
                     section = text
+                    frame_scale = scale_from.get(text, frame_scale)
+            border_width = round(BORDER_WIDTH * frame_scale)
             step = "-" if row["step"] == "-" else f'{row["step_index"]}:{row["step"]}'
             frame = Frame(int(row["index"]), time_ms / 1000, step, section)
             pixels = np.asarray(Image.open(frames_dir / f"{frame.index:06}.png").convert("RGBA"))

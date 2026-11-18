@@ -52,7 +52,7 @@ def main():
     if args.run_dir is None:
         parser.error("give a run directory, or run as a waytape analyzer")
 
-    frames = probe.load_run(args.run_dir, args.scale)
+    frames = probe.load_run(args.run_dir, args.scale, scale_from=probe.scale_changes(args))
     if not frames:
         print("probe_frames: no frames were recorded while the steps ran", file=sys.stderr)
         return 1

@@ -34,6 +34,7 @@ SCENARIOS = [
     "input",
     "hidden",
     "scale",
+    "scale-change",
     "close",
 ]
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
