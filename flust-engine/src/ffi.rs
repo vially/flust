@@ -164,6 +164,9 @@ impl From<FlutterPointerEvent> for flust_engine_sys::FlutterPointerEvent {
             scale: 1.0,
             rotation: 0.0,
             view_id: event.view_id,
+            pressure: 0.0,
+            pressure_min: 0.0,
+            pressure_max: 0.0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]

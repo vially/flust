@@ -222,6 +222,7 @@ impl FlutterEngine {
             ),
             post_task_callback: Some(flutter_callbacks::post_task),
             identifier: 0,
+            destruction_callback: None,
         };
         let custom_task_runners = flust_engine_sys::FlutterCustomTaskRunners {
             struct_size: std::mem::size_of::<flust_engine_sys::FlutterCustomTaskRunners>(),
@@ -229,6 +230,7 @@ impl FlutterEngine {
                 as *const flust_engine_sys::FlutterTaskRunnerDescription,
             render_task_runner: std::ptr::null(),
             thread_priority_setter: None,
+            ui_task_runner: std::ptr::null(),
         };
 
         let vsync_callback: VsyncCallback = match inner.vsync_handler {
@@ -293,6 +295,9 @@ impl FlutterEngine {
             update_semantics_callback: None,
             update_semantics_callback2: None,
             channel_update_callback: None,
+            view_focus_change_request_callback: None,
+            engine_id: 0,
+            enable_wide_gamut: false,
         };
 
         // Initialise engine
@@ -486,6 +491,11 @@ impl FlutterEngine {
             physical_view_inset_left: 0.0,
             display_id,
             view_id,
+            has_constraints: false,
+            min_width_constraint: 0,
+            min_height_constraint: 0,
+            max_width_constraint: 0,
+            max_height_constraint: 0,
             #[cfg(all(target_arch = "arm", target_os = "android"))]
             __bindgen_padding_0: 0,
         };
