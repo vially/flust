@@ -8,7 +8,8 @@ use std::{
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flust_engine::{
     compositor::CompositorPresentError,
-    ffi::{FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
+    ffi::{FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
+    renderer::Renderer,
     view::FlutterView,
     FlutterEngineWeakRef,
 };
@@ -268,6 +269,18 @@ impl SctkFlutterWindow {
         config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
         let renderer = attributes.renderer();
+        // The engine has no Impeller path for these backing stores
+        // (https://github.com/flutter/flutter/issues/151670): it would draw
+        // nothing at all.
+        if renderer == Renderer::Impeller
+            && matches!(config.opengl_target_type, FlutterOpenGLTargetType::Surface)
+        {
+            return Err(SctkFlutterWindowCreateError::UnsupportedTargetType(
+                config.opengl_target_type,
+                renderer,
+            ));
+        }
+
         let surface = compositor_state.create_surface(qh);
         let window = Toplevel::new(xdg_shell_state, surface, qh);
 
@@ -471,4 +484,7 @@ impl SctkFlutterWindow {
 pub enum SctkFlutterWindowCreateError {
     #[error("Failed to create Wayland EGL context")]
     CreateWaylandContextError(#[from] CreateWaylandContextError),
+
+    #[error("The {0:?} OpenGL target type is not supported with {1:?}")]
+    UnsupportedTargetType(FlutterOpenGLTargetType, Renderer),
 }
