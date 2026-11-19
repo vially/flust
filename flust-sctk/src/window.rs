@@ -311,6 +311,7 @@ impl SctkFlutterWindow {
                 inner.clone(),
                 context.clone(),
                 config.opengl_target_type,
+                renderer,
             ),
             context,
             frame_clock,

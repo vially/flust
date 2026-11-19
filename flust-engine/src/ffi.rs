@@ -760,7 +760,12 @@ impl From<flust_engine_sys::FlutterOpenGLFramebuffer> for FlutterOpenGLFramebuff
 #[derive(Copy, Clone, Debug, Default)]
 pub struct FlutterOpenGLBackingStoreFramebuffer {
     pub framebuffer_id: u32,
+    /// The colour attachment, if it is a texture (0 otherwise).
     pub texture_id: u32,
+    /// The colour attachment, if it is a renderbuffer (0 otherwise).
+    pub color_renderbuffer_id: u32,
+    /// The depth and stencil attachment, if any (0 otherwise).
+    pub depth_stencil_renderbuffer_id: u32,
 }
 
 impl FlutterOpenGLBackingStoreFramebuffer {

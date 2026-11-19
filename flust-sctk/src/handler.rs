@@ -20,6 +20,7 @@ use flust_engine::{
         FlutterOpenGLBackingStore, FlutterOpenGLBackingStoreFramebuffer, FlutterOpenGLFramebuffer,
         FlutterOpenGLSurface, FlutterOpenGLTargetType, FlutterPhysicalKey, FlutterPresentViewInfo,
     },
+    renderer::Renderer,
     tasks::TaskRunnerHandler,
     FlutterVsyncHandler,
 };
@@ -45,7 +46,7 @@ use smithay_client_toolkit::{
 };
 use smithay_clipboard::Clipboard;
 use thiserror::Error;
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{protocol::wl_display::WlDisplay, Connection, Proxy};
 
@@ -131,9 +132,10 @@ impl SctkCompositorHandler {
         window: Weak<SctkFlutterWindowInner>,
         context: Arc<Mutex<Context>>,
         opengl_target_type: FlutterOpenGLTargetType,
+        renderer: Renderer,
     ) -> Self {
         let opengl_compositor =
-            SctkOpenGLCompositor::new(window.clone(), context, opengl_target_type);
+            SctkOpenGLCompositor::new(window.clone(), context, opengl_target_type, renderer);
 
         Self {
             window,
@@ -238,27 +240,185 @@ trait SctkOpenGLCompositorHandler {
     fn frame_presented(&self) -> Result<(), CompositorPresentError>;
 }
 
+/// What the framebuffer of a backing store is made of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FramebufferLayout {
+    /// A colour texture: all Skia needs.
+    Texture,
+
+    /// A colour texture, and a depth and stencil renderbuffer. Impeller
+    /// draws into the framebuffer with the attachments it has, and needs
+    /// stencil to fill paths and depth to clip: without them, a path is
+    /// filled as its bounding box and clips other than rectangles have no
+    /// effect.
+    TextureWithDepthStencil,
+
+    /// Multisampled colour, depth and stencil renderbuffers. Impeller
+    /// antialiases by multisampling, and draws into a multisampled
+    /// framebuffer as it does into any other. The blit to the window
+    /// resolves it.
+    Multisampled,
+}
+
+impl FramebufferLayout {
+    /// The number of samples of a multisampled framebuffer, the one
+    /// Impeller uses for its own.
+    const SAMPLES: i32 = 4;
+
+    /// The layout for `renderer`, with what the current context supports.
+    ///
+    /// A context current on this thread is required.
+    fn for_renderer(gl: &gl::Gl, renderer: Renderer) -> Self {
+        match renderer {
+            Renderer::Skia => Self::Texture,
+            Renderer::Impeller if supports_multisampled_renderbuffers(gl) => Self::Multisampled,
+            Renderer::Impeller => Self::TextureWithDepthStencil,
+        }
+    }
+}
+
+/// Whether the current context can make the 4x multisampled renderbuffers
+/// of `FramebufferLayout::Multisampled`: OpenGL (ES) 3 or newer.
+///
+/// `GL_EXT_multisampled_render_to_texture`, the other way Impeller can be
+/// given a multisampled framebuffer, is not used: it is meant for tiled
+/// GPUs, where it saves memory bandwidth, and could not be tried here.
+fn supports_multisampled_renderbuffers(gl: &gl::Gl) -> bool {
+    let mut major_version = 0;
+    let mut max_samples = 0;
+    unsafe {
+        // `GL_MAJOR_VERSION` is unknown to OpenGL ES 2, which reports an
+        // error and leaves the value alone.
+        gl.GetIntegerv(gl::MAJOR_VERSION, &mut major_version);
+        if major_version >= 3 {
+            gl.GetIntegerv(gl::MAX_SAMPLES, &mut max_samples);
+        }
+        while gl.GetError() != gl::NO_ERROR {}
+    }
+    major_version >= 3 && max_samples >= FramebufferLayout::SAMPLES
+}
+
 #[derive(Clone)]
 struct SctkOpenGLCompositorHandlerFramebuffer {
     gl: gl::Gl,
     format: u32,
+    layout: FramebufferLayout,
 }
 
 impl SctkOpenGLCompositorHandlerFramebuffer {
-    pub fn new(context: Arc<Mutex<Context>>) -> Self {
+    pub fn new(context: Arc<Mutex<Context>>, renderer: Renderer) -> Self {
         context.lock().unwrap().make_current();
 
         let gl = gl::Gl::load_with(|symbol| {
             let proc = CString::new(symbol).unwrap();
             context.lock().unwrap().get_proc_address(proc.as_c_str())
         });
+        let layout = FramebufferLayout::for_renderer(&gl, renderer);
 
         context.lock().unwrap().make_not_current();
+
+        info!("backing store framebuffers: {layout:?}");
 
         Self {
             gl,
             format: Context::get_supported_format(),
+            layout,
         }
+    }
+
+    /// Deletes the framebuffer and its attachments.
+    ///
+    /// # Safety
+    ///
+    /// A context must be current.
+    unsafe fn delete_framebuffer(&self, user_data: &FlutterOpenGLBackingStoreFramebuffer) {
+        // Names that are 0 are ignored.
+        self.gl.DeleteFramebuffers(1, &user_data.framebuffer_id);
+        self.gl.DeleteTextures(1, &user_data.texture_id);
+        self.gl
+            .DeleteRenderbuffers(1, &user_data.color_renderbuffer_id);
+        self.gl
+            .DeleteRenderbuffers(1, &user_data.depth_stencil_renderbuffer_id);
+    }
+
+    /// Makes a renderbuffer of `format`, attached to the bound framebuffer at
+    /// each of `attachments`. Returns its name.
+    ///
+    /// # Safety
+    ///
+    /// A context must be current, and the framebuffer bound.
+    unsafe fn attach_renderbuffer(
+        &self,
+        format: gl::types::GLenum,
+        size: (i32, i32),
+        attachments: &[gl::types::GLenum],
+    ) -> u32 {
+        let mut renderbuffer_id = 0;
+        self.gl.GenRenderbuffers(1, &mut renderbuffer_id);
+        self.gl.BindRenderbuffer(gl::RENDERBUFFER, renderbuffer_id);
+        match self.layout {
+            FramebufferLayout::Multisampled => self.gl.RenderbufferStorageMultisample(
+                gl::RENDERBUFFER,
+                FramebufferLayout::SAMPLES,
+                format,
+                size.0,
+                size.1,
+            ),
+            _ => self
+                .gl
+                .RenderbufferStorage(gl::RENDERBUFFER, format, size.0, size.1),
+        }
+        self.gl.BindRenderbuffer(gl::RENDERBUFFER, 0);
+        for attachment in attachments {
+            self.gl.FramebufferRenderbuffer(
+                gl::FRAMEBUFFER,
+                *attachment,
+                gl::RENDERBUFFER,
+                renderbuffer_id,
+            );
+        }
+        renderbuffer_id
+    }
+
+    /// Makes a colour texture of `size`, attached to the bound framebuffer.
+    /// Returns its name.
+    ///
+    /// # Safety
+    ///
+    /// A context must be current, and the framebuffer bound.
+    unsafe fn attach_texture(&self, size: (i32, i32)) -> u32 {
+        let mut texture_id = 0;
+        self.gl.GenTextures(1, &mut texture_id);
+        self.gl.BindTexture(gl::TEXTURE_2D, texture_id);
+        for (name, value) in [
+            (gl::TEXTURE_MIN_FILTER, gl::NEAREST),
+            (gl::TEXTURE_MAG_FILTER, gl::NEAREST),
+            (gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE),
+            (gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE),
+        ] {
+            self.gl
+                .TexParameteri(gl::TEXTURE_2D, name, value.try_into().unwrap());
+        }
+        self.gl.TexImage2D(
+            gl::TEXTURE_2D,
+            0,
+            gl::RGBA8.try_into().unwrap(),
+            size.0,
+            size.1,
+            0,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            std::ptr::null(),
+        );
+        self.gl.BindTexture(gl::TEXTURE_2D, 0);
+        self.gl.FramebufferTexture2D(
+            gl::FRAMEBUFFER,
+            gl::COLOR_ATTACHMENT0,
+            gl::TEXTURE_2D,
+            texture_id,
+            0,
+        );
+        texture_id
     }
 }
 
@@ -312,52 +472,42 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
         config: FlutterBackingStoreConfig,
     ) -> Result<FlutterOpenGLBackingStore, CompositorCreateBackingStoreError> {
         let mut user_data = FlutterOpenGLBackingStoreFramebuffer::new();
+        let size = (
+            config.size.width.round() as i32,
+            config.size.height.round() as i32,
+        );
         unsafe {
-            self.gl.GenTextures(1, &mut user_data.texture_id);
             self.gl.GenFramebuffers(1, &mut user_data.framebuffer_id);
-
             self.gl
                 .BindFramebuffer(gl::FRAMEBUFFER, user_data.framebuffer_id);
-            self.gl.BindTexture(gl::TEXTURE_2D, user_data.texture_id);
-            self.gl.TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MIN_FILTER,
-                gl::NEAREST.try_into().unwrap(),
-            );
-            self.gl.TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MAG_FILTER,
-                gl::NEAREST.try_into().unwrap(),
-            );
-            self.gl.TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_WRAP_S,
-                gl::CLAMP_TO_EDGE.try_into().unwrap(),
-            );
-            self.gl.TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_WRAP_T,
-                gl::CLAMP_TO_EDGE.try_into().unwrap(),
-            );
-            self.gl.TexImage2D(
-                gl::TEXTURE_2D,
-                0,
-                gl::RGBA8.try_into().unwrap(),
-                config.size.width.round() as i32,
-                config.size.height.round() as i32,
-                0,
-                gl::RGBA,
-                gl::UNSIGNED_BYTE,
-                std::ptr::null(),
-            );
-            self.gl.BindTexture(gl::TEXTURE_2D, 0);
-            self.gl.FramebufferTexture2D(
-                gl::FRAMEBUFFER,
-                gl::COLOR_ATTACHMENT0,
-                gl::TEXTURE_2D,
-                user_data.texture_id,
-                0,
-            );
+
+            match self.layout {
+                FramebufferLayout::Texture | FramebufferLayout::TextureWithDepthStencil => {
+                    user_data.texture_id = self.attach_texture(size);
+                }
+                FramebufferLayout::Multisampled => {
+                    user_data.color_renderbuffer_id =
+                        self.attach_renderbuffer(gl::RGBA8, size, &[gl::COLOR_ATTACHMENT0]);
+                }
+            }
+
+            if self.layout != FramebufferLayout::Texture {
+                user_data.depth_stencil_renderbuffer_id = self.attach_renderbuffer(
+                    gl::DEPTH24_STENCIL8,
+                    size,
+                    &[gl::DEPTH_ATTACHMENT, gl::STENCIL_ATTACHMENT],
+                );
+            }
+
+            let status = self.gl.CheckFramebufferStatus(gl::FRAMEBUFFER);
+            self.gl.BindFramebuffer(gl::FRAMEBUFFER, 0);
+            if status != gl::FRAMEBUFFER_COMPLETE {
+                self.delete_framebuffer(&user_data);
+                return Err(CompositorCreateBackingStoreError::CreateFailed(format!(
+                    "incomplete {:?} framebuffer (status {status:#x})",
+                    self.layout
+                )));
+            }
         };
 
         let framebuffer = FlutterOpenGLFramebuffer::new(self.format, user_data);
@@ -376,11 +526,7 @@ impl SctkOpenGLCompositorHandler for SctkOpenGLCompositorHandlerFramebuffer {
             ));
         };
 
-        unsafe {
-            self.gl
-                .DeleteFramebuffers(1, &framebuffer.user_data.framebuffer_id);
-            self.gl.DeleteTextures(1, &framebuffer.user_data.texture_id);
-        }
+        unsafe { self.delete_framebuffer(&framebuffer.user_data) };
 
         framebuffer.drop_raw_user_data();
 
@@ -545,10 +691,11 @@ impl SctkOpenGLCompositor {
         window: Weak<SctkFlutterWindowInner>,
         context: Arc<Mutex<Context>>,
         opengl_target_type: FlutterOpenGLTargetType,
+        renderer: Renderer,
     ) -> Self {
         match opengl_target_type {
             FlutterOpenGLTargetType::Framebuffer => Self::Framebuffer(Box::new(
-                SctkOpenGLCompositorHandlerFramebuffer::new(context),
+                SctkOpenGLCompositorHandlerFramebuffer::new(context, renderer),
             )),
             FlutterOpenGLTargetType::Texture => unimplemented!(
                 "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
