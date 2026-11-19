@@ -369,6 +369,11 @@ impl SemanticsTree {
         } else {
             if !node.label.is_empty() {
                 built.set_label(node.label.as_str());
+            } else if !node.tooltip.is_empty() {
+                // A button with only an icon, such as a floating action
+                // button, has its tooltip to say what it is and nothing
+                // else. A screen reader reads the name of a node.
+                built.set_label(node.tooltip.as_str());
             }
             // The value of a text field is the text of its runs.
             if !node.value.is_empty() && text.is_none() {
@@ -411,7 +416,8 @@ impl SemanticsTree {
         if !node.hint.is_empty() {
             built.set_description(node.hint.as_str());
         }
-        if !node.tooltip.is_empty() {
+        // A tooltip that is the name already is not said twice.
+        if !node.tooltip.is_empty() && !(node.label.is_empty() && role != Role::Label) {
             built.set_tooltip(node.tooltip.as_str());
         }
         if !node.identifier.is_empty() {
@@ -1533,5 +1539,28 @@ mod tests {
             tree.translate_action(&request(Action::Click, ANNOUNCEMENT_NODE_ID, None)),
             None
         );
+    }
+
+    #[test]
+    fn a_tooltip_names_a_node_without_a_label() {
+        let mut tree = SemanticsTree::new("Probe");
+        let add = FlutterSemanticsNode {
+            tooltip: "Increment".into(),
+            ..button(1, "")
+        };
+        let send = FlutterSemanticsNode {
+            tooltip: "Sends the message".into(),
+            ..button(2, "Send")
+        };
+
+        let update = tree.apply(update(vec![node(0, &[1, 2]), add, send]));
+
+        let add = find(&update, NodeId(1));
+        assert_eq!(add.label(), Some("Increment"));
+        assert_eq!(add.tooltip(), None);
+
+        let send = find(&update, NodeId(2));
+        assert_eq!(send.label(), Some("Send"));
+        assert_eq!(send.tooltip(), Some("Sends the message"));
     }
 }
