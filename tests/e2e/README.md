@@ -84,7 +84,7 @@ render with Impeller, into `.waytape/runs/<scenario>-impeller`. With
 `waytape run`, that is `--env PROBE_ENGINE_ARGS=--enable-impeller`:
 `PROBE_ENGINE_ARGS` is a list of switches for the engine, separated by
 spaces. Impeller can not render straight into the window's surface, so
-this does not go with `--target surface`.
+this does not go with `--target surface`: Flust refuses to start.
 
 To see what the app did in a run, add `--env
 RUST_LOG=info,flust_sctk=trace` to a `waytape run`: `app.log` then has
@@ -138,6 +138,16 @@ selection changes, and `probe: semantics accessible navigation
 true|false` when the framework is told that an assistive technology is in
 use or no longer is. Activating the button also announces `Counted to N`
 to assistive technologies.
+
+With `PROBE_SHAPES=1` it draws shapes instead, for the `shapes` scenario:
+two stars that cross themselves (one filled with the non-zero rule, one
+with the even-odd rule), a square clipped to a rounded rectangle and one
+clipped to a circle, and two black squares rotated by 30 degrees, the
+second in a layer, so that it is drawn offscreen and then composited. It
+prints `probe: shapes` when it paints them. `analyzers/shapes.py` checks
+pixels of the stars and clips, and that the edges of the squares are
+antialiased: the other scenarios only look at rectangles, and pass on a
+renderer that fills a star as its bounding box.
 
 ## Accessibility
 
@@ -213,6 +223,7 @@ For the probe app:
 | `scale-change` | The output's scale changes while the app runs, to 2 and back |
 | `close` | Closing the window in the middle of a resize |
 | `semantics` | What a screen reader sees of the app, and that what it asks for reaches the app |
+| `shapes` | Paths, clips and antialiasing: what the renderer draws |
 
 For the template app (`flust-app-template`, built with `cargo build`
 there), with `window_fill.py` only: `idle`, `resize-drag`, `resize-steps`.

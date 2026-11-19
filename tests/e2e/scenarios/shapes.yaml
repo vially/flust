@@ -1,0 +1,31 @@
+# What the renderer draws: paths that are not convex, clips that are not
+# rectangles, and antialiased edges, directly and in a layer. The other
+# scenarios only look at rectangles, and pass on a renderer that fills a
+# star as its bounding box. `analyzers/shapes.py` reads the shapes back from
+# a screenshot.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    PROBE_SHAPES: "1"
+
+# What the analyzer relies on: a green border that sway draws around the
+# window, to find it by.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: log, match: "probe: shapes" }
+  - wait: stable
+  - screenshot: shapes
+
+analyze:
+  - run: python3 ../analyzers/shapes.py

@@ -19,8 +19,11 @@
 //   is painted only when something changes (the size, a tap).
 // - `PROBE_SEMANTICS=1`: show a few controls instead, for the tests that read
 //   the app through the accessibility API of the platform.
+// - `PROBE_SHAPES=1`: draw shapes instead, for the test of what the renderer
+//   draws (`ShapesPainter`).
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
@@ -30,6 +33,8 @@ import 'package:flutter/widgets.dart';
 void main() {
   if (Platform.environment['PROBE_SEMANTICS'] == '1') {
     runApp(const SemanticsProbe());
+  } else if (Platform.environment['PROBE_SHAPES'] == '1') {
+    runApp(const SizedBox.expand(child: CustomPaint(painter: ShapesPainter())));
   } else {
     runApp(const Probe());
   }
@@ -348,4 +353,93 @@ class ProbePainter extends CustomPainter {
   @override
   bool shouldRepaint(ProbePainter oldDelegate) =>
       oldDelegate.devicePixelRatio != devicePixelRatio;
+}
+
+/// Shapes that a renderer can get wrong without anything failing: paths that
+/// are not convex, clips that are not rectangles, and edges that should be
+/// antialiased, once directly and once in a layer (drawn offscreen and then
+/// composited). `analyzers/shapes.py` reads them back: the positions and
+/// colours there mirror the ones here.
+///
+/// Everything is in physical pixels, on a white background, from the top
+/// left corner of the window.
+class ShapesPainter extends CustomPainter {
+  const ShapesPainter();
+
+  static const Color white = Color(0xFFFFFFFF);
+  static const Color blue = Color(0xFF0000FF);
+  static const Color red = Color(0xFFFF0000);
+  static const Color green = Color(0xFF008000);
+  static const Color purple = Color(0xFF800080);
+  static const Color black = Color(0xFF000000);
+
+  /// A five-pointed star, drawn in one stroke, so that it crosses itself.
+  static Path star(Rect bounds) {
+    final Path path = Path();
+    for (int i = 0; i < 5; i++) {
+      final double angle = -math.pi / 2 + i * 4 * math.pi / 5;
+      final Offset point = bounds.center +
+          Offset(math.cos(angle), math.sin(angle)) * bounds.shortestSide / 2;
+      i == 0
+          ? path.moveTo(point.dx, point.dy)
+          : path.lineTo(point.dx, point.dy);
+    }
+    return path..close();
+  }
+
+  /// A 160x160 square, rotated by 30 degrees about the centre of `bounds`.
+  static void rotatedSquare(Canvas canvas, Rect bounds, Paint paint) {
+    canvas.save();
+    canvas.translate(bounds.center.dx, bounds.center.dy);
+    canvas.rotate(math.pi / 6);
+    canvas.drawRect(
+        Rect.fromCenter(center: Offset.zero, width: 160, height: 160), paint);
+    canvas.restore();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double devicePixelRatio =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    canvas.scale(1 / devicePixelRatio);
+    print('probe: shapes');
+
+    canvas.drawPaint(Paint()..color = white);
+
+    // A star filled with the non-zero rule: all of it, the middle too.
+    canvas.drawPath(
+        star(const Rect.fromLTWH(20, 20, 120, 120)), Paint()..color = blue);
+
+    // The same with the even-odd rule: the middle is left out.
+    canvas.drawPath(
+        star(const Rect.fromLTWH(160, 20, 120, 120))
+          ..fillType = PathFillType.evenOdd,
+        Paint()..color = red);
+
+    // A square clipped to a rounded rectangle: the corners are left out.
+    canvas.save();
+    canvas.clipRRect(RRect.fromRectAndRadius(
+        const Rect.fromLTWH(300, 20, 120, 120), const Radius.circular(40)));
+    canvas.drawPaint(Paint()..color = green);
+    canvas.restore();
+
+    // A square clipped to a circle, through a path.
+    canvas.save();
+    canvas.clipPath(Path()..addOval(const Rect.fromLTWH(440, 20, 120, 120)));
+    canvas.drawPaint(Paint()..color = purple);
+    canvas.restore();
+
+    // Squares with slanted edges, which antialiasing blends into the
+    // background: one drawn directly, one in a layer.
+    rotatedSquare(
+        canvas, const Rect.fromLTWH(20, 180, 240, 240), Paint()..color = black);
+    canvas.saveLayer(const Rect.fromLTWH(300, 180, 240, 240),
+        Paint()..color = const Color(0xFE000000));
+    rotatedSquare(canvas, const Rect.fromLTWH(300, 180, 240, 240),
+        Paint()..color = black);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(ShapesPainter oldDelegate) => false;
 }

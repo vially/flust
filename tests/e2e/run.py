@@ -39,6 +39,7 @@ SCENARIOS = [
     "scale-change",
     "close",
     "semantics",
+    "shapes",
 ]
 # These read the app through the accessibility API of the desktop, which has
 # to be switched on for that. They get a session of their own, so that
@@ -75,6 +76,8 @@ def main():
         parser.error("--target is for Flust, not for the reference")
     if args.reference and args.impeller:
         parser.error("--impeller is for Flust, not for the reference")
+    if args.impeller and args.target == "surface":
+        parser.error("Impeller can not render into the window surface")
 
     app = HERE / "app/target/debug/flust-e2e-probe"
     build = "build-app.sh"
