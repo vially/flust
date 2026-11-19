@@ -2,4 +2,7 @@
 //! technologies, such as screen readers, through
 //! [AccessKit](https://accesskit.dev).
 
+pub mod bridge;
 pub mod tree;
+
+pub use bridge::Accessibility;

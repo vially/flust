@@ -10,5 +10,6 @@ license = "MIT"
 
 [dependencies]
 accesskit = "0.25.2"
+accesskit_unix = "0.24.1"
 flust-engine = { path = "../flust-engine" }
 tracing = "0.1"
