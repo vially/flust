@@ -9,6 +9,7 @@ use std::{
 
 use ashpd::desktop::settings::{ColorScheme, Settings};
 use dpi::PhysicalSize;
+use flust_accessibility::Accessibility;
 use flust_engine::{
     compositor::{
         CompositorCollectBackingStoreError, CompositorCreateBackingStoreError,
@@ -30,6 +31,7 @@ use flust_glutin::{
     gl,
 };
 use flust_plugins::{
+    accessibility::{AccessibilityHandler, Announcement, Assertiveness},
     keyboard::{KeyboardStateError, KeyboardStateHandler},
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
@@ -796,6 +798,26 @@ impl From<SystemMouseCursor> for SctkMouseCursor {
         };
 
         Self { icon }
+    }
+}
+
+pub struct SctkAccessibilityHandler {
+    accessibility: Accessibility,
+}
+
+impl SctkAccessibilityHandler {
+    pub fn new(accessibility: Accessibility) -> Self {
+        Self { accessibility }
+    }
+}
+
+impl AccessibilityHandler for SctkAccessibilityHandler {
+    fn announce(&mut self, announcement: Announcement) {
+        self.accessibility.announce(
+            announcement.view_id,
+            &announcement.message,
+            announcement.assertiveness == Assertiveness::Assertive,
+        );
     }
 }
 

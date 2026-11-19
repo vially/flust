@@ -16,9 +16,10 @@ use flust_engine::{
 };
 use flust_engine_sys::FlutterEngineGetCurrentTime;
 use flust_plugins::{
-    isolate::IsolatePlugin, keyevent::KeyEventPlugin, lifecycle::LifecyclePlugin,
-    localization::LocalizationPlugin, mousecursor::MouseCursorPlugin, navigation::NavigationPlugin,
-    platform::PlatformPlugin, system::SystemPlugin, textinput::TextInputPlugin,
+    accessibility::AccessibilityPlugin, isolate::IsolatePlugin, keyevent::KeyEventPlugin,
+    lifecycle::LifecyclePlugin, localization::LocalizationPlugin, mousecursor::MouseCursorPlugin,
+    navigation::NavigationPlugin, platform::PlatformPlugin, system::SystemPlugin,
+    textinput::TextInputPlugin,
 };
 use flust_plugins::{keyboard::KeyboardPlugin, settings::SettingsPlugin};
 use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
@@ -69,9 +70,9 @@ use wayland_client::{
 use crate::{
     frame_clock::FrameClock,
     handler::{
-        SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler, SctkPlatformHandler,
-        SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler, SctkVsyncHandler,
-        FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkAccessibilityHandler, SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler,
+        SctkPlatformHandler, SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler,
+        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
@@ -179,7 +180,12 @@ impl SctkApplication {
         let text_input_handler = Arc::new(Mutex::new(SctkTextInputHandler::new()));
         let keyboard_handler = Arc::new(Mutex::new(SctkKeyboardHandler::new()));
 
+        let accessibility_handler = Arc::new(Mutex::new(SctkAccessibilityHandler::new(
+            accessibility.clone(),
+        )));
+
         let mut plugins = PluginRegistrar::new();
+        plugins.add_plugin(&engine, AccessibilityPlugin::new(accessibility_handler));
         plugins.add_plugin(&engine, IsolatePlugin::new(noop_isolate_cb));
         plugins.add_plugin(&engine, KeyEventPlugin::new());
         plugins.add_plugin(&engine, TextInputPlugin::new(text_input_handler.clone()));
