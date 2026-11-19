@@ -4,19 +4,19 @@ The Wayland backend of Flust, built on [Smithay's client toolkit](https://github
 
 ## Rendering
 
-The engine draws with OpenGL, through an EGL context on the window's surface, into a framebuffer (a backing store) that Flust then copies to the window. It can draw with either of Flutter's renderers: Skia, the default, or Impeller.
+The engine draws with OpenGL, through an EGL context on the window's surface, into a framebuffer (a backing store) that Flust then copies to the window. It can draw with either of Flutter's renderers: Impeller, the default, or Skia.
 
 The work on Impeller is tracked in https://forge.lab.vially.dev/vially/flust/issues/8.
 
 ### Choosing the renderer
 
-In the app:
+Impeller is the default, as in Flutter's own desktop embedders since Flutter 3.47. To draw with Skia instead:
 
 ```rust
 use flust::{application::Application, Renderer};
 
 let app = Application::builder()
-    .with_renderer(Renderer::Impeller)
+    .with_renderer(Renderer::Skia)
     .build()?;
 ```
 
@@ -36,13 +36,14 @@ With Skia, nothing of this changes.
 
 ### Limitations
 
-- **`FlutterOpenGLTargetType::Surface` does not work with Impeller.** The engine can not draw into the window's surface directly with Impeller (https://github.com/flutter/flutter/issues/151670). Creating the window fails with `UnsupportedTargetType`. Use the default, `FlutterOpenGLTargetType::Framebuffer`.
+- **`FlutterOpenGLTargetType::Surface` does not work with Impeller.** The engine can not draw into the window's surface directly with Impeller (https://github.com/flutter/flutter/issues/151670). Creating the window fails with `UnsupportedTargetType`. Use the default, `FlutterOpenGLTargetType::Framebuffer`, or Skia.
 - **There is no fallback.** If the engine can not start with Impeller, the app does not start. It does not switch to Skia by itself.
 - **External textures** have to be `GL_RGBA8` with Impeller. Give a `TextureFrame` its size with `with_size`; without one, the size the texture is drawn at is used.
 - **Vulkan** is not supported, with either renderer.
 - **Partial repaint** is not supported: every frame is drawn and presented whole (https://forge.lab.vially.dev/vially/flust/issues/18).
+- The `flust-winit` backend always draws with Skia, unless `--enable-impeller` is passed.
 - Upstream rates Impeller through the embedder API with OpenGL as experimental. Flutter's own Linux embedder renders with Impeller through the same path by default, but Flust has only been tried with Mesa's `radeonsi` driver so far.
 
 ### Testing
 
-The end-to-end tests run with either renderer: `tests/e2e/run.py` for Skia, `tests/e2e/run.py --impeller` for Impeller. The `shapes` scenario checks that paths, clips and antialiasing come out right. See [`tests/e2e/README.md`](../tests/e2e/README.md).
+The end-to-end tests run with either renderer: `tests/e2e/run.py` for Impeller, `tests/e2e/run.py --skia` for Skia. The `shapes` scenario checks that paths, clips and antialiasing come out right. See [`tests/e2e/README.md`](../tests/e2e/README.md).

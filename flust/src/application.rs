@@ -122,7 +122,7 @@ impl ApplicationBuilder {
         self
     }
 
-    /// The renderer to draw with. Skia unless set.
+    /// The renderer to draw with. Impeller unless set.
     ///
     /// An `--enable-impeller` engine argument (see [`Self::with_arg`]) takes
     /// precedence, so that it can be switched without rebuilding the app.

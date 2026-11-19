@@ -58,7 +58,7 @@ Then, from the repository root:
 tests/e2e/run.py                      # every probe scenario, one line each
 tests/e2e/run.py drag-edges steps     # some of them
 tests/e2e/run.py --target surface     # all of them, with the other render target
-tests/e2e/run.py --impeller           # all of them, rendered with Impeller
+tests/e2e/run.py --skia               # all of them, rendered with Skia
 tests/e2e/run.py --repeat 5 storm     # five times, to catch what is rare
 
 waytape run tests/e2e/scenarios/drag-edges.yaml       # one, in full
@@ -77,14 +77,14 @@ to the window (`FlutterOpenGLTargetType::Framebuffer`, the default here),
 or straight into the window's surface (`Surface`). The two take different
 paths through a resize, so run both: `--target surface` does the second,
 into `.waytape/runs/<scenario>-surface`. With `waytape run`, that is
-`--env PROBE_TARGET=surface`.
+`--env PROBE_TARGET=surface`. Only Skia can render into the window's
+surface, so the probe app renders with Skia then.
 
-The engine renders with Skia unless told otherwise. `--impeller` has it
-render with Impeller, into `.waytape/runs/<scenario>-impeller`. With
-`waytape run`, that is `--env PROBE_ENGINE_ARGS=--enable-impeller`:
+Otherwise the engine renders with Impeller, Flust's default. `--skia` has
+it render with Skia, into `.waytape/runs/<scenario>-skia`. With `waytape
+run`, that is `--env PROBE_ENGINE_ARGS=--enable-impeller=false`:
 `PROBE_ENGINE_ARGS` is a list of switches for the engine, separated by
-spaces. Impeller can not render straight into the window's surface, so
-this does not go with `--target surface`: Flust refuses to start.
+spaces.
 
 To see what the app did in a run, add `--env
 RUST_LOG=info,flust_sctk=trace` to a `waytape run`: `app.log` then has

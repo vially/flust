@@ -6,11 +6,12 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Renderer {
     /// The engine's original renderer.
-    #[default]
     Skia,
 
-    /// Flutter's newer renderer. Through the embedder API (OpenGL), the
-    /// engine draws with Impeller's OpenGL ES backend.
+    /// Flutter's newer renderer, and the default, as in Flutter's own
+    /// desktop embedders since Flutter 3.47. Through the embedder API
+    /// (OpenGL), the engine draws with Impeller's OpenGL ES backend.
+    #[default]
     Impeller,
 }
 
