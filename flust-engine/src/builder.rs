@@ -3,6 +3,7 @@ use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::renderer::Renderer;
 use crate::semantics::FlutterSemanticsHandler;
 use crate::tasks::TaskRunnerHandler;
 use crate::{CreateError, FlutterEngine, FlutterVsyncHandler};
@@ -17,6 +18,7 @@ pub struct FlutterEngineBuilder {
     pub(crate) icu_data: PathBuf,
     pub(crate) persistent_cache: PathBuf,
     pub(crate) args: Vec<String>,
+    pub(crate) renderer: Renderer,
 }
 
 impl FlutterEngineBuilder {
@@ -32,6 +34,7 @@ impl FlutterEngineBuilder {
             icu_data: Default::default(),
             persistent_cache: Default::default(),
             args: vec![],
+            renderer: Renderer::default(),
         }
     }
 
@@ -57,6 +60,13 @@ impl FlutterEngineBuilder {
         handler: Arc<dyn FlutterSemanticsHandler + Send + Sync>,
     ) -> Self {
         self.semantics_handler = Some(handler);
+        self
+    }
+
+    /// The renderer to use, unless the engine arguments select one with
+    /// `--enable-impeller`: see [`Renderer::resolve`].
+    pub fn with_renderer(mut self, renderer: Renderer) -> Self {
+        self.renderer = renderer;
         self
     }
 

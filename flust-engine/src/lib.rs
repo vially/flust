@@ -6,6 +6,7 @@ pub mod error;
 pub mod ffi;
 mod flutter_callbacks;
 pub mod plugins;
+pub mod renderer;
 pub mod semantics;
 pub mod tasks;
 pub mod view;
@@ -16,6 +17,7 @@ use crate::builder::FlutterEngineBuilder;
 use crate::channel::{Channel, ChannelRegistry};
 
 use crate::channel::platform_message::{PlatformMessage, PlatformMessageResponseHandle};
+use crate::renderer::Renderer;
 use crate::tasks::TaskRunner;
 use crate::texture_registry::{Texture, TextureRegistry};
 use compositor::FlutterCompositorHandler;
@@ -38,7 +40,7 @@ use std::ptr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use tracing::trace;
+use tracing::{info, trace};
 use view::{FlutterView, ViewRegistry};
 
 pub(crate) type MainThreadEngineFn = Box<dyn FnOnce(&FlutterEngine) + Send>;
@@ -64,6 +66,7 @@ struct FlutterEngineInner {
     icu_data: PathBuf,
     persistent_cache: PathBuf,
     arguments: Vec<String>,
+    renderer: Renderer,
 }
 
 impl FlutterEngineInner {
@@ -145,10 +148,15 @@ impl FlutterEngine {
         // the first item is treated as the executable and ignored. Add a dummy value
         // so that all switches are used.
         let dummy_args: Vec<String> = vec!["flust".into()];
+        // The renderer is passed explicitly, after everything else, so that
+        // the engine does not fall back to a default of its own.
+        let renderer = Renderer::resolve(builder.renderer, &builder.args);
+        info!("rendering with {renderer:?}");
         let args = [
             dummy_args,
             FlutterEngine::args_from_env_vars(),
             builder.args.clone(),
+            vec![renderer.engine_switch()],
         ]
         .concat();
 
@@ -178,6 +186,7 @@ impl FlutterEngine {
                 icu_data: builder.icu_data,
                 persistent_cache: builder.persistent_cache,
                 arguments: builder.args,
+                renderer,
             }),
         };
 
@@ -385,6 +394,11 @@ impl FlutterEngine {
             .channel_registry
             .read()
             .with_channel(channel_name, f)
+    }
+
+    /// The renderer the engine draws with.
+    pub fn renderer(&self) -> Renderer {
+        self.inner.renderer
     }
 
     pub fn downgrade(&self) -> FlutterEngineWeakRef {
