@@ -31,13 +31,13 @@ use flust_engine_sys::{
     FlutterEngineRunsAOTCompiledDartCode, FlutterTask, VsyncCallback,
 };
 use parking_lot::{Mutex, RwLock};
+use semantics::{FlutterAccessibilityFeatures, FlutterSemanticsAction, FlutterSemanticsHandler};
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use semantics::FlutterSemanticsHandler;
 use tracing::trace;
 use view::{FlutterView, ViewRegistry};
 
@@ -592,6 +592,80 @@ impl FlutterEngine {
                 bytes.len(),
             );
         }
+    }
+
+    /// Turns the semantics tree of the views on or off.
+    ///
+    /// While it is on, the [`FlutterSemanticsHandler`] of the engine
+    /// receives the tree and the changes to it, starting with all of it.
+    /// Keeping it up to date costs the framework time on every frame, so it
+    /// should only be on while something reads it.
+    pub fn update_semantics_enabled(&self, enabled: bool) -> Result<(), FlutterEngineError> {
+        trace!("update_semantics_enabled: {enabled}");
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        let result = unsafe {
+            flust_engine_sys::FlutterEngineUpdateSemanticsEnabled(self.engine_ptr(), enabled)
+        };
+        FlutterEngineResult::from_ffi(result)
+    }
+
+    /// Tells the framework which accessibility settings of the platform are
+    /// on. This replaces the ones set before.
+    pub fn update_accessibility_features(
+        &self,
+        features: FlutterAccessibilityFeatures,
+    ) -> Result<(), FlutterEngineError> {
+        trace!("update_accessibility_features: {features:?}");
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        let result = unsafe {
+            flust_engine_sys::FlutterEngineUpdateAccessibilityFeatures(
+                self.engine_ptr(),
+                features.into(),
+            )
+        };
+        FlutterEngineResult::from_ffi(result)
+    }
+
+    /// Asks a semantics node to perform one of its actions.
+    ///
+    /// `data` are the arguments of the action, encoded with the standard
+    /// message codec. It is empty for the actions that take none.
+    pub fn send_semantics_action(
+        &self,
+        view_id: FlutterViewId,
+        node_id: i32,
+        action: FlutterSemanticsAction,
+        data: &[u8],
+    ) -> Result<(), FlutterEngineError> {
+        trace!("send_semantics_action: {action:?} to node {node_id} of view {view_id}");
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        let node_id = u64::try_from(node_id).map_err(|_| FlutterEngineError::InvalidArguments)?;
+
+        let info = flust_engine_sys::FlutterSendSemanticsActionInfo {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterSendSemanticsActionInfo>(),
+            view_id,
+            node_id,
+            action: action.into(),
+            data: if data.is_empty() {
+                ptr::null()
+            } else {
+                data.as_ptr()
+            },
+            data_length: data.len(),
+        };
+
+        let result =
+            unsafe { flust_engine_sys::FlutterEngineSendSemanticsAction(self.engine_ptr(), &info) };
+        FlutterEngineResult::from_ffi(result)
     }
 
     pub fn shutdown(&self) {
