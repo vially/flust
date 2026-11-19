@@ -1,0 +1,63 @@
+# What an assistive technology sees of the app, and whether what it asks for
+# reaches the app. The app shows a few controls instead of the probe pattern,
+# and `tools/atspi_tree.py` reads it the way a screen reader does: through
+# AT-SPI.
+#
+# This needs a session bus on which accessibility can be switched on without
+# switching it on for the whole desktop. `run.py` gives it one. By hand:
+#
+#     ATSPI_DBUS_IMPLEMENTATION=dbus-daemon dbus-run-session -- \
+#         waytape run tests/e2e/scenarios/semantics.yaml
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    PROBE_SEMANTICS: "1"
+
+session:
+  output:
+    size: 1280x800
+  window:
+    size: 624x464
+    position: [108, 108]
+
+steps:
+  - wait: stable
+  # Flust only asks the engine for semantics while something reads them.
+  - assert_log: { absent: "semantics enabled" }
+  - mark: accessibility on
+  - exec: >-
+      gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus
+      --method org.freedesktop.DBus.Properties.Set
+      org.a11y.Status IsEnabled "<true>"
+  - wait: { for: log, match: "semantics enabled: true" }
+  - exec: >-
+      python3 ../tools/atspi_tree.py flust-e2e-probe --expect
+      "frame:Flust E2E Probe"
+      "heading:Semantics probe"
+      "button:Increment:enabled"
+      "label:Count: 0"
+      "check box:[ ] Notify:checkable"
+
+  - mark: button
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe --click Increment
+  - wait: { for: log, match: "probe: semantics count 1" }
+  - exec: >-
+      python3 ../tools/atspi_tree.py flust-e2e-probe --expect
+      "label:Count: 1"
+
+  - mark: checkbox
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe --click "[ ] Notify"
+  - wait: { for: log, match: "probe: semantics checked true" }
+  - exec: >-
+      python3 ../tools/atspi_tree.py flust-e2e-probe --expect
+      "check box:[x] Notify:checkable,checked"
+
+  - mark: accessibility off
+  - exec: >-
+      gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus
+      --method org.freedesktop.DBus.Properties.Set
+      org.a11y.Status IsEnabled "<false>"
+  - wait: { for: log, match: "semantics enabled: false" }

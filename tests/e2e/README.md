@@ -24,6 +24,8 @@ resize handling was reworked.
   names the analyzers to run over the result.
 - `analyzers`: Scripts that check a finished run. A scenario refers to
   them from its `analyze` entry.
+- `tools`: Scripts a scenario runs while the app is up, from an `exec`
+  step.
 - `build-app.sh`, `build-reference.sh`, `run.py`: Build the probe app, and
   run all of its scenarios.
 
@@ -36,6 +38,10 @@ against on the next run.
 `waytape` on `PATH` (and what it needs: `sway`, `swaybg`, `ffmpeg`;
 `waytape doctor` checks), Python 3 with `numpy` and `Pillow` for the
 analyzers, and the Flutter SDK and a Rust toolchain to build the app.
+
+The `semantics` scenario also needs AT-SPI (`at-spi2-core`, with its
+`Atspi` bindings for Python through PyGObject), `dbus-run-session`,
+`dbus-daemon` and `gdbus`.
 
 ## Running
 
@@ -115,6 +121,42 @@ resize asked for.
 `analyzers/probe.py` reads all of that back from a frame of the recording.
 The constants there mirror the ones in `main.dart`.
 
+With `PROBE_SEMANTICS=1` it shows a heading, a button, a count and a
+checkbox instead, for the `semantics` scenario. It prints `probe:
+semantics count N` when the button is activated and `probe: semantics
+checked true|false` when the checkbox is.
+
+## Accessibility
+
+The `semantics` scenario reads the app through AT-SPI, the accessibility
+API of Linux desktops, like a screen reader does. `tools/atspi_tree.py`
+prints the tree of an application, checks that it has certain nodes, or
+activates one:
+
+```sh
+tests/e2e/tools/atspi_tree.py flust-e2e-probe
+tests/e2e/tools/atspi_tree.py flust-e2e-probe --expect "button:Increment:enabled"
+tests/e2e/tools/atspi_tree.py flust-e2e-probe --click Increment
+```
+
+Applications only put their tree on the accessibility bus once
+accessibility is switched on, which is a setting of the session bus
+(`org.a11y.Status.IsEnabled`). So that a test run does not switch it on
+for the desktop it runs on, `run.py` gives the scenario a session bus of
+its own. Without `run.py`:
+
+```sh
+ATSPI_DBUS_IMPLEMENTATION=dbus-daemon dbus-run-session -- \
+    waytape run tests/e2e/scenarios/semantics.yaml
+```
+
+`ATSPI_DBUS_IMPLEMENTATION` is there because the accessibility bus is
+started with `dbus-broker` by default, which needs systemd's user session
+and does not find it on a private bus.
+
+Flutter's GTK embedder is not put through this scenario: it waits for
+what Flust logs.
+
 ## Scenarios
 
 For the probe app:
@@ -133,6 +175,7 @@ For the probe app:
 | `scale` | Startup, taps and resizes on an output with scale 2 |
 | `scale-change` | The output's scale changes while the app runs, to 2 and back |
 | `close` | Closing the window in the middle of a resize |
+| `semantics` | What a screen reader sees of the app, and that what it asks for reaches the app |
 
 For the template app (`flust-app-template`, built with `cargo build`
 there), with `window_fill.py` only: `idle`, `resize-drag`, `resize-steps`.

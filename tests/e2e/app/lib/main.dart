@@ -17,6 +17,8 @@
 //
 // - `PROBE_ANIMATE=1`: paint a new frame on every vsync. Without it a frame
 //   is painted only when something changes (the size, a tap).
+// - `PROBE_SEMANTICS=1`: show a few controls instead, for the tests that read
+//   the app through the accessibility API of the platform.
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -25,7 +27,91 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 void main() {
-  runApp(const Probe());
+  if (Platform.environment['PROBE_SEMANTICS'] == '1') {
+    runApp(const SemanticsProbe());
+  } else {
+    runApp(const Probe());
+  }
+}
+
+/// A heading, a button that counts how often it was activated, the count as
+/// a live region and a checkbox. What happens to them is printed, so a test
+/// can tell that an action arrived.
+class SemanticsProbe extends StatefulWidget {
+  const SemanticsProbe({super.key});
+
+  @override
+  State<SemanticsProbe> createState() => _SemanticsProbeState();
+}
+
+class _SemanticsProbeState extends State<SemanticsProbe> {
+  int _count = 0;
+  bool _checked = false;
+
+  void _increment() {
+    setState(() => _count++);
+    print('probe: semantics count $_count');
+  }
+
+  void _toggle() {
+    setState(() => _checked = !_checked);
+    print('probe: semantics checked $_checked');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const TextStyle style = TextStyle(color: oneColor, fontSize: 20);
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: backgroundColor,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 16,
+            children: <Widget>[
+              Semantics(
+                header: true,
+                headingLevel: 1,
+                child: const Text('Semantics probe', style: style),
+              ),
+              Semantics(
+                button: true,
+                identifier: 'increment',
+                hint: 'Adds one to the count',
+                child: GestureDetector(
+                  onTap: _increment,
+                  child: const ColoredBox(
+                    color: barColor,
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('Increment', style: style),
+                    ),
+                  ),
+                ),
+              ),
+              Semantics(
+                liveRegion: true,
+                child: Text('Count: $_count', style: style),
+              ),
+              Semantics(
+                checked: _checked,
+                identifier: 'notify',
+                child: GestureDetector(
+                  onTap: _toggle,
+                  child: Text(
+                    _checked ? '[x] Notify' : '[ ] Notify',
+                    style: style,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Side of a corner marker, in physical pixels.

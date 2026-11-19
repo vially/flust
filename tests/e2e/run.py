@@ -36,7 +36,14 @@ SCENARIOS = [
     "scale",
     "scale-change",
     "close",
+    "semantics",
 ]
+# These read the app through the accessibility API of the desktop, which has
+# to be switched on for that. They get a session bus of their own, so that
+# it is not switched on for the applications of whoever runs this.
+PRIVATE_BUS = {"semantics"}
+# They wait for what Flust logs, and say nothing about the reference.
+FLUST_ONLY = {"semantics"}
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 
@@ -70,12 +77,19 @@ def main():
     suffix = "-reference" if args.reference else "-surface" if args.target == "surface" else ""
     runs = failed = 0
     for name in args.scenarios:
+        if args.reference and name in FLUST_ONLY:
+            print(f"SKIPPED {name}: not for the reference")
+            continue
         out = ROOT / ".waytape/runs" / (name + suffix)
         command = ["waytape", "run", str(HERE / "scenarios" / f"{name}.yaml"), "--quiet", "--out", str(out)]
         if args.reference:
             command += ["--app", str(app)]
         if args.target == "surface":
             command += ["--env", "PROBE_TARGET=surface"]
+        if name in PRIVATE_BUS:
+            # The accessibility bus is a second bus. Its launcher starts
+            # `dbus-broker` by default, which only runs under systemd.
+            command = ["env", "ATSPI_DBUS_IMPLEMENTATION=dbus-daemon", "dbus-run-session", "--", *command]
 
         for attempt in range(args.repeat):
             # Keep a failed run for inspection unless this one fails as well.
