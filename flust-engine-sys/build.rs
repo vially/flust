@@ -184,6 +184,11 @@ impl BindingsBuilder {
             .default_enum_style(EnumVariation::Rust {
                 non_exhaustive: false,
             })
+            // These are combined with `|`, so a value is not always one of
+            // the variants. A Rust enum can not hold such a value.
+            .bitfield_enum("FlutterAccessibilityFeature")
+            .bitfield_enum("FlutterSemanticsAction")
+            .bitfield_enum("FlutterSemanticsFlag")
             .clang_args(Self::clang_args())
             .generate()?;
 
