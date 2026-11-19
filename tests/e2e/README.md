@@ -126,7 +126,8 @@ checkbox and a text field instead, for the `semantics` scenario. It prints
 `probe: semantics count N` when the button is activated, `probe: semantics
 checked true|false` when the checkbox is, and `probe: semantics text
 "TEXT" selection BASE,EXTENT` when the text of the text field or its
-selection changes.
+selection changes. Activating the button also announces `Counted to N`
+to assistive technologies.
 
 ## Accessibility
 
@@ -140,6 +141,7 @@ tests/e2e/tools/atspi_tree.py flust-e2e-probe
 tests/e2e/tools/atspi_tree.py flust-e2e-probe --expect "button:Increment:enabled"
 tests/e2e/tools/atspi_tree.py flust-e2e-probe --click Increment
 tests/e2e/tools/atspi_tree.py flust-e2e-probe --set-text Message "Hi there"
+tests/e2e/tools/atspi_tree.py flust-e2e-probe --click Increment --expect-announcement "Counted to 1"
 ```
 
 Applications only put their tree on the accessibility bus once
@@ -163,6 +165,11 @@ Both variables are needed:
 - `ATSPI_DBUS_IMPLEMENTATION=dbus-daemon`: the accessibility bus is
   started with `dbus-broker` by default, which needs systemd's user
   session and does not find it on a private bus.
+
+The accessibility bus also switches accessibility on while something
+listens for its events, as a screen reader does, and off when the last
+one that does is gone. `atspi_tree.py --expect-announcement` listens, so
+accessibility is off once it exits. The scenario ends with that.
 
 Flutter's GTK embedder is not put through this scenario: it waits for
 what Flust logs.

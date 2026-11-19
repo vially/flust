@@ -67,9 +67,15 @@ steps:
   - wait: { for: log, match: 'probe: semantics text "Hi there" selection 3,8' }
   - exec: python3 ../tools/atspi_tree.py flust-e2e-probe
 
-  - mark: accessibility off
+  # The app announces the count when the button is activated. To hear that,
+  # the tool listens for events, which is what makes something an assistive
+  # technology to the accessibility bus: accessibility is switched off when
+  # the last one that listens is gone. So this comes last.
+  - mark: announcement
   - exec: >-
-      gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus
-      --method org.freedesktop.DBus.Properties.Set
-      org.a11y.Status IsEnabled "<false>"
+      python3 ../tools/atspi_tree.py flust-e2e-probe --click Increment
+      --expect-announcement "Counted to 2"
+  - wait: { for: log, match: "probe: semantics count 2" }
+
+  - mark: accessibility off
   - wait: { for: log, match: "semantics enabled: false" }

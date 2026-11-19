@@ -5,6 +5,8 @@ readers use.
     atspi_tree.py APP                     print the tree of the application
     atspi_tree.py APP --expect NODE ...   fail unless it has these nodes
     atspi_tree.py APP --click NAME        activate the node called NAME
+    atspi_tree.py APP --click NAME --expect-announcement TEXT
+                                          and fail unless that is announced
     atspi_tree.py APP --set-text NAME TEXT
                                           replace the text of a text field
     atspi_tree.py APP --select NAME START END
@@ -27,7 +29,7 @@ import time
 import gi
 
 gi.require_version("Atspi", "2.0")
-from gi.repository import Atspi  # noqa: E402
+from gi.repository import Atspi, GLib  # noqa: E402
 
 STATES = [
     ("focused", Atspi.StateType.FOCUSED),
@@ -133,6 +135,7 @@ def main():
     parser.add_argument("app")
     parser.add_argument("--expect", nargs="+", metavar="NODE", default=[])
     parser.add_argument("--click", metavar="NAME")
+    parser.add_argument("--expect-announcement", metavar="TEXT")
     parser.add_argument("--set-text", nargs=2, metavar=("NAME", "TEXT"))
     parser.add_argument("--select", nargs=3, metavar=("NAME", "START", "END"))
     parser.add_argument("--expect-text", nargs=2, metavar=("NAME", "TEXT"))
@@ -143,8 +146,22 @@ def main():
 
     if args.click is not None:
         node = named(app, args.click)
+        # Listening before the click, so that the announcement is not missed.
+        announcements = []
+        if args.expect_announcement is not None:
+            listener = Atspi.EventListener.new(lambda event: announcements.append(event.any_data))
+            listener.register("object:announcement")
         if node.get_n_actions() < 1 or not node.do_action(0):
             sys.exit(f"{args.click!r} could not be activated")
+        if args.expect_announcement is not None:
+            deadline = time.monotonic() + args.timeout
+            context = GLib.MainContext.default()
+            while args.expect_announcement not in announcements and time.monotonic() < deadline:
+                context.iteration(False)
+                time.sleep(0.01)
+            print("announced:", announcements)
+            if args.expect_announcement not in announcements:
+                sys.exit(f"{args.expect_announcement!r} was not announced")
         return
 
     if args.set_text is not None:

@@ -24,6 +24,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 
 void main() {
@@ -35,7 +36,8 @@ void main() {
 }
 
 /// A heading, a button that counts how often it was activated, the count as
-/// a live region, a checkbox and a text field. What happens to them is printed, so a test
+/// a live region, a checkbox and a text field. Activating the button also
+/// announces the count. What happens to them is printed, so a test
 /// can tell that an action arrived.
 class SemanticsProbe extends StatefulWidget {
   const SemanticsProbe({super.key});
@@ -69,6 +71,11 @@ class _SemanticsProbeState extends State<SemanticsProbe> {
   void _increment() {
     setState(() => _count++);
     print('probe: semantics count $_count');
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      'Counted to $_count',
+      TextDirection.ltr,
+    );
   }
 
   void _toggle() {
