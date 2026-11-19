@@ -726,7 +726,9 @@ impl FlutterOpenGLFramebuffer {
         target.name = self.user_data.framebuffer_id;
         target.target = self.target;
         target.user_data = Box::into_raw(Box::new(self.user_data)) as _;
-        target.destruction_callback = None;
+        // Impeller calls this without checking it for null. The user data is
+        // freed in `collect_backing_store_callback`, so there is nothing to do.
+        target.destruction_callback = Some(framebuffer_destruction_callback);
     }
 
     pub fn drop_raw_user_data(&mut self) {
@@ -737,6 +739,8 @@ impl FlutterOpenGLFramebuffer {
         self.raw_user_data = std::ptr::null_mut()
     }
 }
+
+unsafe extern "C" fn framebuffer_destruction_callback(_user_data: *mut std::ffi::c_void) {}
 
 impl From<flust_engine_sys::FlutterOpenGLFramebuffer> for FlutterOpenGLFramebuffer {
     fn from(value: flust_engine_sys::FlutterOpenGLFramebuffer) -> Self {
