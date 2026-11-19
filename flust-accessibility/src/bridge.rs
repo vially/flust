@@ -10,7 +10,10 @@ use accesskit::{ActionHandler, ActionRequest, ActivationHandler, DeactivationHan
 use accesskit_unix::Adapter;
 use flust_engine::{
     ffi::FlutterViewId,
-    semantics::{FlutterSemanticsHandler, FlutterSemanticsUpdate},
+    semantics::{
+        FlutterAccessibilityFeature, FlutterAccessibilityFeatures, FlutterSemanticsHandler,
+        FlutterSemanticsUpdate,
+    },
     FlutterEngine, FlutterEngineWeakRef,
 };
 use tracing::{debug, info, warn};
@@ -48,6 +51,11 @@ struct Shared {
     /// Whether the engine has been asked for semantics. Only used on the
     /// platform thread.
     is_semantics_enabled: Mutex<bool>,
+    /// The accessibility settings of the desktop.
+    platform_features: Mutex<FlutterAccessibilityFeatures>,
+    /// The features the engine was last told about. It starts out without
+    /// any.
+    sent_features: Mutex<FlutterAccessibilityFeatures>,
 }
 
 struct View {
@@ -120,6 +128,19 @@ impl Accessibility {
     pub fn engine_started(&self, engine: &FlutterEngine) {
         *self.shared.engine.lock().unwrap() = Some(engine.downgrade());
         self.shared.sync_semantics_enabled(engine);
+        self.shared.sync_features(engine);
+    }
+
+    /// Sets the accessibility settings of the desktop for the framework to
+    /// adapt to, such as high contrast. Whether an assistive technology is
+    /// in use is added to them here.
+    ///
+    /// Has to be called on the platform thread.
+    pub fn set_platform_features(&self, features: FlutterAccessibilityFeatures) {
+        *self.shared.platform_features.lock().unwrap() = features;
+        if let Some(engine) = self.shared.engine() {
+            self.shared.sync_features(&engine);
+        }
     }
 }
 
@@ -172,6 +193,7 @@ impl Shared {
         }
         *is_enabled = enable;
         drop(is_enabled);
+        self.sync_features(engine);
 
         if !enable {
             // The engine describes the trees from scratch when it is asked
@@ -180,6 +202,27 @@ impl Shared {
                 let tree_update = view.tree.lock().unwrap().clear();
                 view.adapter.update_if_active(|| tree_update);
             }
+        }
+    }
+}
+
+impl Shared {
+    /// Tells the engine which accessibility features are on, if they have
+    /// changed. Has to be called on the platform thread.
+    fn sync_features(&self, engine: &FlutterEngine) {
+        let mut features = *self.platform_features.lock().unwrap();
+        if *self.is_semantics_enabled.lock().unwrap() {
+            features.insert(FlutterAccessibilityFeature::AccessibleNavigation);
+        }
+
+        let mut sent = self.sent_features.lock().unwrap();
+        if *sent == features {
+            return;
+        }
+        debug!("accessibility features: {features:?}");
+        match engine.update_accessibility_features(features) {
+            Ok(()) => *sent = features,
+            Err(err) => warn!("failed to set accessibility features: {err}"),
         }
     }
 }
