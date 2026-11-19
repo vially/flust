@@ -267,6 +267,7 @@ impl SctkFlutterWindow {
         attributes: ApplicationAttributes,
         config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
+        let renderer = attributes.renderer();
         let surface = compositor_state.create_surface(qh);
         let window = Toplevel::new(xdg_shell_state, surface, qh);
 
@@ -290,6 +291,7 @@ impl SctkFlutterWindow {
         let (context, resource_context) = FlutterEGLContext::new_wayland_context(
             window.wl_surface(),
             default_size.to_physical::<u32>(1.0),
+            renderer,
         )?;
 
         let context = Arc::new(Mutex::new(context));

@@ -1,7 +1,8 @@
 use std::{num::NonZeroU32, ptr::NonNull};
 
 use dpi::PhysicalSize;
-use flust_glutin::builder::{ContextBuildError, ContextBuilder, FlutterEGLContext};
+use flust_engine::renderer::Renderer;
+use flust_glutin::builder::{ApiPreference, ContextBuildError, ContextBuilder, FlutterEGLContext};
 use glutin::surface::SwapInterval;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
@@ -13,6 +14,7 @@ pub(crate) trait FlutterEGLContextWaylandExt {
     fn new_wayland_context(
         surface: &wl_surface::WlSurface,
         size: PhysicalSize<u32>,
+        renderer: Renderer,
     ) -> Result<FlutterEGLContext, CreateWaylandContextError>;
 }
 
@@ -20,6 +22,7 @@ impl FlutterEGLContextWaylandExt for FlutterEGLContext {
     fn new_wayland_context(
         surface: &wl_surface::WlSurface,
         size: PhysicalSize<u32>,
+        renderer: Renderer,
     ) -> Result<FlutterEGLContext, CreateWaylandContextError> {
         let display = NonNull::new(
             surface
@@ -38,10 +41,19 @@ impl FlutterEGLContextWaylandExt for FlutterEGLContext {
         let wl_window_handle = WaylandWindowHandle::new(surface);
         let raw_window_handle = RawWindowHandle::Wayland(wl_window_handle);
 
+        // Impeller draws with its OpenGL ES backend. It works on a desktop
+        // OpenGL context as well, but only multisamples what it draws
+        // offscreen (layers, backdrop filters) on OpenGL ES 3.
+        let api_preference = match renderer {
+            Renderer::Skia => ApiPreference::OpenGl,
+            Renderer::Impeller => ApiPreference::OpenGlEs,
+        };
+
         let (context, resource_context) = ContextBuilder::new()
             .with_raw_display_handle(raw_display_handle)
             .with_raw_window_handle(raw_window_handle)
             .with_swap_interval(SwapInterval::DontWait)
+            .with_api_preference(api_preference)
             .with_size(size.non_zero())
             .build()?;
 
