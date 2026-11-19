@@ -121,22 +121,25 @@ resize asked for.
 `analyzers/probe.py` reads all of that back from a frame of the recording.
 The constants there mirror the ones in `main.dart`.
 
-With `PROBE_SEMANTICS=1` it shows a heading, a button, a count and a
-checkbox instead, for the `semantics` scenario. It prints `probe:
-semantics count N` when the button is activated and `probe: semantics
-checked true|false` when the checkbox is.
+With `PROBE_SEMANTICS=1` it shows a heading, a button, a count, a
+checkbox and a text field instead, for the `semantics` scenario. It prints
+`probe: semantics count N` when the button is activated, `probe: semantics
+checked true|false` when the checkbox is, and `probe: semantics text
+"TEXT" selection BASE,EXTENT` when the text of the text field or its
+selection changes.
 
 ## Accessibility
 
 The `semantics` scenario reads the app through AT-SPI, the accessibility
 API of Linux desktops, like a screen reader does. `tools/atspi_tree.py`
 prints the tree of an application, checks that it has certain nodes, or
-activates one:
+activates one, or changes the text of a text field or its selection:
 
 ```sh
 tests/e2e/tools/atspi_tree.py flust-e2e-probe
 tests/e2e/tools/atspi_tree.py flust-e2e-probe --expect "button:Increment:enabled"
 tests/e2e/tools/atspi_tree.py flust-e2e-probe --click Increment
+tests/e2e/tools/atspi_tree.py flust-e2e-probe --set-text Message "Hi there"
 ```
 
 Applications only put their tree on the accessibility bus once

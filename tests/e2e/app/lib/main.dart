@@ -35,7 +35,7 @@ void main() {
 }
 
 /// A heading, a button that counts how often it was activated, the count as
-/// a live region and a checkbox. What happens to them is printed, so a test
+/// a live region, a checkbox and a text field. What happens to them is printed, so a test
 /// can tell that an action arrived.
 class SemanticsProbe extends StatefulWidget {
   const SemanticsProbe({super.key});
@@ -47,6 +47,24 @@ class SemanticsProbe extends StatefulWidget {
 class _SemanticsProbeState extends State<SemanticsProbe> {
   int _count = 0;
   bool _checked = false;
+  final TextEditingController _text = TextEditingController(text: 'Hello');
+  final FocusNode _textFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _text.addListener(() {
+      print('probe: semantics text "${_text.text}" selection '
+          '${_text.selection.baseOffset},${_text.selection.extentOffset}');
+    });
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _textFocus.dispose();
+    super.dispose();
+  }
 
   void _increment() {
     setState(() => _count++);
@@ -104,6 +122,18 @@ class _SemanticsProbeState extends State<SemanticsProbe> {
                     _checked ? '[x] Notify' : '[ ] Notify',
                     style: style,
                   ),
+                ),
+              ),
+              Semantics(
+                label: 'Message',
+                identifier: 'message',
+                child: EditableText(
+                  controller: _text,
+                  focusNode: _textFocus,
+                  autofocus: true,
+                  style: style,
+                  cursorColor: oneColor,
+                  backgroundCursorColor: barColor,
                 ),
               ),
             ],

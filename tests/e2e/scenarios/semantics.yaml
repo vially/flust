@@ -55,6 +55,18 @@ steps:
       python3 ../tools/atspi_tree.py flust-e2e-probe --expect
       "check box:[x] Notify:checkable,checked"
 
+  # The text field has the keyboard focus from the start.
+  - mark: text field
+  - exec: >-
+      python3 ../tools/atspi_tree.py flust-e2e-probe
+      --expect "entry:Message:focused" --expect-text Message Hello
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe --set-text Message "Hi there"
+  - wait: { for: log, match: 'probe: semantics text "Hi there"' }
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe --expect-text Message "Hi there"
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe --select Message 3 8
+  - wait: { for: log, match: 'probe: semantics text "Hi there" selection 3,8' }
+  - exec: python3 ../tools/atspi_tree.py flust-e2e-probe
+
   - mark: accessibility off
   - exec: >-
       gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus

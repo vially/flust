@@ -5,6 +5,12 @@ readers use.
     atspi_tree.py APP                     print the tree of the application
     atspi_tree.py APP --expect NODE ...   fail unless it has these nodes
     atspi_tree.py APP --click NAME        activate the node called NAME
+    atspi_tree.py APP --set-text NAME TEXT
+                                          replace the text of a text field
+    atspi_tree.py APP --select NAME START END
+                                          select a part of its text
+    atspi_tree.py APP --expect-text NAME TEXT
+                                          fail unless that is its text
 
 APP is the name the application has on the accessibility bus: the name of
 its executable. Waits for it to show up, and for it to have a window.
@@ -75,6 +81,12 @@ def describe(node):
         actions = []
     if actions:
         parts.append("actions=" + ",".join(actions))
+    text = text_of(node)
+    if text is not None:
+        parts.append(f"text={text!r} caret={Atspi.Text.get_caret_offset(node)}")
+        if Atspi.Text.get_n_selections(node) > 0:
+            selection = Atspi.Text.get_selection(node, 0)
+            parts.append(f"selection={selection.start_offset},{selection.end_offset}")
     try:
         extents = node.get_extents(Atspi.CoordType.WINDOW)
         parts.append(f"at={extents.x},{extents.y} size={extents.width}x{extents.height}")
@@ -102,31 +114,70 @@ def has_node(app, spec):
     )
 
 
+def text_of(node):
+    """The text of a node that has any, such as a text field."""
+    if node.get_text_iface() is None:
+        return None
+    return Atspi.Text.get_text(node, 0, Atspi.Text.get_character_count(node))
+
+
+def named(app, name):
+    for node, _ in walk(app):
+        if node.get_name() == name:
+            return node
+    sys.exit(f"no node called {name!r}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("app")
     parser.add_argument("--expect", nargs="+", metavar="NODE", default=[])
     parser.add_argument("--click", metavar="NAME")
+    parser.add_argument("--set-text", nargs=2, metavar=("NAME", "TEXT"))
+    parser.add_argument("--select", nargs=3, metavar=("NAME", "START", "END"))
+    parser.add_argument("--expect-text", nargs=2, metavar=("NAME", "TEXT"))
     parser.add_argument("--timeout", type=float, default=4.0)
     args = parser.parse_args()
 
     app = wait_for_app(args.app, args.timeout)
 
     if args.click is not None:
-        for node, _ in walk(app):
-            if node.get_name() == args.click:
-                if node.get_n_actions() < 1 or not node.do_action(0):
-                    sys.exit(f"{args.click!r} could not be activated")
-                return
-        sys.exit(f"no node called {args.click!r}")
+        node = named(app, args.click)
+        if node.get_n_actions() < 1 or not node.do_action(0):
+            sys.exit(f"{args.click!r} could not be activated")
+        return
+
+    if args.set_text is not None:
+        name, text = args.set_text
+        if not Atspi.EditableText.set_text_contents(named(app, name), text):
+            sys.exit(f"the text of {name!r} could not be set")
+        return
+
+    if args.select is not None:
+        name, start, end = args.select
+        node = named(app, name)
+        # A text field without a selection has none to change.
+        start, end = int(start), int(end)
+        if not (Atspi.Text.set_selection(node, 0, start, end) or Atspi.Text.add_selection(node, start, end)):
+            sys.exit(f"the selection of {name!r} could not be set")
+        return
 
     # Changes take a moment to arrive.
     deadline = time.monotonic() + args.timeout
     missing = args.expect
-    while missing and time.monotonic() < deadline:
+
+    def has_text():
+        if args.expect_text is None:
+            return True
+        name, text = args.expect_text
+        return any(node.get_name() == name and text_of(node) == text for node, _ in walk(app))
+
+    while (missing or not has_text()) and time.monotonic() < deadline:
         missing = [spec for spec in missing if not has_node(app, spec)]
-        if missing:
+        if missing or not has_text():
             time.sleep(0.1)
+    if not has_text():
+        missing = [*missing, "the text {1!r} in {0!r}".format(*args.expect_text)]
 
     for node, depth in walk(app):
         print("  " * depth + describe(node))
