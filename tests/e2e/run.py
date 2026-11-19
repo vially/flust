@@ -88,8 +88,12 @@ def main():
             command += ["--env", "PROBE_TARGET=surface"]
         if name in PRIVATE_BUS:
             # The accessibility bus is a second bus. Its launcher starts
-            # `dbus-broker` by default, which only runs under systemd.
-            command = ["env", "ATSPI_DBUS_IMPLEMENTATION=dbus-daemon", "dbus-run-session", "--", *command]
+            # `dbus-broker` by default, which only runs under systemd. It
+            # also saves whether accessibility is on to the settings of the
+            # user, which a bus of its own does not keep it from: the
+            # settings are in a file. With this backend they are not.
+            isolation = ["ATSPI_DBUS_IMPLEMENTATION=dbus-daemon", "GSETTINGS_BACKEND=memory"]
+            command = ["env", *isolation, "dbus-run-session", "--", *command]
 
         for attempt in range(args.repeat):
             # Keep a failed run for inspection unless this one fails as well.

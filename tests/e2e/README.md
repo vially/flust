@@ -149,13 +149,20 @@ for the desktop it runs on, `run.py` gives the scenario a session bus of
 its own. Without `run.py`:
 
 ```sh
-ATSPI_DBUS_IMPLEMENTATION=dbus-daemon dbus-run-session -- \
-    waytape run tests/e2e/scenarios/semantics.yaml
+GSETTINGS_BACKEND=memory ATSPI_DBUS_IMPLEMENTATION=dbus-daemon \
+    dbus-run-session -- waytape run tests/e2e/scenarios/semantics.yaml
 ```
 
-`ATSPI_DBUS_IMPLEMENTATION` is there because the accessibility bus is
-started with `dbus-broker` by default, which needs systemd's user session
-and does not find it on a private bus.
+Both variables are needed:
+
+- `GSETTINGS_BACKEND=memory`: the accessibility bus saves that setting to
+  the desktop settings of the user (`toolkit-accessibility` in dconf),
+  which are in a file and not on the bus. Without this, the scenario
+  switches accessibility on for the desktop after all, from the next
+  login on.
+- `ATSPI_DBUS_IMPLEMENTATION=dbus-daemon`: the accessibility bus is
+  started with `dbus-broker` by default, which needs systemd's user
+  session and does not find it on a private bus.
 
 Flutter's GTK embedder is not put through this scenario: it waits for
 what Flust logs.

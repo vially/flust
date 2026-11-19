@@ -6,8 +6,8 @@
 # This needs a session bus on which accessibility can be switched on without
 # switching it on for the whole desktop. `run.py` gives it one. By hand:
 #
-#     ATSPI_DBUS_IMPLEMENTATION=dbus-daemon dbus-run-session -- \
-#         waytape run tests/e2e/scenarios/semantics.yaml
+#     GSETTINGS_BACKEND=memory ATSPI_DBUS_IMPLEMENTATION=dbus-daemon \
+#         dbus-run-session -- waytape run tests/e2e/scenarios/semantics.yaml
 app:
   command: ./flust-e2e-probe
   cwd: ../app/target/debug
