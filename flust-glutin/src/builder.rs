@@ -21,6 +21,18 @@ pub struct ContextBuilderAttributes {
     pub config: Option<Config>,
     pub size: Option<PhysicalSize<NonZeroU32>>,
     pub swap_interval: Option<SwapInterval>,
+    pub api_preference: ApiPreference,
+}
+
+/// The OpenGL API to ask for first. The other one is the fallback.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ApiPreference {
+    /// Desktop OpenGL.
+    #[default]
+    OpenGl,
+
+    /// OpenGL ES.
+    OpenGlEs,
 }
 
 impl ContextBuilderAttributes {
@@ -78,11 +90,15 @@ impl ContextBuilder {
             .with_context_api(glutin::context::ContextApi::Gles(None))
             .build(Some(raw_window_handle));
 
-        // Create a context, trying OpenGL and then OpenGL ES.
+        // Create a context, trying the preferred API first.
+        let (first, second) = match self.attributes.api_preference {
+            ApiPreference::OpenGl => (&render_attributes_gl, &render_attributes_gles),
+            ApiPreference::OpenGlEs => (&render_attributes_gles, &render_attributes_gl),
+        };
         let render_context = unsafe {
             display
-                .create_context(&config, &render_attributes_gl)
-                .or_else(|_| display.create_context(&config, &render_attributes_gles))
+                .create_context(&config, first)
+                .or_else(|_| display.create_context(&config, second))
         }?;
 
         let surface_attributes = SurfaceAttributesBuilder::<WindowSurface>::default().build(
@@ -134,6 +150,11 @@ impl ContextBuilder {
 
     pub fn with_swap_interval(mut self, swap_interval: SwapInterval) -> Self {
         self.attributes.swap_interval = Some(swap_interval);
+        self
+    }
+
+    pub fn with_api_preference(mut self, api_preference: ApiPreference) -> Self {
+        self.attributes.api_preference = api_preference;
         self
     }
 
