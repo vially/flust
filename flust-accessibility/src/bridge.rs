@@ -101,6 +101,21 @@ impl Accessibility {
         }
     }
 
+    /// Has an assistive technology say a message, interrupting what it is
+    /// saying if `interrupt` is set.
+    pub fn announce(&self, view_id: FlutterViewId, message: &str, interrupt: bool) {
+        let mut views = self.shared.views.lock().unwrap();
+        let Some(view) = views.get_mut(&view_id) else {
+            debug!("announcement for unknown view {view_id}");
+            return;
+        };
+
+        let updates = view.tree.lock().unwrap().announce(message, interrupt);
+        for update in updates {
+            view.adapter.update_if_active(|| update);
+        }
+    }
+
     /// Has to be called on the platform thread, once the engine runs.
     pub fn engine_started(&self, engine: &FlutterEngine) {
         *self.shared.engine.lock().unwrap() = Some(engine.downgrade());

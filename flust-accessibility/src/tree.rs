@@ -29,6 +29,10 @@ const FLUTTER_ROOT_ID: i32 = 0;
 /// start above them.
 pub const WINDOW_NODE_ID: NodeId = NodeId(1 << 32);
 
+/// A node that is only in the tree for the moment it takes to announce a
+/// message. See [`SemanticsTree::announce`].
+pub const ANNOUNCEMENT_NODE_ID: NodeId = NodeId((1 << 32) + 1);
+
 /// The actions that are the same thing on both sides.
 ///
 /// Flutter names a scroll action after the direction the finger moves in,
@@ -240,6 +244,35 @@ impl SemanticsTree {
             window.set_children([node_id(FLUTTER_ROOT_ID)]);
         }
         window
+    }
+
+    /// Has an assistive technology say a message that is not part of what
+    /// is on screen, interrupting what it is saying if `interrupt` is set.
+    ///
+    /// There is no way to ask for that as such. What gets announced is a
+    /// node that is marked as one to announce, when it appears. So the
+    /// first update that is returned adds such a node to the window, and the
+    /// second one takes it out again: the same message can then be announced
+    /// again, and nothing is left behind for the user to come across.
+    pub fn announce(&self, message: &str, interrupt: bool) -> [TreeUpdate; 2] {
+        let mut announcement = Node::new(Role::Label);
+        announcement.set_value(message);
+        announcement.set_live(if interrupt {
+            Live::Assertive
+        } else {
+            Live::Polite
+        });
+
+        let mut window = self.build_window_node();
+        window.push_child(ANNOUNCEMENT_NODE_ID);
+
+        [
+            self.tree_update(vec![
+                (WINDOW_NODE_ID, window),
+                (ANNOUNCEMENT_NODE_ID, announcement),
+            ]),
+            self.tree_update(vec![(WINDOW_NODE_ID, self.build_window_node())]),
+        ]
     }
 
     /// Adds the AccessKit node for a semantics node to `nodes`, and the
@@ -1467,5 +1500,38 @@ mod tests {
         assert_eq!(set(80.0), Some(FlutterSemanticsAction::Increase));
         assert_eq!(set(10.0), Some(FlutterSemanticsAction::Decrease));
         assert_eq!(set(50.0), None);
+    }
+
+    #[test]
+    fn an_announcement_is_a_node_that_comes_and_goes() {
+        let mut tree = SemanticsTree::new("Probe");
+        tree.apply(update(vec![node(0, &[1]), button(1, "Send")]));
+
+        let [added, removed] = tree.announce("Sent", false);
+
+        assert_eq!(ids(&added), [WINDOW_NODE_ID.0, ANNOUNCEMENT_NODE_ID.0]);
+        assert_eq!(
+            find(&added, WINDOW_NODE_ID).children(),
+            [NodeId(0), ANNOUNCEMENT_NODE_ID]
+        );
+        let announcement = find(&added, ANNOUNCEMENT_NODE_ID);
+        assert_eq!(announcement.role(), Role::Label);
+        assert_eq!(announcement.value(), Some("Sent"));
+        assert_eq!(announcement.live(), Some(Live::Polite));
+
+        assert_eq!(ids(&removed), [WINDOW_NODE_ID.0]);
+        assert_eq!(find(&removed, WINDOW_NODE_ID).children(), [NodeId(0)]);
+
+        let [urgent, _] = tree.announce("Failed", true);
+        assert_eq!(
+            find(&urgent, ANNOUNCEMENT_NODE_ID).live(),
+            Some(Live::Assertive)
+        );
+        // It is not a text run, and not one of Flutter's nodes either.
+        assert_eq!(text_run_of(ANNOUNCEMENT_NODE_ID), None);
+        assert_eq!(
+            tree.translate_action(&request(Action::Click, ANNOUNCEMENT_NODE_ID, None)),
+            None
+        );
     }
 }
