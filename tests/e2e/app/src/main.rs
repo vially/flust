@@ -14,7 +14,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_backend(Backend::Sctk(BackendConfigSctk::from(target)))
         .with_title("Flust E2E Probe")
         .with_app_id("dev.vially.flust.e2e-probe")
+        .with_args(engine_args())
         .build()?;
 
     Ok(app.run()?)
+}
+
+/// `PROBE_ENGINE_ARGS` is a list of switches for the Flutter engine, separated
+/// by spaces: `--enable-impeller` to render with Impeller instead of Skia.
+fn engine_args() -> Vec<String> {
+    std::env::var("PROBE_ENGINE_ARGS")
+        .map(|args| args.split_whitespace().map(String::from).collect())
+        .unwrap_or_default()
 }

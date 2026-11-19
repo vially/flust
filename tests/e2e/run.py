@@ -5,10 +5,11 @@
     tests/e2e/run.py drag-edges steps     # some of them
     tests/e2e/run.py --reference          # against Flutter's GTK embedder
     tests/e2e/run.py --target surface     # rendering straight into the window
+    tests/e2e/run.py --impeller           # rendering with Impeller
     tests/e2e/run.py --repeat 5 storm     # five times, to catch what is rare
 
 Each scenario is a `waytape run`; its run directory is kept under
-`.waytape/runs/<scenario>[-reference|-surface]`, replacing the previous
+`.waytape/runs/<scenario>[-reference|-surface][-impeller]`, replacing the previous
 one (with --repeat, the last failed run of a scenario is the one kept).
 Exits with 1 if any run failed.
 """
@@ -63,10 +64,17 @@ def main():
         help="what Flust has the engine render into: a framebuffer that is then copied to the window "
         "(the default), or the window's surface itself",
     )
+    parser.add_argument(
+        "--impeller",
+        action="store_true",
+        help="have Flust render with Impeller instead of Skia",
+    )
     parser.add_argument("--repeat", type=int, default=1, metavar="N", help="run each scenario N times")
     args = parser.parse_args()
     if args.reference and args.target != "framebuffer":
         parser.error("--target is for Flust, not for the reference")
+    if args.reference and args.impeller:
+        parser.error("--impeller is for Flust, not for the reference")
 
     app = HERE / "app/target/debug/flust-e2e-probe"
     build = "build-app.sh"
@@ -76,6 +84,8 @@ def main():
         sys.exit(f"{app} is missing: run tests/e2e/{build} first")
 
     suffix = "-reference" if args.reference else "-surface" if args.target == "surface" else ""
+    if args.impeller:
+        suffix += "-impeller"
     runs = failed = 0
     for name in args.scenarios:
         if args.reference and name in FLUST_ONLY:
@@ -87,6 +97,8 @@ def main():
             command += ["--app", str(app)]
         if args.target == "surface":
             command += ["--env", "PROBE_TARGET=surface"]
+        if args.impeller:
+            command += ["--env", "PROBE_ENGINE_ARGS=--enable-impeller"]
         runtime_dir = None
         if name in PRIVATE_BUS:
             # A bus of its own is not enough to keep a scenario to itself:
