@@ -3,11 +3,10 @@
 # and `tools/atspi_tree.py` reads it the way a screen reader does: through
 # AT-SPI.
 #
-# This needs a session bus on which accessibility can be switched on without
-# switching it on for the whole desktop. `run.py` gives it one. By hand:
-#
-#     GSETTINGS_BACKEND=memory ATSPI_DBUS_IMPLEMENTATION=dbus-daemon \
-#         dbus-run-session -- waytape run tests/e2e/scenarios/semantics.yaml
+# This needs a session in which accessibility can be switched on without
+# touching the desktop it runs on. `run.py` gives it one, and
+# `tests/e2e/README.md` says what that takes. Do not run it without: it
+# breaks the accessibility bus of the desktop.
 app:
   command: ./flust-e2e-probe
   cwd: ../app/target/debug

@@ -148,17 +148,27 @@ tests/e2e/tools/atspi_tree.py flust-e2e-probe --click Increment --expect-announc
 
 Applications only put their tree on the accessibility bus once
 accessibility is switched on, which is a setting of the session bus
-(`org.a11y.Status.IsEnabled`). So that a test run does not switch it on
-for the desktop it runs on, `run.py` gives the scenario a session bus of
-its own. Without `run.py`:
+(`org.a11y.Status.IsEnabled`). The scenario must not do that to the
+desktop it runs on, so `run.py` gives it a session of its own. Always
+run it through `run.py`. What that does:
 
 ```sh
-GSETTINGS_BACKEND=memory ATSPI_DBUS_IMPLEMENTATION=dbus-daemon \
+runtime_dir="$(mktemp -d)"
+XDG_RUNTIME_DIR="$runtime_dir" GSETTINGS_BACKEND=memory \
+    ATSPI_DBUS_IMPLEMENTATION=dbus-daemon \
     dbus-run-session -- waytape run tests/e2e/scenarios/semantics.yaml
+rm -r "$runtime_dir"
 ```
 
-Both variables are needed:
+A session bus of its own (`dbus-run-session`) is not enough. Each of the
+variables is there for something that got out without it:
 
+- `XDG_RUNTIME_DIR`: the accessibility bus has its socket in the runtime
+  directory (`at-spi/bus_0`), under the same name as the one of the
+  desktop. Without a directory of its own, the scenario's bus takes the
+  place of the desktop's and removes the socket when it goes: screen
+  readers can not connect anymore (`Couldn't connect to accessibility
+  bus`) until `systemctl --user restart at-spi-dbus-bus.service`.
 - `GSETTINGS_BACKEND=memory`: the accessibility bus saves that setting to
   the desktop settings of the user (`toolkit-accessibility` in dconf),
   which are in a file and not on the bus. Without this, the scenario

@@ -17,6 +17,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -39,8 +40,8 @@ SCENARIOS = [
     "semantics",
 ]
 # These read the app through the accessibility API of the desktop, which has
-# to be switched on for that. They get a session bus of their own, so that
-# it is not switched on for the applications of whoever runs this.
+# to be switched on for that. They get a session of their own, so that
+# nothing of the desktop of whoever runs this is touched.
 PRIVATE_BUS = {"semantics"}
 # They wait for what Flust logs, and say nothing about the reference.
 FLUST_ONLY = {"semantics"}
@@ -86,13 +87,23 @@ def main():
             command += ["--app", str(app)]
         if args.target == "surface":
             command += ["--env", "PROBE_TARGET=surface"]
+        runtime_dir = None
         if name in PRIVATE_BUS:
-            # The accessibility bus is a second bus. Its launcher starts
-            # `dbus-broker` by default, which only runs under systemd. It
-            # also saves whether accessibility is on to the settings of the
-            # user, which a bus of its own does not keep it from: the
-            # settings are in a file. With this backend they are not.
-            isolation = ["ATSPI_DBUS_IMPLEMENTATION=dbus-daemon", "GSETTINGS_BACKEND=memory"]
+            # A bus of its own is not enough to keep a scenario to itself:
+            # - The accessibility bus has its socket in the runtime
+            #   directory, under the same name as the one of the desktop. It
+            #   takes the place of that one, and takes it along when it
+            #   goes. So the scenario gets a runtime directory as well.
+            # - It saves whether accessibility is on to the settings of the
+            #   user, which are in a file. With this backend they are not.
+            # - Its launcher starts `dbus-broker` by default, which only
+            #   runs under systemd.
+            runtime_dir = tempfile.mkdtemp(prefix="flust-e2e-")
+            isolation = [
+                f"XDG_RUNTIME_DIR={runtime_dir}",
+                "GSETTINGS_BACKEND=memory",
+                "ATSPI_DBUS_IMPLEMENTATION=dbus-daemon",
+            ]
             command = ["env", *isolation, "dbus-run-session", "--", *command]
 
         for attempt in range(args.repeat):
@@ -130,6 +141,9 @@ def main():
                 scratch.rename(out)
             else:
                 shutil.rmtree(scratch)
+
+        if runtime_dir is not None:
+            shutil.rmtree(runtime_dir, ignore_errors=True)
 
     print(f"{runs - failed} passed, {failed} failed; run directories in .waytape/runs/")
     return 1 if failed else 0
