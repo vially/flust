@@ -3,6 +3,7 @@ use async_executor::LocalExecutor;
 use flust_runner_api::ApplicationAttributes;
 use flust_engine::builder::FlutterEngineBuilder;
 use flust_engine::plugins::Plugin;
+use flust_engine::renderer::Renderer;
 use flust_engine::{CreateError, FlutterEngine, FlutterEngineError};
 use flust_plugins::localization::LocalizationPlugin;
 use flust_plugins::settings::{PlatformBrightness, SettingsPlugin};
@@ -52,6 +53,10 @@ impl WinitApplication {
             .with_icu_data_path(attributes.icu_data_path)
             .with_persistent_cache_path(attributes.persistent_cache_path.clone())
             .with_args(attributes.args)
+            // Impeller needs more of the window's framebuffer than this
+            // backend gives it, and the backend is on its way out: it keeps
+            // the renderer it has always had, whatever the app chooses.
+            .with_renderer(Renderer::Skia)
             .build()?;
 
         let implicit_view =
