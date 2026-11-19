@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "flust",
+    "flust-accessibility",
     "flust-engine",
     "flust-engine-api",
     "flust-engine-sys",

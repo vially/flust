@@ -1,0 +1,14 @@
+[package]
+name = "flust-accessibility"
+version = "0.1.0"
+authors = ["Flust Contributors"]
+edition = "2021"
+description = "Exposes the semantics of a Flutter view to assistive technologies."
+keywords = ["flutter", "GUI", "accessibility"]
+repository = "https://github.com/vially/flust"
+license = "MIT"
+
+[dependencies]
+accesskit = "0.25.2"
+flust-engine = { path = "../flust-engine" }
+tracing = "0.1"
