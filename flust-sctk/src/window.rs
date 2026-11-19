@@ -323,6 +323,10 @@ impl SctkFlutterWindow {
         Ok(Self { inner })
     }
 
+    pub fn view_id(&self) -> FlutterViewId {
+        self.inner.id
+    }
+
     pub fn xdg_toplevel_id(&self) -> ObjectId {
         self.inner.window.xdg_toplevel().id()
     }

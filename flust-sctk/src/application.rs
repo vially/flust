@@ -7,6 +7,7 @@ use std::{
 };
 
 use calloop::futures::{Executor, Scheduler};
+use flust_accessibility::Accessibility;
 use flust_engine::{
     builder::FlutterEngineBuilder,
     ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
@@ -104,6 +105,7 @@ pub struct SctkApplicationState {
     plugins: Rc<RwLock<PluginRegistrar>>,
     mouse_cursor_handler: Arc<Mutex<SctkMouseCursorHandler>>,
     keyboard_handler: Arc<Mutex<SctkKeyboardHandler>>,
+    accessibility: Accessibility,
     frame_clock: FrameClock,
     async_scheduler: Scheduler<SctkAsyncResult>,
     modifiers: Modifiers,
@@ -141,9 +143,13 @@ impl SctkApplication {
         let frame_clock = FrameClock::new(event_loop.get_signal());
         let vsync_handler = Arc::new(Mutex::new(SctkVsyncHandler::new(frame_clock.clone())));
 
+        let accessibility = Accessibility::new();
+        let window_title = attributes.title.clone().unwrap_or_default();
+
         let engine = FlutterEngineBuilder::new()
             .with_platform_handler(platform_task_handler)
             .with_vsync_handler(vsync_handler)
+            .with_semantics_handler(Arc::new(accessibility.clone()))
             .with_aot_library_path(attributes.aot_library_path.clone())
             .with_asset_path(attributes.assets_path.clone())
             .with_icu_data_path(attributes.icu_data_path.clone())
@@ -163,6 +169,7 @@ impl SctkApplication {
         )?;
 
         engine.add_view(implicit_window.create_flutter_view());
+        accessibility.add_view(implicit_window.view_id(), &window_title);
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
         let platform_handler =
@@ -205,6 +212,7 @@ impl SctkApplication {
             plugins: Rc::new(RwLock::new(plugins)),
             mouse_cursor_handler,
             keyboard_handler,
+            accessibility,
             frame_clock,
             async_scheduler,
             modifiers: Modifiers::default(),
@@ -225,6 +233,7 @@ impl SctkApplication {
             .insert_source(Timer::immediate(), |_event, _metadata, state| {
                 state.engine.run().expect("Failed to run engine");
 
+                state.accessibility.engine_started(&state.engine);
                 state.schedule_async_startup_tasks();
 
                 state.is_engine_running = true;
@@ -935,6 +944,8 @@ impl SctkApplicationState {
         // The window acknowledges the configure when it commits a frame for
         // it: see `SurfaceSync`.
         if let Some(window) = self.windows.get_mut(&xdg_toplevel_id) {
+            self.accessibility
+                .set_view_focused(window.view_id(), configure.activated);
             window.configure(configure, serial);
         }
     }

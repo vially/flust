@@ -7,6 +7,7 @@ edition = "2021"
 ashpd = "0.8.1"
 calloop = { version = "0.13.0", features = ["executor"] }
 dpi = "0.1.0"
+flust-accessibility = { path = "../flust-accessibility" }
 flust-engine = { path = "../flust-engine" }
 flust-engine-api = { path = "../flust-engine-api" }
 flust-engine-sys = { path = "../flust-engine-sys" }
