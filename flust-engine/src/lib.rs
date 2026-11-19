@@ -6,6 +6,7 @@ pub mod error;
 pub mod ffi;
 mod flutter_callbacks;
 pub mod plugins;
+pub mod semantics;
 pub mod tasks;
 pub mod view;
 
@@ -36,6 +37,7 @@ use std::ptr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use semantics::FlutterSemanticsHandler;
 use tracing::trace;
 use view::{FlutterView, ViewRegistry};
 
@@ -50,6 +52,7 @@ pub(crate) enum MainThreadCallback {
 struct FlutterEngineInner {
     view_registry: RwLock<ViewRegistry>,
     vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
+    semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     engine_ptr: flust_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
     platform_runner: TaskRunner,
@@ -161,6 +164,7 @@ impl FlutterEngine {
             inner: Arc::new(FlutterEngineInner {
                 view_registry: RwLock::new(ViewRegistry::default()),
                 vsync_handler: builder.vsync_handler,
+                semantics_handler: builder.semantics_handler,
                 engine_ptr: ptr::null_mut(),
                 channel_registry: RwLock::new(ChannelRegistry::new()),
                 platform_runner: TaskRunner::new(
@@ -255,6 +259,12 @@ impl FlutterEngine {
             } as *const FlutterCompositor,
         };
 
+        let update_semantics_callback2: flust_engine_sys::FlutterUpdateSemanticsCallback2 =
+            match inner.semantics_handler {
+                Some(_) => Some(flutter_callbacks::update_semantics_callback),
+                None => None,
+            };
+
         // Configure engine
         let project_args = flust_engine_sys::FlutterProjectArgs {
             struct_size: std::mem::size_of::<flust_engine_sys::FlutterProjectArgs>(),
@@ -293,7 +303,7 @@ impl FlutterEngine {
             log_tag: std::ptr::null(),
             on_pre_engine_restart_callback: None,
             update_semantics_callback: None,
-            update_semantics_callback2: None,
+            update_semantics_callback2,
             channel_update_callback: None,
             view_focus_change_request_callback: None,
             engine_id: 0,

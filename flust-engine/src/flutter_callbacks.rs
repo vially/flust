@@ -2,6 +2,7 @@ use crate::ffi::{
     FlutterBackingStore, FlutterBackingStoreConfig, FlutterFrameInfo, FlutterLayer,
     FlutterPresentViewInfo,
 };
+use crate::semantics::FlutterSemanticsUpdate;
 use crate::tasks::{TaskRunner, TaskRunnerInner};
 use crate::FlutterEngineInner;
 use core::slice;
@@ -163,6 +164,21 @@ pub extern "C" fn platform_message_callback(
             .channel_registry
             .read()
             .handle((*platform_message).into());
+    }
+}
+
+pub extern "C" fn update_semantics_callback(
+    update: *const flust_engine_sys::FlutterSemanticsUpdate2,
+    user_data: *mut c_void,
+) {
+    trace!("update_semantics_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+        // This callback is only registered when there is a handler.
+        let Some(handler) = engine.semantics_handler.as_ref() else {
+            return;
+        };
+        handler.update_semantics(FlutterSemanticsUpdate::from_ffi(update));
     }
 }
 

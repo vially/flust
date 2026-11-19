@@ -3,12 +3,14 @@ use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::semantics::FlutterSemanticsHandler;
 use crate::tasks::TaskRunnerHandler;
 use crate::{CreateError, FlutterEngine, FlutterVsyncHandler};
 
 pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
+    pub(crate) semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     pub(crate) compositor_enabled: bool,
     pub(crate) aot_library: PathBuf,
     pub(crate) assets: PathBuf,
@@ -23,6 +25,7 @@ impl FlutterEngineBuilder {
         Self {
             platform_handler: None,
             vsync_handler: None,
+            semantics_handler: None,
             compositor_enabled: false,
             aot_library: Default::default(),
             assets: Default::default(),
@@ -45,6 +48,15 @@ impl FlutterEngineBuilder {
         handler: Arc<Mutex<dyn FlutterVsyncHandler + Send>>,
     ) -> Self {
         self.vsync_handler = Some(handler);
+        self
+    }
+
+    /// Without a handler, the engine is not asked for semantics updates.
+    pub fn with_semantics_handler(
+        mut self,
+        handler: Arc<dyn FlutterSemanticsHandler + Send + Sync>,
+    ) -> Self {
+        self.semantics_handler = Some(handler);
         self
     }
 
