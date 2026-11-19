@@ -490,10 +490,13 @@ pub struct FlutterSemanticsUpdate {
 /// through `struct_size`. No reference to the struct is made, as it may be
 /// shorter than its type.
 macro_rules! read_field {
-    ($ptr:expr, $ty:ty, $field:ident) => {{
+    ($ptr:expr, $ty:ty, $field:ident) => {
+        read_field!($ptr, $ty, $field, (*$ptr).struct_size)
+    };
+    ($ptr:expr, $ty:ty, $field:ident, $struct_size:expr) => {{
         let ptr: *const $ty = $ptr;
         let field = addr_of!((*ptr).$field);
-        if (*ptr).struct_size >= offset_of!($ty, $field) + size_of_pointee(field) {
+        if $struct_size >= offset_of!($ty, $field) + size_of_pointee(field) {
             Some(field.read())
         } else {
             None
@@ -505,10 +508,13 @@ macro_rules! read_field {
 /// number, since a newer engine may send a value that the Rust enum does not
 /// have.
 macro_rules! read_enum_field {
-    ($ptr:expr, $ty:ty, $field:ident) => {{
+    ($ptr:expr, $ty:ty, $field:ident) => {
+        read_enum_field!($ptr, $ty, $field, (*$ptr).struct_size)
+    };
+    ($ptr:expr, $ty:ty, $field:ident, $struct_size:expr) => {{
         let ptr: *const $ty = $ptr;
         let field = addr_of!((*ptr).$field);
-        if (*ptr).struct_size >= offset_of!($ty, $field) + size_of_pointee(field) {
+        if $struct_size >= offset_of!($ty, $field) + size_of_pointee(field) {
             Some(field.cast::<u32>().read())
         } else {
             None
@@ -542,21 +548,29 @@ impl FlutterSemanticsFlags {
             return Self::default();
         }
 
+        // The engine leaves the size of this struct at zero (as of Flutter
+        // 3.50), so there is no telling how much of it an engine has. It is
+        // taken to have all of it.
+        let struct_size = match (*raw).struct_size {
+            0 => size_of::<Raw>(),
+            struct_size => struct_size,
+        };
+
         macro_rules! tristate {
             ($field:ident) => {
-                read_enum_field!(raw, Raw, $field)
+                read_enum_field!(raw, Raw, $field, struct_size)
                     .map(FlutterTristate::from_ffi)
                     .unwrap_or_default()
             };
         }
         macro_rules! flag {
             ($field:ident) => {
-                read_field!(raw, Raw, $field).unwrap_or_default()
+                read_field!(raw, Raw, $field, struct_size).unwrap_or_default()
             };
         }
 
         Self {
-            is_checked: read_enum_field!(raw, Raw, is_checked)
+            is_checked: read_enum_field!(raw, Raw, is_checked, struct_size)
                 .map(FlutterCheckState::from_ffi)
                 .unwrap_or_default(),
             is_selected: tristate!(is_selected),
@@ -1076,6 +1090,22 @@ mod tests {
 
         assert!(flags.is_keyboard_key);
         assert!(!flags.is_accessibility_focus_blocked);
+    }
+
+    /// What the engine does, as of Flutter 3.50.
+    #[test]
+    fn flags_without_a_size() {
+        let mut flags = raw_flags();
+        flags.struct_size = 0;
+        flags.is_checked = sys::FlutterCheckState::kFlutterCheckStateTrue;
+        flags.is_button = true;
+        flags.is_accessibility_focus_blocked = true;
+
+        let flags = unsafe { FlutterSemanticsFlags::from_ffi(&flags) };
+
+        assert_eq!(flags.is_checked, FlutterCheckState::True);
+        assert!(flags.is_button);
+        assert!(flags.is_accessibility_focus_blocked);
     }
 
     #[test]
