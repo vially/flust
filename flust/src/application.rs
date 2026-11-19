@@ -2,7 +2,7 @@ use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
 
 use dpi::Size;
 use flust_engine::plugins::Plugin;
-use flust_runner_api::{ApplicationAttributes, Backend};
+use flust_runner_api::{ApplicationAttributes, Backend, Renderer};
 use thiserror::Error;
 use tracing::warn;
 
@@ -119,6 +119,15 @@ impl ApplicationBuilder {
         for arg in args.into_iter() {
             self.attributes.args.push(arg);
         }
+        self
+    }
+
+    /// The renderer to draw with. Skia unless set.
+    ///
+    /// An `--enable-impeller` engine argument (see [`Self::with_arg`]) takes
+    /// precedence, so that it can be switched without rebuilding the app.
+    pub fn with_renderer(mut self, renderer: Renderer) -> Self {
+        self.attributes.renderer = renderer;
         self
     }
 

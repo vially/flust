@@ -157,6 +157,7 @@ impl SctkApplication {
             .with_icu_data_path(attributes.icu_data_path.clone())
             .with_persistent_cache_path(attributes.persistent_cache_path.clone())
             .with_args(attributes.args.clone())
+            .with_renderer(attributes.renderer())
             .with_compositor_enabled(true)
             .build()?;
 

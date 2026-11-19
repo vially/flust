@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use dpi::Size;
 pub use flust_engine::ffi::FlutterOpenGLTargetType;
+pub use flust_engine::renderer::Renderer;
 
 #[derive(Debug, Clone)]
 pub enum Backend {
@@ -48,8 +49,19 @@ pub struct ApplicationAttributes {
     pub title: Option<String>,
     pub app_id: Option<String>,
     pub args: Vec<String>,
+    /// The renderer to use, unless `args` select one with
+    /// `--enable-impeller`: see [`ApplicationAttributes::renderer`].
+    pub renderer: Renderer,
     pub aot_library_path: PathBuf,
     pub assets_path: PathBuf,
     pub icu_data_path: PathBuf,
     pub persistent_cache_path: PathBuf,
+}
+
+impl ApplicationAttributes {
+    /// The renderer the engine will draw with: the one `args` select with
+    /// `--enable-impeller`, or `renderer` if they don't.
+    pub fn renderer(&self) -> Renderer {
+        Renderer::resolve(self.renderer, &self.args)
+    }
 }
