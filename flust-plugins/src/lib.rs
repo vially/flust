@@ -1,3 +1,4 @@
+pub mod accessibility;
 pub mod isolate;
 pub mod keyboard;
 pub mod keyevent;
