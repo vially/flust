@@ -3,6 +3,7 @@
 //! [AccessKit](https://accesskit.dev).
 
 pub mod bridge;
+mod text;
 pub mod tree;
 
 pub use bridge::Accessibility;

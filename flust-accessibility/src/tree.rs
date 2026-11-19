@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use accesskit::{
     Action, ActionData, ActionRequest, Affine, CustomAction, Live, Node, NodeId, Rect, Role,
-    TextDirection, Toggled, TreeId, TreeInfo, TreeUpdate,
+    TextDirection, TextPosition, TextSelection, Toggled, TreeId, TreeInfo, TreeUpdate,
 };
 use flust_engine::{
     codec::{MessageCodec, Value, STANDARD_CODEC},
@@ -16,6 +16,8 @@ use flust_engine::{
     },
 };
 use tracing::debug;
+
+use crate::text::{text_run_id, text_run_of, TextLayout};
 
 /// The id Flutter gives to the root node of a view.
 const FLUTTER_ROOT_ID: i32 = 0;
@@ -117,11 +119,9 @@ impl SemanticsTree {
         }
         for id in changed {
             if let Some(node) = self.nodes.get(&id) {
-                let (built, is_complete) = self.build_node(node);
-                if !is_complete {
+                if !self.build_nodes(node, &mut nodes) {
                     self.incomplete.insert(id);
                 }
-                nodes.push((node_id(id), built));
             }
         }
 
@@ -143,8 +143,8 @@ impl SemanticsTree {
     pub fn full_update(&self) -> TreeUpdate {
         let mut nodes: Vec<(NodeId, Node)> = Vec::with_capacity(self.nodes.len() + 1);
         nodes.push((WINDOW_NODE_ID, self.build_window_node()));
-        for (id, node) in &self.nodes {
-            nodes.push((node_id(*id), self.build_node(node).0));
+        for node in self.nodes.values() {
+            self.build_nodes(node, &mut nodes);
         }
 
         self.tree_update(nodes)
@@ -155,6 +155,19 @@ impl SemanticsTree {
     pub fn translate_action(&self, request: &ActionRequest) -> Option<SemanticsActionRequest> {
         let id = flutter_id(request.target_node)?;
         let node = self.nodes.get(&id)?;
+
+        match (&request.action, &request.data) {
+            (Action::SetTextSelection, Some(ActionData::SetTextSelection(selection))) => {
+                return translate_set_selection(node, selection);
+            }
+            (Action::SetValue, Some(ActionData::Value(text))) => {
+                return translate_set_text(node, text);
+            }
+            (Action::SetValue, Some(ActionData::NumericValue(value))) => {
+                return translate_set_numeric_value(node, *value);
+            }
+            _ => {}
+        }
 
         let (action, _) = ACTIONS
             .iter()
@@ -229,19 +242,61 @@ impl SemanticsTree {
         window
     }
 
+    /// Adds the AccessKit node for a semantics node to `nodes`, and the
+    /// nodes that AccessKit wants for it but Flutter does not have. Returns
+    /// whether it has all the children the engine named for it.
+    fn build_nodes(&self, node: &FlutterSemanticsNode, nodes: &mut Vec<(NodeId, Node)>) -> bool {
+        // The text of a text field is a list of child nodes to AccessKit.
+        let text = node
+            .flags
+            .is_text_field
+            .then(|| TextLayout::new(&node.value));
+
+        let (built, is_complete) = self.build_node(node, text.as_ref());
+        nodes.push((node_id(node.id), built));
+
+        if let Some(text) = text {
+            let continued: Vec<bool> = text.runs[1..]
+                .iter()
+                .map(|next| next.continues_line)
+                .chain([false])
+                .collect();
+            for (index, run) in text.runs.into_iter().enumerate() {
+                let mut built = Node::new(Role::TextRun);
+                if continued[index] {
+                    built.set_next_on_line(text_run_id(node.id, index + 1));
+                }
+                built.set_value(run.text);
+                built.set_character_lengths(run.character_lengths);
+                built.set_word_starts(run.word_starts);
+                if run.continues_line {
+                    built.set_previous_on_line(text_run_id(node.id, index - 1));
+                }
+                nodes.push((text_run_id(node.id, index), built));
+            }
+        }
+
+        is_complete
+    }
+
     /// Returns the AccessKit node, and whether it has all the children the
     /// engine named for it.
-    fn build_node(&self, node: &FlutterSemanticsNode) -> (Node, bool) {
+    fn build_node(&self, node: &FlutterSemanticsNode, text: Option<&TextLayout>) -> (Node, bool) {
         let role = role_of(node);
         let mut built = Node::new(role);
 
-        let children: Vec<NodeId> = node
+        let flutter_children: Vec<NodeId> = node
             .children_in_traversal_order
             .iter()
             .filter(|id| self.nodes.contains_key(id))
             .map(|id| node_id(*id))
             .collect();
-        let is_complete = children.len() == node.children_in_traversal_order.len();
+        let is_complete = flutter_children.len() == node.children_in_traversal_order.len();
+        let text_runs = text.map_or(0, |text| text.runs.len());
+        let children: Vec<NodeId> = (0..text_runs)
+            .map(|run| text_run_id(node.id, run))
+            .chain(flutter_children)
+            .collect();
         if !is_complete {
             debug!(
                 "semantics node {} names children that have not been described",
@@ -282,9 +337,43 @@ impl SemanticsTree {
             if !node.label.is_empty() {
                 built.set_label(node.label.as_str());
             }
-            if !node.value.is_empty() {
+            // The value of a text field is the text of its runs.
+            if !node.value.is_empty() && text.is_none() {
                 built.set_value(node.value.as_str());
             }
+        }
+        if let Some(text) = text {
+            let position = |utf16_offset: i32| {
+                let (run, character_index) = text.position(utf16_offset as usize);
+                TextPosition {
+                    node: text_run_id(node.id, run),
+                    character_index,
+                }
+            };
+            // Without a selection, both ends of it are `-1`.
+            if node.text_selection_base >= 0 && node.text_selection_extent >= 0 {
+                built.set_text_selection(TextSelection {
+                    anchor: position(node.text_selection_base),
+                    focus: position(node.text_selection_extent),
+                });
+            }
+            if node.actions.contains(FlutterSemanticsAction::SetSelection) {
+                built.add_action(Action::SetTextSelection);
+            }
+            if node.actions.contains(FlutterSemanticsAction::SetText) {
+                built.add_action(Action::SetValue);
+            }
+        }
+        if let Some(value) = adjustable_value(node) {
+            built.set_numeric_value(value.current);
+            if let Some((min, max)) = value.range {
+                built.set_min_numeric_value(min);
+                built.set_max_numeric_value(max);
+            }
+            if let Some(step) = value.step {
+                built.set_numeric_value_step(step);
+            }
+            built.add_action(Action::SetValue);
         }
         if !node.hint.is_empty() {
             built.set_description(node.hint.as_str());
@@ -389,6 +478,110 @@ impl SemanticsTree {
 
         (built, is_complete)
     }
+}
+
+/// The value of a node that can be increased and decreased, as a number.
+struct AdjustableValue {
+    current: f64,
+    range: Option<(f64, f64)>,
+    step: Option<f64>,
+}
+
+/// Flutter describes the value of a slider as text, such as `50%`. The
+/// accessibility API of the platform wants a number, which is there if that
+/// text is one.
+fn adjustable_value(node: &FlutterSemanticsNode) -> Option<AdjustableValue> {
+    let is_adjustable = node.actions.contains(FlutterSemanticsAction::Increase)
+        || node.actions.contains(FlutterSemanticsAction::Decrease);
+    if !is_adjustable {
+        return None;
+    }
+
+    let number = |text: &str| -> Option<f64> {
+        let text = text.trim();
+        text.strip_suffix('%').unwrap_or(text).trim().parse().ok()
+    };
+
+    let current = number(&node.value)?;
+    let neighbour = number(&node.increased_value).or_else(|| number(&node.decreased_value));
+    Some(AdjustableValue {
+        current,
+        range: node.value.trim().ends_with('%').then_some((0.0, 100.0)),
+        step: neighbour
+            .map(|neighbour| (neighbour - current).abs())
+            .filter(|step| *step > 0.0),
+    })
+}
+
+fn translate_set_selection(
+    node: &FlutterSemanticsNode,
+    selection: &TextSelection,
+) -> Option<SemanticsActionRequest> {
+    if !node.flags.is_text_field || !node.actions.contains(FlutterSemanticsAction::SetSelection) {
+        return None;
+    }
+
+    let text = TextLayout::new(&node.value);
+    let utf16_offset = |position: &TextPosition| -> Option<i32> {
+        let (field, run) = text_run_of(position.node)?;
+        if field != node.id {
+            return None;
+        }
+        i32::try_from(text.utf16_offset(run, position.character_index)?).ok()
+    };
+
+    let arguments = Value::Map(HashMap::from([
+        (
+            "base".to_owned(),
+            Value::I32(utf16_offset(&selection.anchor)?),
+        ),
+        (
+            "extent".to_owned(),
+            Value::I32(utf16_offset(&selection.focus)?),
+        ),
+    ]));
+    Some(SemanticsActionRequest {
+        node_id: node.id,
+        action: FlutterSemanticsAction::SetSelection,
+        data: STANDARD_CODEC.encode_message(&arguments),
+    })
+}
+
+fn translate_set_text(node: &FlutterSemanticsNode, text: &str) -> Option<SemanticsActionRequest> {
+    if !node.actions.contains(FlutterSemanticsAction::SetText) {
+        return None;
+    }
+
+    Some(SemanticsActionRequest {
+        node_id: node.id,
+        action: FlutterSemanticsAction::SetText,
+        data: STANDARD_CODEC.encode_message(&Value::String(text.to_owned())),
+    })
+}
+
+/// Flutter can not be asked to set a slider to a value, only to move it a
+/// step. So this moves it one step towards the value.
+fn translate_set_numeric_value(
+    node: &FlutterSemanticsNode,
+    value: f64,
+) -> Option<SemanticsActionRequest> {
+    let current = adjustable_value(node)?.current;
+    let action = if value > current {
+        FlutterSemanticsAction::Increase
+    } else if value < current {
+        FlutterSemanticsAction::Decrease
+    } else {
+        return None;
+    };
+    if !node.actions.contains(action) {
+        return None;
+    }
+
+    Some(SemanticsActionRequest {
+        node_id: node.id,
+        action,
+        data: Vec::new(),
+    })
 }
 
 /// What kind of thing a node is.
@@ -1018,5 +1211,261 @@ mod tests {
             tree.translate_action(&request(Action::CustomAction, NodeId(1), None)),
             None
         );
+    }
+
+    fn text_field(id: i32, value: &str, selection: (i32, i32)) -> FlutterSemanticsNode {
+        FlutterSemanticsNode {
+            flags: FlutterSemanticsFlags {
+                is_text_field: true,
+                is_multiline: true,
+                is_focused: FlutterTristate::True,
+                ..Default::default()
+            },
+            actions: [
+                FlutterSemanticsAction::Tap,
+                FlutterSemanticsAction::SetSelection,
+                FlutterSemanticsAction::SetText,
+            ]
+            .into_iter()
+            .collect(),
+            value: value.into(),
+            text_selection_base: selection.0,
+            text_selection_extent: selection.1,
+            ..labelled(id, "Message")
+        }
+    }
+
+    fn decode(data: &[u8]) -> Value {
+        STANDARD_CODEC.decode_message(data).unwrap()
+    }
+
+    #[test]
+    fn the_text_of_a_text_field_is_in_runs() {
+        let mut tree = SemanticsTree::new("Probe");
+
+        let update = tree.apply(update(vec![
+            node(0, &[1]),
+            text_field(1, "Hi there\nBye", (3, 10)),
+        ]));
+
+        let first = text_run_id(1, 0);
+        let second = text_run_id(1, 1);
+        assert_eq!(ids(&update), [0, 1, WINDOW_NODE_ID.0, first.0, second.0]);
+
+        let field = find(&update, NodeId(1));
+        assert_eq!(field.role(), Role::MultilineTextInput);
+        assert_eq!(field.label(), Some("Message"));
+        assert_eq!(field.value(), None);
+        assert_eq!(field.children(), [first, second]);
+        assert_eq!(
+            field.text_selection(),
+            Some(&TextSelection {
+                anchor: TextPosition {
+                    node: first,
+                    character_index: 3,
+                },
+                focus: TextPosition {
+                    node: second,
+                    character_index: 1,
+                },
+            })
+        );
+        assert!(field.supports_action(Action::SetTextSelection));
+        assert!(field.supports_action(Action::SetValue));
+
+        let run = find(&update, first);
+        assert_eq!(run.role(), Role::TextRun);
+        assert_eq!(run.value(), Some("Hi there\n"));
+        assert_eq!(run.character_lengths(), [1; 9]);
+        assert_eq!(run.word_starts(), [3]);
+        assert_eq!(run.next_on_line(), None);
+        assert_eq!(find(&update, second).value(), Some("Bye"));
+        assert_eq!(find(&update, second).previous_on_line(), None);
+
+        assert_eq!(update.focus, NodeId(1));
+    }
+
+    #[test]
+    fn a_text_field_without_text_or_selection() {
+        let mut tree = SemanticsTree::new("Probe");
+
+        let update = tree.apply(update(vec![node(0, &[1]), text_field(1, "", (-1, -1))]));
+
+        let field = find(&update, NodeId(1));
+        assert_eq!(field.children(), [text_run_id(1, 0)]);
+        assert_eq!(field.text_selection(), None);
+        assert_eq!(find(&update, text_run_id(1, 0)).value(), Some(""));
+    }
+
+    #[test]
+    fn a_text_field_keeps_its_own_children() {
+        let mut tree = SemanticsTree::new("Probe");
+        let mut field = text_field(1, "Hi", (0, 0));
+        field.children_in_traversal_order = vec![2];
+
+        let update = tree.apply(update(vec![node(0, &[1]), field, button(2, "Clear")]));
+
+        assert_eq!(
+            find(&update, NodeId(1)).children(),
+            [text_run_id(1, 0), NodeId(2)]
+        );
+    }
+
+    #[test]
+    fn runs_that_are_no_longer_there_are_not_children_anymore() {
+        let mut tree = SemanticsTree::new("Probe");
+        tree.apply(update(vec![
+            node(0, &[1]),
+            text_field(1, "one\ntwo", (0, 0)),
+        ]));
+
+        let update = tree.apply(update(vec![text_field(1, "one", (0, 0))]));
+
+        assert_eq!(ids(&update), [1, text_run_id(1, 0).0]);
+        assert_eq!(find(&update, NodeId(1)).children(), [text_run_id(1, 0)]);
+    }
+
+    #[test]
+    fn long_lines_are_linked_runs() {
+        let mut tree = SemanticsTree::new("Probe");
+
+        let update = tree.apply(update(vec![
+            node(0, &[1]),
+            text_field(1, &"a".repeat(300), (-1, -1)),
+        ]));
+
+        let first = find(&update, text_run_id(1, 0));
+        let second = find(&update, text_run_id(1, 1));
+        assert_eq!(first.next_on_line(), Some(text_run_id(1, 1)));
+        assert_eq!(second.previous_on_line(), Some(text_run_id(1, 0)));
+        assert_eq!(second.next_on_line(), None);
+    }
+
+    #[test]
+    fn setting_the_selection_of_a_text_field() {
+        let mut tree = SemanticsTree::new("Probe");
+        tree.apply(update(vec![
+            node(0, &[1, 2]),
+            text_field(1, "a😀b\ncd", (0, 0)),
+            text_field(2, "other", (0, 0)),
+        ]));
+        let select = |anchor: TextPosition, focus: TextPosition| {
+            tree.translate_action(&request(
+                Action::SetTextSelection,
+                NodeId(1),
+                Some(ActionData::SetTextSelection(TextSelection {
+                    anchor,
+                    focus,
+                })),
+            ))
+        };
+        let position = |field: i32, run: usize, character_index: usize| TextPosition {
+            node: text_run_id(field, run),
+            character_index,
+        };
+
+        let selected = select(position(1, 0, 2), position(1, 1, 1)).unwrap();
+        assert_eq!(selected.node_id, 1);
+        assert_eq!(selected.action, FlutterSemanticsAction::SetSelection);
+        // In UTF-16 code units: the emoji is two of them.
+        assert_eq!(
+            decode(&selected.data),
+            Value::Map(HashMap::from([
+                ("base".to_owned(), Value::I32(3)),
+                ("extent".to_owned(), Value::I32(6)),
+            ]))
+        );
+
+        // A position in another text field, or one that is not there.
+        assert_eq!(select(position(1, 0, 0), position(2, 0, 1)), None);
+        assert_eq!(select(position(1, 0, 0), position(1, 0, 9)), None);
+        assert_eq!(select(position(1, 0, 0), position(1, 5, 0)), None);
+    }
+
+    #[test]
+    fn setting_the_text_of_a_text_field() {
+        let mut tree = SemanticsTree::new("Probe");
+        tree.apply(update(vec![
+            node(0, &[1, 2]),
+            text_field(1, "old", (0, 0)),
+            button(2, "Send"),
+        ]));
+        let set = |target: u64| {
+            tree.translate_action(&request(
+                Action::SetValue,
+                NodeId(target),
+                Some(ActionData::Value("new".into())),
+            ))
+        };
+
+        let request = set(1).unwrap();
+        assert_eq!(request.action, FlutterSemanticsAction::SetText);
+        assert_eq!(decode(&request.data), Value::String("new".into()));
+
+        assert_eq!(set(2), None);
+    }
+
+    fn slider(id: i32, value: &str, increased: &str, decreased: &str) -> FlutterSemanticsNode {
+        FlutterSemanticsNode {
+            flags: FlutterSemanticsFlags {
+                is_slider: true,
+                ..Default::default()
+            },
+            actions: [
+                FlutterSemanticsAction::Increase,
+                FlutterSemanticsAction::Decrease,
+            ]
+            .into_iter()
+            .collect(),
+            value: value.into(),
+            increased_value: increased.into(),
+            decreased_value: decreased.into(),
+            ..labelled(id, "Volume")
+        }
+    }
+
+    #[test]
+    fn a_slider_has_a_number() {
+        let mut tree = SemanticsTree::new("Probe");
+
+        let update = tree.apply(update(vec![
+            node(0, &[1, 2]),
+            slider(1, "50%", "55%", "45%"),
+            slider(2, "Loud", "Louder", "Quieter"),
+        ]));
+
+        let volume = find(&update, NodeId(1));
+        assert_eq!(volume.role(), Role::Slider);
+        assert_eq!(volume.value(), Some("50%"));
+        assert_eq!(volume.numeric_value(), Some(50.0));
+        assert_eq!(volume.min_numeric_value(), Some(0.0));
+        assert_eq!(volume.max_numeric_value(), Some(100.0));
+        assert_eq!(volume.numeric_value_step(), Some(5.0));
+        assert!(volume.supports_action(Action::SetValue));
+        assert!(volume.supports_action(Action::Increment));
+
+        // A value that is not a number is only text.
+        let named = find(&update, NodeId(2));
+        assert_eq!(named.value(), Some("Loud"));
+        assert_eq!(named.numeric_value(), None);
+        assert!(!named.supports_action(Action::SetValue));
+    }
+
+    #[test]
+    fn setting_the_number_of_a_slider_moves_it_a_step() {
+        let mut tree = SemanticsTree::new("Probe");
+        tree.apply(update(vec![node(0, &[1]), slider(1, "50%", "55%", "45%")]));
+        let set = |value: f64| {
+            tree.translate_action(&request(
+                Action::SetValue,
+                NodeId(1),
+                Some(ActionData::NumericValue(value)),
+            ))
+            .map(|request| request.action)
+        };
+
+        assert_eq!(set(80.0), Some(FlutterSemanticsAction::Increase));
+        assert_eq!(set(10.0), Some(FlutterSemanticsAction::Decrease));
+        assert_eq!(set(50.0), None);
     }
 }
