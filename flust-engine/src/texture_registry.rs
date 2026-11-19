@@ -43,9 +43,13 @@ impl TextureRegistry {
     pub fn get_texture_frame(
         &self,
         texture_id: TextureId,
-        _size: (usize, usize),
+        size: (usize, usize),
     ) -> Option<TextureFrame> {
-        self.frames.lock().remove(&texture_id)
+        let mut frame = self.frames.lock().remove(&texture_id)?;
+        // Skia falls back to the size the texture is drawn at when the
+        // frame has none, Impeller does not and draws nothing.
+        frame.size.get_or_insert(size);
+        Some(frame)
     }
 }
 
@@ -110,7 +114,12 @@ type DestructorType = Box<dyn FnOnce() + Send>;
 pub struct TextureFrame {
     pub target: u32,
     pub name: u32,
+    /// The format of the texture. With Impeller, only `GL_RGBA8` is
+    /// supported.
     pub format: u32,
+    /// The size of the texture in pixels, if known. Without one, the size
+    /// the texture is drawn at is used.
+    pub size: Option<(usize, usize)>,
     pub destruction_callback: Box<DestructorType>,
 }
 
@@ -123,14 +132,22 @@ impl TextureFrame {
             target,
             name,
             format,
+            size: None,
             destruction_callback: Box::new(Box::new(destruction_callback)),
         }
+    }
+
+    /// Sets the size of the texture in pixels.
+    pub fn with_size(mut self, width: usize, height: usize) -> Self {
+        self.size = Some((width, height));
+        self
     }
 
     pub(crate) fn into_ffi(self, target: &mut FlutterOpenGLTexture) {
         target.target = self.target;
         target.name = self.name;
         target.format = self.format;
+        (target.width, target.height) = self.size.unwrap_or_default();
         target.destruction_callback = Some(texture_destruction_callback);
         target.user_data = Box::into_raw(self.destruction_callback) as _;
     }
