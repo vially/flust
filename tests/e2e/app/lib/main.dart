@@ -46,7 +46,8 @@ class SemanticsProbe extends StatefulWidget {
   State<SemanticsProbe> createState() => _SemanticsProbeState();
 }
 
-class _SemanticsProbeState extends State<SemanticsProbe> {
+class _SemanticsProbeState extends State<SemanticsProbe>
+    with WidgetsBindingObserver {
   int _count = 0;
   bool _checked = false;
   final TextEditingController _text = TextEditingController(text: 'Hello');
@@ -55,6 +56,7 @@ class _SemanticsProbeState extends State<SemanticsProbe> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _text.addListener(() {
       print('probe: semantics text "${_text.text}" selection '
           '${_text.selection.baseOffset},${_text.selection.extentOffset}');
@@ -63,9 +65,18 @@ class _SemanticsProbeState extends State<SemanticsProbe> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _text.dispose();
     _textFocus.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() {
+    final ui.AccessibilityFeatures features =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
+    print('probe: semantics accessible navigation '
+        '${features.accessibleNavigation}');
   }
 
   void _increment() {

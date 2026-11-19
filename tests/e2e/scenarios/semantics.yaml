@@ -33,6 +33,8 @@ steps:
       --method org.freedesktop.DBus.Properties.Set
       org.a11y.Status IsEnabled "<true>"
   - wait: { for: log, match: "semantics enabled: true" }
+  # The framework is told that an assistive technology is in use.
+  - wait: { for: log, match: "probe: semantics accessible navigation true" }
   - exec: >-
       python3 ../tools/atspi_tree.py flust-e2e-probe --expect
       "frame:Flust E2E Probe"
@@ -79,3 +81,4 @@ steps:
 
   - mark: accessibility off
   - wait: { for: log, match: "semantics enabled: false" }
+  - wait: { for: log, match: "probe: semantics accessible navigation false" }

@@ -126,7 +126,9 @@ checkbox and a text field instead, for the `semantics` scenario. It prints
 `probe: semantics count N` when the button is activated, `probe: semantics
 checked true|false` when the checkbox is, and `probe: semantics text
 "TEXT" selection BASE,EXTENT` when the text of the text field or its
-selection changes. Activating the button also announces `Counted to N`
+selection changes, and `probe: semantics accessible navigation
+true|false` when the framework is told that an assistive technology is in
+use or no longer is. Activating the button also announces `Counted to N`
 to assistive technologies.
 
 ## Accessibility
