@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use ashpd::desktop::settings::{ColorScheme, Settings};
 use dpi::PhysicalSize;
 use flust_accessibility::Accessibility;
 use flust_engine::{
@@ -35,10 +34,8 @@ use flust_plugins::{
     keyboard::{KeyboardStateError, KeyboardStateHandler},
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
     platform::{AppSwitcherDescription, MimeError, PlatformHandler},
-    settings::{PlatformBrightness, SettingsPlugin},
     textinput::TextInputHandler,
 };
-use futures_lite::StreamExt;
 use smithay_client_toolkit::{
     reexports::{calloop::LoopSignal, protocols::xdg::shell::client::xdg_toplevel::XdgToplevel},
     seat::{
@@ -962,58 +959,4 @@ pub type SctkAsyncResult = Result<(), SctkAsyncError>;
 pub enum SctkAsyncError {
     #[error(transparent)]
     AshpdError(#[from] ashpd::Error),
-}
-
-struct SctkColorScheme(ColorScheme);
-
-impl From<SctkColorScheme> for PlatformBrightness {
-    fn from(color_scheme: SctkColorScheme) -> Self {
-        match color_scheme.0 {
-            ColorScheme::PreferDark => PlatformBrightness::Dark,
-            ColorScheme::PreferLight => PlatformBrightness::Light,
-            ColorScheme::NoPreference => PlatformBrightness::Light, // fallback
-        }
-    }
-}
-
-pub(crate) struct SctkSettingsHandler {}
-
-impl SctkSettingsHandler {
-    // Note: zbus is runtime-agnostic and should work out of the box with
-    // different Rust async runtimes. However, in order to achieve that, zbus
-    // spawns a thread per connection to handle various internal tasks.
-    //
-    // https://docs.rs/zbus/4.2.2/zbus/#compatibility-with-async-runtimes
-    pub(crate) async fn read_and_monitor_color_scheme_changes(
-        plugin: SettingsPlugin,
-    ) -> SctkAsyncResult {
-        let settings = Settings::new().await?;
-
-        let value_change_stream = settings.receive_color_scheme_changed().await?;
-        let read_current_value_stream =
-            futures_lite::stream::once_future(Box::pin(settings.color_scheme()))
-                .filter_map(|t| t.ok());
-
-        // TODO: Investigate if this code is prone to race conditions when the
-        // color scheme is changed just *after* the current value is read but
-        // *before* the change stream is fully initialized.
-        //
-        // However, even *if* a race condition is possible, the likelihood of it
-        // happening in practice is pretty low considering that the
-        // `color-scheme` setting is rarely changed on a typical device.
-        let mut stream = read_current_value_stream
-            .or(value_change_stream)
-            .map(|color_scheme| PlatformBrightness::from(SctkColorScheme(color_scheme)));
-
-        while let Some(platform_brightness) = stream.next().await {
-            plugin
-                .start_message()
-                .set_platform_brightness(platform_brightness)
-                .set_use_24_hour_format(true)
-                .set_text_scale_factor(1.0)
-                .send();
-        }
-
-        Ok(())
-    }
 }

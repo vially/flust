@@ -71,11 +71,12 @@ use crate::{
     frame_clock::FrameClock,
     handler::{
         SctkAccessibilityHandler, SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler,
-        SctkPlatformHandler, SctkPlatformTaskHandler, SctkSettingsHandler, SctkTextInputHandler,
-        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkPlatformHandler, SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
+        FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
+    settings::read_and_monitor_desktop_settings,
     toplevel::ToplevelConfigure,
     window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
 };
@@ -382,9 +383,13 @@ impl SctkApplicationState {
 
     fn schedule_async_startup_tasks(&self) {
         self.with_plugin(|settings: &SettingsPlugin| {
-            if let Err(err) = self.async_scheduler.schedule(
-                SctkSettingsHandler::read_and_monitor_color_scheme_changes(settings.clone()),
-            ) {
+            if let Err(err) = self
+                .async_scheduler
+                .schedule(read_and_monitor_desktop_settings(
+                    settings.clone(),
+                    self.accessibility.clone(),
+                ))
+            {
                 error!("Failed to schedule engine async jobs: {}", err);
             };
         });
