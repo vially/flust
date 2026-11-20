@@ -76,11 +76,13 @@ Future<void> main() async {
 
 Creating a window is synchronous in the API: the window's view exists when the call returns. Dart runs on the platform thread, so Dart calls Flust's functions directly, on that thread, while Flust is in a call into the engine (`src/windowing.rs`). Dart gets their addresses over the `flust/windowing` channel when it installs the package, and hears about close requests and changes of a window's state over the same channel.
 
+A dialog (`DialogWindowController`) with a parent is modal: it gets the parent with `xdg_toplevel.set_parent`, and is marked modal with `xdg_dialog_v1` where the compositor offers it. Keeping input from the parent is up to the app on Wayland, so Flust does it whether the compositor offers xdg-dialog or not: while a window has a modal dialog open, its presses, scrolling and keys are dropped. A dialog is destroyed with its parent, before it, as on Flutter's other platforms. A dialog without a parent is a regular window on Wayland.
+
 The work is tracked in https://forge.lab.vially.dev/vially/flust/issues/7.
 
 ### Limitations
 
-- **Only regular windows** so far: dialogs, tooltips, popups and satellite windows throw `UnimplementedError`.
+- **Only regular windows and dialogs** so far: tooltips, popups and satellite windows throw `UnimplementedError`.
 - **Windows are not sized to their content** (`WindowController.shrinkWrap`): they get the app's default size, as with Flutter's own Linux embedder.
 - **Activating a window does nothing.** Wayland only lets a window be activated with a token from the window that has the focus (`xdg_activation_v1`), which Flust does not ask for yet.
 - **Minimizing can not be undone, and is not reported.** Wayland has no way for an app to bring a minimized window back, and compositors do not say whether a window is minimized.

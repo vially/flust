@@ -73,7 +73,7 @@ abstract final class FlustWindowing {
 /// Creates the windows of Flutter's windowing API through Flust. Installed
 /// by [FlustWindowing.ensureInitialized].
 ///
-/// Only regular windows are supported so far.
+/// Only regular windows and dialogs are supported so far.
 class WindowingOwnerFlust extends WindowingOwner {
   WindowingOwnerFlust._(this._engineId, this._native, MethodChannel channel) {
     channel.setMethodCallHandler(_handleMethodCall);
@@ -81,13 +81,12 @@ class WindowingOwnerFlust extends WindowingOwner {
 
   final int _engineId;
   final _Native _native;
-  final Map<int, WindowControllerFlust> _windows =
-      <int, WindowControllerFlust>{};
+  final Map<int, _FlustWindow> _windows = <int, _FlustWindow>{};
 
   Future<void> _handleMethodCall(MethodCall call) async {
     final int viewId =
         (call.arguments as Map<Object?, Object?>)['viewId']! as int;
-    final WindowControllerFlust? window = _windows[viewId];
+    final _FlustWindow? window = _windows[viewId];
     if (window == null) {
       return;
     }
@@ -109,15 +108,13 @@ class WindowingOwnerFlust extends WindowingOwner {
     required bool resizable,
     String? title,
   }) {
-    final controller = WindowControllerFlust._(
+    return WindowControllerFlust._(
       owner: this,
       delegate: delegate,
       size: size,
       constraints: constraints,
       title: title,
     );
-    _windows[controller.rootView.viewId] = controller;
-    return controller;
   }
 
   @override
@@ -129,7 +126,14 @@ class WindowingOwnerFlust extends WindowingOwner {
     BaseWindowController? parent,
     String? title,
   }) {
-    throw UnimplementedError('Dialog windows are not supported by Flust yet.');
+    return DialogWindowControllerFlust._(
+      owner: this,
+      delegate: delegate,
+      size: size,
+      constraints: constraints,
+      title: title,
+      parent: parent,
+    );
   }
 
   @override
@@ -171,33 +175,49 @@ class WindowingOwnerFlust extends WindowingOwner {
   }
 }
 
-/// A regular window, created by Flust.
+/// What regular windows and dialogs created by Flust have in common.
 ///
 /// Wayland limits what a window can do on its own:
 ///
-/// * [activate] does nothing: Wayland only lets a window be activated with
-///   a token from the window that has the focus, which Flust does not ask
-///   for yet.
-/// * [isMinimized] is always false: compositors do not say whether a window
+/// * `activate` does nothing: Wayland only lets a window be activated with a
+///   token from the window that has the focus, which Flust does not ask for
+///   yet.
+/// * `isMinimized` is always false: compositors do not say whether a window
 ///   is minimized, and a minimized window can not be brought back by the
 ///   app.
-/// * [setSize] is a request: the compositor decides, and does not change
-///   the size of a maximized, fullscreen or tiled window.
+/// * `setSize` is a request: the compositor decides, and does not change the
+///   size of a maximized, fullscreen or tiled window.
 ///
-/// A window created with [WindowController.shrinkWrap] is not sized to its
+/// A window created with a `shrinkWrap` constructor is not sized to its
 /// content yet: it gets the app's default size, as with Flutter's own Linux
 /// embedder.
-class WindowControllerFlust extends WindowController {
-  WindowControllerFlust._({
-    required WindowingOwnerFlust owner,
-    required WindowControllerDelegate delegate,
+///
+/// Mixed into subclasses of `BaseWindowController`, which is sealed, so it
+/// can not be named here.
+mixin _FlustWindow on ChangeNotifier {
+  late final WindowingOwnerFlust _owner;
+  String _title = '';
+  bool _isDestroyed = false;
+
+  _Native get _native => _owner._native;
+  int get _engineId => _owner._engineId;
+  int get _viewId => rootView.viewId;
+
+  // From `BaseWindowController`.
+  FlutterView get rootView;
+  set rootView(FlutterView view);
+
+  /// Creates the window, and its view, which the engine has when this
+  /// returns. A window with a `modalParent` is a modal dialog of it.
+  void _create(
+    WindowingOwnerFlust owner, {
     Size? size,
     BoxConstraints? constraints,
     String? title,
-  }) : _owner = owner,
-       _delegate = delegate,
-       _title = title ?? '',
-       super.empty() {
+    BaseWindowController? modalParent,
+  }) {
+    _owner = owner;
+    _title = title ?? '';
     final int viewId = _withString(
       title,
       (ffi.Pointer<Utf8> title) => _native.createWindow(
@@ -209,14 +229,13 @@ class WindowControllerFlust extends WindowController {
         constraints?.maxWidth ?? double.infinity,
         constraints?.maxHeight ?? double.infinity,
         title,
-        -1,
+        modalParent?.rootView.viewId ?? -1,
       ),
     );
     if (viewId < 0) {
       throw StateError(_createWindowFailure(viewId));
     }
 
-    // The engine has the window's view by now.
     final FlutterView? view = WidgetsBinding.instance.platformDispatcher.view(
       id: viewId,
     );
@@ -226,18 +245,9 @@ class WindowControllerFlust extends WindowController {
       );
     }
     rootView = view;
+    owner._windows[viewId] = this;
   }
 
-  final WindowingOwnerFlust _owner;
-  final WindowControllerDelegate _delegate;
-  String _title;
-  bool _isDestroyed = false;
-
-  _Native get _native => _owner._native;
-  int get _engineId => _owner._engineId;
-  int get _viewId => rootView.viewId;
-
-  @override
   Size get contentSize {
     if (_isDestroyed) {
       return Size.zero;
@@ -250,31 +260,19 @@ class WindowControllerFlust extends WindowController {
 
   int get _state => _isDestroyed ? 0 : _native.getState(_engineId, _viewId);
 
-  @override
   String get title => _title;
 
-  @override
   bool get isActivated => _state & _Native.stateActivated != 0;
 
-  @override
-  bool get isMaximized => _state & _Native.stateMaximized != 0;
-
-  @override
   bool get isMinimized => false;
 
-  @override
-  bool get isFullscreen => _state & _Native.stateFullscreen != 0;
-
-  @override
   bool get isDestroyed => _isDestroyed;
 
-  @override
   void setSize(Size size) {
     _checkNotDestroyed();
     _native.setSize(_engineId, _viewId, size.width, size.height);
   }
 
-  @override
   void setConstraints(BoxConstraints constraints) {
     _checkNotDestroyed();
     _native.setConstraints(
@@ -287,7 +285,6 @@ class WindowControllerFlust extends WindowController {
     );
   }
 
-  @override
   void setTitle(String title) {
     _checkNotDestroyed();
     _title = title;
@@ -298,36 +295,30 @@ class WindowControllerFlust extends WindowController {
     notifyListeners();
   }
 
-  @override
   void activate() {
     _checkNotDestroyed();
     _native.activate(_engineId, _viewId);
   }
 
-  @override
-  void setMaximized(bool maximized) {
-    _checkNotDestroyed();
-    _native.setMaximized(_engineId, _viewId, maximized);
-  }
-
-  @override
   void setMinimized(bool minimized) {
     _checkNotDestroyed();
     _native.setMinimized(_engineId, _viewId, minimized);
   }
 
-  @override
-  void setFullscreen(bool fullscreen, {Display? display}) {
-    _checkNotDestroyed();
-    _native.setFullscreen(_engineId, _viewId, fullscreen);
-  }
-
-  /// Destroys the window. Its view is gone when this returns, and the
-  /// delegate has been told, as with Flutter's own embedders.
-  @override
+  /// Destroys the window, and its dialogs first. Its view is gone when this
+  /// returns, and the delegate has been told, as with Flutter's own
+  /// embedders.
   void destroy() {
     if (_isDestroyed) {
       return;
+    }
+    // Other platforms destroy a window's dialogs with it. Wayland does not.
+    final List<DialogWindowControllerFlust> dialogs = _owner._windows.values
+        .whereType<DialogWindowControllerFlust>()
+        .where((DialogWindowControllerFlust dialog) => dialog.parent == this)
+        .toList();
+    for (final dialog in dialogs) {
+      dialog.destroy();
     }
     _native.destroyWindow(_engineId, _viewId);
     _destroyed();
@@ -341,7 +332,7 @@ class WindowControllerFlust extends WindowController {
 
   void _closeRequested() {
     if (!_isDestroyed) {
-      _delegate.onWindowCloseRequested(this);
+      _onCloseRequested();
     }
   }
 
@@ -351,15 +342,110 @@ class WindowControllerFlust extends WindowController {
     }
     _isDestroyed = true;
     _owner._windows.remove(_viewId);
-    _delegate.onWindowDestroyed();
+    _onDestroyed();
     notifyListeners();
   }
+
+  /// Tells the delegate that the compositor asked for the window to close.
+  void _onCloseRequested();
+
+  /// Tells the delegate that the window is destroyed.
+  void _onDestroyed();
 
   void _checkNotDestroyed() {
     if (_isDestroyed) {
       throw StateError('Window has been destroyed.');
     }
   }
+}
+
+/// A regular window, created by Flust. See [_FlustWindow] for what Wayland
+/// limits.
+class WindowControllerFlust extends WindowController with _FlustWindow {
+  WindowControllerFlust._({
+    required WindowingOwnerFlust owner,
+    required WindowControllerDelegate delegate,
+    Size? size,
+    BoxConstraints? constraints,
+    String? title,
+  }) : _delegate = delegate,
+       super.empty() {
+    _create(owner, size: size, constraints: constraints, title: title);
+  }
+
+  final WindowControllerDelegate _delegate;
+
+  @override
+  bool get isMaximized => _state & _Native.stateMaximized != 0;
+
+  @override
+  bool get isFullscreen => _state & _Native.stateFullscreen != 0;
+
+  @override
+  void setMaximized(bool maximized) {
+    _checkNotDestroyed();
+    _native.setMaximized(_engineId, _viewId, maximized);
+  }
+
+  @override
+  void setFullscreen(bool fullscreen, {Display? display}) {
+    _checkNotDestroyed();
+    _native.setFullscreen(_engineId, _viewId, fullscreen);
+  }
+
+  @override
+  void _onCloseRequested() => _delegate.onWindowCloseRequested(this);
+
+  @override
+  void _onDestroyed() => _delegate.onWindowDestroyed();
+}
+
+/// A dialog window, created by Flust. See [_FlustWindow] for what Wayland
+/// limits.
+///
+/// A dialog with a parent is modal: the compositor keeps it above its
+/// parent, and the parent takes no input until the dialog is destroyed. It
+/// is destroyed with its parent. A dialog without a parent is a regular
+/// window on Wayland.
+class DialogWindowControllerFlust extends DialogWindowController
+    with _FlustWindow {
+  DialogWindowControllerFlust._({
+    required WindowingOwnerFlust owner,
+    required DialogWindowControllerDelegate delegate,
+    Size? size,
+    BoxConstraints? constraints,
+    String? title,
+    BaseWindowController? parent,
+  }) : _delegate = delegate,
+       _parent = parent,
+       super.empty() {
+    if (parent != null && (parent is! _FlustWindow || parent.isDestroyed)) {
+      throw ArgumentError.value(
+        parent,
+        'parent',
+        'Not a window of Flust that is still open',
+      );
+    }
+    _create(
+      owner,
+      size: size,
+      constraints: constraints,
+      title: title,
+      modalParent: parent,
+    );
+  }
+
+  final DialogWindowControllerDelegate _delegate;
+  final BaseWindowController? _parent;
+
+  @override
+  BaseWindowController? get parent => _parent;
+
+  @override
+  void _onCloseRequested() => _delegate.onWindowCloseRequested(this);
+
+  @override
+  void _onDestroyed() => _delegate.onWindowDestroyed();
 }
 
 String _createWindowFailure(int failure) {
@@ -371,6 +457,7 @@ String _createWindowFailure(int failure) {
       'Flust only creates windows for an app that renders into a framebuffer: '
           'start the app with `FlutterOpenGLTargetType::Framebuffer`.',
     -3 => 'Flust only creates windows while the engine runs.',
+    -5 => 'Flust has no open window to be the parent of the window.',
     _ => 'Flust failed to create a window: its log says why.',
   };
 }
