@@ -1250,8 +1250,12 @@ impl SctkApplicationState {
             .set_view_focused(view_id, configure.activated);
         window.configure(configure, serial);
 
-        // What Dart reads of the window may have changed with it.
-        self.with_plugin(|windowing: &WindowingPlugin| windowing.window_changed(view_id));
+        // What Dart reads of the window may have changed with it. The startup
+        // window is configured before the engine runs: Dart reads it once
+        // it does, and the engine takes no messages before then.
+        if self.is_engine_running() {
+            self.with_plugin(|windowing: &WindowingPlugin| windowing.window_changed(view_id));
+        }
     }
 }
 
