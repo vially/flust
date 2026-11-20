@@ -21,6 +21,8 @@
 //   the app through the accessibility API of the platform.
 // - `PROBE_SHAPES=1`: draw shapes instead, for the test of what the renderer
 //   draws (`ShapesPainter`).
+// - `PROBE_EXIT=1`: cancel every request to exit (a close of the window),
+//   and exit with code 3 on a tap, for the test of the exit protocol.
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -28,6 +30,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 void main() {
@@ -200,9 +203,11 @@ class Probe extends StatefulWidget {
 
 class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
   final bool _animate = Platform.environment['PROBE_ANIMATE'] == '1';
+  final bool _exit = Platform.environment['PROBE_EXIT'] == '1';
   final ProbeState _state = ProbeState();
   Ticker? _ticker;
   Timer? _alive;
+  AppLifecycleListener? _lifecycle;
 
   @override
   void initState() {
@@ -210,6 +215,14 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
     print('probe: started animate=$_animate');
     if (_animate) {
       _ticker = createTicker((_) => _state.requestFrame())..start();
+    }
+    if (_exit) {
+      _lifecycle = AppLifecycleListener(
+        onExitRequested: () async {
+          print('probe: exit requested, cancelling');
+          return ui.AppExitResponse.cancel;
+        },
+      );
     }
     // A timer does not depend on vsync, so this keeps printing while the
     // window is hidden and no frames are produced.
@@ -222,6 +235,7 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
   void dispose() {
     _ticker?.dispose();
     _alive?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 
@@ -235,6 +249,10 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
         final Offset at = event.localPosition;
         print('probe: tap ${_state.taps} at '
             '${at.dx.round()},${at.dy.round()}');
+        if (_exit) {
+          print('probe: exiting with code 3');
+          ServicesBinding.instance.exitApplication(ui.AppExitType.required, 3);
+        }
       },
       child: SizedBox.expand(
         child: CustomPaint(

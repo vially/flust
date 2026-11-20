@@ -38,6 +38,7 @@ SCENARIOS = [
     "scale",
     "scale-change",
     "close",
+    "exit",
     "semantics",
     "shapes",
 ]
@@ -45,8 +46,10 @@ SCENARIOS = [
 # to be switched on for that. They get a session of their own, so that
 # nothing of the desktop of whoever runs this is touched.
 PRIVATE_BUS = {"semantics"}
-# They wait for what Flust logs, and say nothing about the reference.
-FLUST_ONLY = {"semantics"}
+# They say nothing about the reference: `semantics` waits for what Flust
+# logs, and Flutter's own Linux embedder exits with code 0 whatever exit
+# code the app asks for, which `exit` checks.
+FLUST_ONLY = {"semantics", "exit"}
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 

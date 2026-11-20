@@ -1,0 +1,41 @@
+# Dart decides when the app exits. A close of the window is a request that
+# the app can cancel, and does here: the window stays. A tap then has the
+# app exit by itself (`ServicesBinding.exitApplication`), with the exit
+# code it asks for.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    PROBE_EXIT: "1"
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: stable
+  - mark: close, cancelled
+  - close
+  - wait: { for: log, match: "probe: exit requested, cancelling" }
+  # Long enough for an exit that was not cancelled to have happened.
+  - sleep: 1s
+  - assert_running
+  - mark: exit from Dart
+  - click: [20, 30]
+  - wait: { for: log, match: "probe: exiting with code 3" }
+  - wait: { for: exit }
+  - assert_exit: 3
+
+analyze:
+  - run: python3 ../analyzers/app_log.py

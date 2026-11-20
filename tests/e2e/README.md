@@ -149,6 +149,11 @@ pixels of the stars and clips, and that the edges of the squares are
 antialiased: the other scenarios only look at rectangles, and pass on a
 renderer that fills a star as its bounding box.
 
+With `PROBE_EXIT=1` it cancels every request to exit (a close of its
+window), and prints `probe: exit requested, cancelling` when it does. A
+tap then has it exit by itself with exit code 3, after printing `probe:
+exiting with code 3`. That is for the `exit` scenario.
+
 ## Accessibility
 
 The `semantics` scenario reads the app through AT-SPI, the accessibility
@@ -222,6 +227,7 @@ For the probe app:
 | `scale` | Startup, taps and resizes on an output with scale 2 |
 | `scale-change` | The output's scale changes while the app runs, to 2 and back |
 | `close` | Closing the window in the middle of a resize |
+| `exit` | The app cancels the close of its window, then exits by itself with an exit code |
 | `semantics` | What a screen reader sees of the app, and that what it asks for reaches the app |
 | `shapes` | Paths, clips and antialiasing: what the renderer draws |
 
