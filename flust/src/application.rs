@@ -1,4 +1,4 @@
-use std::{fs::canonicalize, io::ErrorKind, path::PathBuf};
+use std::{fs::canonicalize, io::ErrorKind, path::PathBuf, process::ExitCode};
 
 use dpi::Size;
 use flust_engine::plugins::Plugin;
@@ -47,13 +47,19 @@ impl Application {
         }
     }
 
-    pub fn run(self) -> Result<(), ApplicationRunError> {
+    /// Runs the application until it exits, and returns the exit code for
+    /// the process: the one Dart asked for (`ServicesBinding.exitApplication`)
+    /// with the sctk backend, success with the winit one.
+    pub fn run(self) -> Result<ExitCode, ApplicationRunError> {
         match self {
             #[cfg(feature = "flust-sctk")]
             Self::Sctk(app) => Ok(app.run()?),
 
             #[cfg(feature = "flust-winit")]
-            Self::Winit(app) => Ok(app.run()?),
+            Self::Winit(app) => {
+                app.run()?;
+                Ok(ExitCode::SUCCESS)
+            }
         }
     }
 

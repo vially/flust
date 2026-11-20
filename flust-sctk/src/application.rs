@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
+    process::ExitCode,
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
@@ -238,7 +239,9 @@ impl SctkApplication {
         Ok(Self { event_loop, state })
     }
 
-    pub fn run(mut self) -> Result<(), SctkApplicationRunError> {
+    /// Runs the application until Dart decides that it exits, and returns
+    /// the exit code that Dart asked for.
+    pub fn run(mut self) -> Result<ExitCode, SctkApplicationRunError> {
         // The event loop needs to be started *prior* to running the engine (see
         // `FlutterEngineRun` comment in `embedder.h` for additional context).
         // Therefore, use an immediate timer source for starting the engine
@@ -281,7 +284,9 @@ impl SctkApplication {
         // be running when the process exits.
         self.state.engine.shutdown();
 
-        Ok(())
+        let exit_code = self.state.exit_code.lock().unwrap_or_default();
+        // Only the low 8 bits reach the parent process, as with `exit`.
+        Ok(ExitCode::from(exit_code as u8))
     }
 
     pub fn add_plugin<P>(&mut self, plugin: P)

@@ -1,8 +1,10 @@
+use std::process::ExitCode;
+
 use flust::{
     application::Application, Backend, BackendConfigSctk, FlutterOpenGLTargetType, Renderer,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // `PROBE_TARGET=surface` renders straight into the window surface
