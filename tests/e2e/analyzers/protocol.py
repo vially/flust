@@ -14,7 +14,11 @@ asked for". The checks:
   carry a buffer of the configured size. A commit without a new buffer, or
   with one of another size, answers the configure with old content.
 - **scale**: at every commit the buffer's size must be a multiple of the
-  buffer scale, and a new scale must come with a buffer drawn for it.
+  buffer scale, and a new scale must come with a buffer drawn for it. A
+  surface with a viewport destination (a fractional scale) has buffer
+  scale 1, and answers a configure with a buffer of the configured size
+  times the scale the compositor asked for (`wp_fractional_scale_v1`),
+  rounded, shown at the configured size.
 - **pacing**: buffers must not be committed faster than the output shows
   them. More than --refresh (plus a quarter) in any one second is counted,
   once per such second.
@@ -50,6 +54,9 @@ class Surface:
         self.scale = 1
         self.pending_buffer = None
         self.pending_scale = None
+        # The viewport's destination, (width, height), or None for none.
+        self.destination = None
+        self.pending_destination = False  # as destination, or False for no change
 
 
 def main():
@@ -68,6 +75,8 @@ def main():
 
     buffers = {}  # wl_buffer#N -> (width, height)
     surface_id = xdg_surface_id = toplevel_id = None
+    viewport_id = fractional_scale_id = None
+    preferred_scale = None  # from wp_fractional_scale_v1, as a factor
     surface = Surface()
     toplevel_size = None  # from the last xdg_toplevel.configure
     configures = {}  # serial -> (time, size)
@@ -97,6 +106,20 @@ def main():
                 violation(time, f"protocol error: {arguments}")
             elif message == "get_xdg_surface" and xdg_surface_id is None:
                 xdg_surface_id, surface_id = OBJECT.findall(arguments)[:2]
+            elif message == "get_viewport" and viewport_id is None:
+                # Created before the surface gets its role.
+                viewport_id, viewed = OBJECT.findall(arguments)[:2]
+                if surface_id is not None and viewed != surface_id:
+                    viewport_id = None
+            elif message == "get_fractional_scale" and fractional_scale_id is None:
+                fractional_scale_id, scaled = OBJECT.findall(arguments)[:2]
+                if surface_id is not None and scaled != surface_id:
+                    fractional_scale_id = None
+            elif target == fractional_scale_id and message == "preferred_scale" and not outgoing:
+                preferred_scale = int(arguments) / 120
+            elif target == viewport_id and message == "set_destination":
+                width, height = (int(field) for field in arguments.split(","))
+                surface.pending_destination = None if width == -1 else (width, height)
             elif message == "get_toplevel" and target == xdg_surface_id:
                 toplevel_id = OBJECT.findall(arguments)[0]
             elif message in ("create_immed", "create_buffer") and outgoing:
@@ -137,6 +160,9 @@ def main():
                         paced_until = time + 1
                     surface.buffer = new_buffer
                     surface.pending_buffer = None
+                if surface.pending_destination is not False:
+                    surface.destination = surface.pending_destination
+                    surface.pending_destination = False
                 if surface.pending_scale is not None:
                     if new_buffer is None and surface.pending_scale != surface.scale:
                         violation(
@@ -145,6 +171,8 @@ def main():
                         )
                     surface.scale = surface.pending_scale
                     surface.pending_scale = None
+                if surface.destination is not None and surface.scale != 1:
+                    violation(time, f"viewport destination with buffer scale {surface.scale}")
                 if surface.buffer is not None and any(side % surface.scale for side in surface.buffer):
                     violation(
                         time,
@@ -157,6 +185,17 @@ def main():
                     # A size of 0x0 leaves the size to the app.
                     if size is not None and 0 not in size:
                         expected = (size[0] * surface.scale, size[1] * surface.scale)
+                        if surface.destination is not None:
+                            # Rounded half away from zero.
+                            factor = preferred_scale or 1
+                            expected = tuple(int(side * factor + 0.5) for side in size)
+                            if surface.destination != size:
+                                violation(
+                                    time,
+                                    "configure {} ({}x{}) answered with a viewport of {}x{}".format(
+                                        serial, *size, *surface.destination
+                                    ),
+                                )
                         if new_buffer is None and surface.buffer == expected:
                             pass  # nothing to redraw: the surface already has that size
                         elif new_buffer is None:
