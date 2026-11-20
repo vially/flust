@@ -23,6 +23,13 @@
 //   draws (`ShapesPainter`).
 // - `PROBE_EXIT=1`: cancel every request to exit (a close of the window),
 //   and exit with code 3 on a tap, for the test of the exit protocol.
+// - `PROBE_WINDOWS=1`: start without a window, and open two, each with a
+//   probe of its own, through Flust's test hook for windows
+//   (`flust-sctk/src/testing.rs`). A window that is asked to close is
+//   destroyed, and the app exits when none is left. The runner starts the
+//   app without a window then.
+// - `PROBE_WINDOWS=startup`: the usual probe, in the startup window, which
+//   also tries to open a window, and prints how that was refused.
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -34,6 +41,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 void main() {
+  if (Platform.environment['PROBE_WINDOWS'] == '1') {
+    runWidget(const WindowsProbe());
+    return;
+  }
   if (Platform.environment['PROBE_SEMANTICS'] == '1') {
     runApp(const SemanticsProbe());
   } else if (Platform.environment['PROBE_SHAPES'] == '1') {
@@ -195,7 +206,10 @@ const Color zeroColor = Color(0xFF000000);
 const Color barColor = Color(0xFF5080C0);
 
 class Probe extends StatefulWidget {
-  const Probe({super.key});
+  const Probe({super.key, this.log = 'probe'});
+
+  /// What the lines it prints start with.
+  final String log;
 
   @override
   State<Probe> createState() => _ProbeState();
@@ -204,7 +218,7 @@ class Probe extends StatefulWidget {
 class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
   final bool _animate = Platform.environment['PROBE_ANIMATE'] == '1';
   final bool _exit = Platform.environment['PROBE_EXIT'] == '1';
-  final ProbeState _state = ProbeState();
+  late final ProbeState _state = ProbeState(widget.log);
   Ticker? _ticker;
   Timer? _alive;
   AppLifecycleListener? _lifecycle;
@@ -212,7 +226,7 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    print('probe: started animate=$_animate');
+    print('${widget.log}: started animate=$_animate');
     if (_animate) {
       _ticker = createTicker((_) => _state.requestFrame())..start();
     }
@@ -226,9 +240,23 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
     }
     // A timer does not depend on vsync, so this keeps printing while the
     // window is hidden and no frames are produced.
+    if (Platform.environment['PROBE_WINDOWS'] == 'startup') {
+      _tryToOpenWindow();
+    }
     _alive = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      print('probe: alive frames=${_state.frames}');
+      print('${widget.log}: alive frames=${_state.frames}');
     });
+  }
+
+  /// An app with a startup window can not open others.
+  Future<void> _tryToOpenWindow() async {
+    try {
+      await const MethodChannel('flust/testing/windows', JSONMethodCodec())
+          .invokeMethod<int>('createWindow', <String, Object>{'title': 'probe 2'});
+      print('${widget.log}: window opened');
+    } on PlatformException catch (error) {
+      print('${widget.log}: window refused: ${error.code}: ${error.message}');
+    }
   }
 
   @override
@@ -247,7 +275,7 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
       onPointerDown: (PointerDownEvent event) {
         _state.tap();
         final Offset at = event.localPosition;
-        print('probe: tap ${_state.taps} at '
+        print('${widget.log}: tap ${_state.taps} at '
             '${at.dx.round()},${at.dy.round()}');
         if (_exit) {
           print('probe: exiting with code 3');
@@ -264,6 +292,11 @@ class _ProbeState extends State<Probe> with SingleTickerProviderStateMixin {
 }
 
 class ProbeState extends ChangeNotifier {
+  ProbeState(this.log);
+
+  /// What the lines it prints start with.
+  final String log;
+
   /// Frames painted so far.
   int frames = 0;
   int taps = 0;
@@ -281,7 +314,7 @@ class ProbeState extends ChangeNotifier {
     final ui.Size size = ui.Size(width.toDouble(), height.toDouble());
     if (size != _lastSize) {
       _lastSize = size;
-      print('probe: size ${width}x$height dpr $devicePixelRatio');
+      print('$log: size ${width}x$height dpr $devicePixelRatio');
     }
   }
 }
@@ -460,4 +493,73 @@ class ShapesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(ShapesPainter oldDelegate) => false;
+}
+
+/// Opens two windows, `probe 1` and `probe 2`, each a [Probe] that prints
+/// with its name, and closes them when they are asked to. Exits when no
+/// window is left.
+class WindowsProbe extends StatefulWidget {
+  const WindowsProbe({super.key});
+
+  @override
+  State<WindowsProbe> createState() => _WindowsProbeState();
+}
+
+class _WindowsProbeState extends State<WindowsProbe> {
+  static const MethodChannel _windows =
+      MethodChannel('flust/testing/windows', JSONMethodCodec());
+
+  /// The probe name of each open window, by view id.
+  final Map<int, String> _names = <int, String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _windows.setMethodCallHandler(_handle);
+    _open('probe 1', 624, 464);
+    _open('probe 2', 400, 300);
+  }
+
+  Future<void> _open(String name, int width, int height) async {
+    final int? viewId = await _windows.invokeMethod<int>(
+      'createWindow',
+      <String, Object>{'title': name, 'width': width, 'height': height},
+    );
+    print('$name: window created, view $viewId');
+    setState(() => _names[viewId!] = name);
+  }
+
+  Future<Object?> _handle(MethodCall call) async {
+    final int viewId = (call.arguments as Map<Object?, Object?>)['viewId']! as int;
+    final String name = _names[viewId] ?? 'view $viewId';
+    switch (call.method) {
+      case 'onWindowCloseRequested':
+        print('$name: close requested');
+        await _windows.invokeMethod<void>('destroyWindow', <String, Object>{'viewId': viewId});
+      case 'onWindowDestroyed':
+        print('$name: window destroyed');
+        setState(() => _names.remove(viewId));
+        if (_names.isEmpty) {
+          print('probe: no window left, exiting');
+          ServicesBinding.instance.exitApplication(ui.AppExitType.required);
+        }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ui.PlatformDispatcher dispatcher = WidgetsBinding.instance.platformDispatcher;
+    return ViewCollection(
+      views: <Widget>[
+        for (final MapEntry<int, String> window in _names.entries)
+          if (dispatcher.view(id: window.key) case final ui.FlutterView view)
+            View(
+              key: ValueKey<int>(window.key),
+              view: view,
+              child: Probe(log: window.value),
+            ),
+      ],
+    );
+  }
 }

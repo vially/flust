@@ -1,0 +1,34 @@
+# An app that has a startup window can not open others: Flutter does not
+# combine a window that the embedder creates with windows created from Dart.
+# The probe tries to, and is refused.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    PROBE_WINDOWS: startup
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: stable
+  - wait:
+      for: log
+      match: "probe: window refused: create-failed: Windows can only be created by an application that starts without a window"
+  - sleep: 500ms
+  - wait: { for: windows, count: 1 }
+  - assert_running
+
+analyze:
+  - run: python3 ../analyzers/app_log.py

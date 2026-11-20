@@ -9,5 +9,5 @@ publish = false
 [workspace]
 
 [dependencies]
-flust = { path = "../../../flust" }
+flust = { path = "../../../flust", features = ["testing"] }
 tracing-subscriber = "0.3"

@@ -154,6 +154,19 @@ window), and prints `probe: exit requested, cancelling` when it does. A
 tap then has it exit by itself with exit code 3, after printing `probe:
 exiting with code 3`. That is for the `exit` scenario.
 
+With `PROBE_WINDOWS=1` it starts without a window and opens two itself,
+`probe 1` (624x464) and `probe 2` (400x300), through Flust's test hook for
+windows (the `testing` feature, `flust-sctk/src/testing.rs`). Each shows a
+probe of its own, whose lines start with its name instead of `probe`
+(`probe 1: size WxH ...`). A window that the compositor asks to close is
+destroyed, with `probe N: close requested` and `probe N: window destroyed`,
+and the app exits when it has none left, after `probe: no window left,
+exiting`. That is for the `windows` scenario, which needs the framebuffer
+target: windows created while the app runs can not be drawn into straight.
+With `PROBE_WINDOWS=startup` it is the usual probe, which also tries to
+open a window, and prints `probe: window refused: CODE: MESSAGE` when it
+is refused, for the `windows-startup` scenario.
+
 ## Accessibility
 
 The `semantics` scenario reads the app through AT-SPI, the accessibility
@@ -228,6 +241,8 @@ For the probe app:
 | `scale-change` | The output's scale changes while the app runs, to 2 and back |
 | `close` | Closing the window in the middle of a resize |
 | `exit` | The app cancels the close of its window, then exits by itself with an exit code |
+| `windows` | Two windows opened by the app: resized on their own, taps, one closed while the other draws on |
+| `windows-startup` | An app with a startup window is refused another one |
 | `semantics` | What a screen reader sees of the app, and that what it asks for reaches the app |
 | `shapes` | Paths, clips and antialiasing: what the renderer draws |
 

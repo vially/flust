@@ -15,8 +15,12 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         _ => (FlutterOpenGLTargetType::Framebuffer, Renderer::default()),
     };
 
+    // `PROBE_WINDOWS=1`: the app opens its windows itself.
+    let startup_window = std::env::var("PROBE_WINDOWS").as_deref() != Ok("1");
+    let config = BackendConfigSctk::from(target).with_startup_window(startup_window);
+
     let app = Application::builder()
-        .with_backend(Backend::Sctk(BackendConfigSctk::from(target)))
+        .with_backend(Backend::Sctk(config))
         .with_title("Flust E2E Probe")
         .with_app_id("dev.vially.flust.e2e-probe")
         .with_renderer(renderer)

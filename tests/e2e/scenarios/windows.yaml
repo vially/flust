@@ -1,0 +1,67 @@
+# An app that opens two windows of its own, each with a probe, and does not
+# have a startup window. Each window is resized on its own, takes its own
+# taps, and closing one leaves the other drawing. The app exits when it has
+# closed the last one.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    PROBE_WINDOWS: "1"
+
+# Which of the two windows the compositor maps first is not fixed: steps
+# pick them by title.
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    position: [40, 40]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: windows, count: 2 }
+  - wait: { for: log, match: "probe 1: size 624x464 dpr 1.0" }
+  - wait: { for: log, match: "probe 2: size 400x300 dpr 1.0" }
+  # Side by side.
+  - move_window: { to: [40, 40], window: { title: "^probe 1$" } }
+  - move_window: { to: [760, 40], window: { title: "^probe 2$" } }
+  - wait: stable
+  - screenshot: both
+
+  - mark: resize each
+  - resize: { size: 500x400, window: { title: "^probe 1$" } }
+  - wait: { for: log, match: "probe 1: size 500x400 dpr 1.0" }
+  - resize: { size: 300x200, window: { title: "^probe 2$" } }
+  - wait: { for: log, match: "probe 2: size 300x200 dpr 1.0" }
+  - assert_window: { window: { title: "^probe 1$" }, size: 500x400 }
+  - assert_window: { window: { title: "^probe 2$" }, size: 300x200 }
+
+  - mark: taps
+  - click: { at: [20, 30], window: { title: "^probe 2$" } }
+  - wait: { for: log, match: "probe 2: tap 1 at 20,30" }
+  - click: { at: [40, 50], window: { title: "^probe 1$" } }
+  - wait: { for: log, match: "probe 1: tap 1 at 40,50" }
+
+  - mark: close one
+  - close: { window: { title: "^probe 1$" } }
+  - wait: { for: log, match: "probe 1: window destroyed" }
+  - wait: { for: windows, count: 1 }
+  - assert_running
+  # The other one still draws.
+  - resize: { size: 350x250, window: { title: "^probe 2$" } }
+  - wait: { for: log, match: "probe 2: size 350x250 dpr 1.0" }
+  - screenshot: { name: one, window: { title: "^probe 2$" } }
+
+  - mark: close the last
+  - close: { window: { title: "^probe 2$" } }
+  - wait: { for: log, match: "probe: no window left, exiting" }
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/app_log.py

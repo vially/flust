@@ -39,6 +39,8 @@ SCENARIOS = [
     "scale-change",
     "close",
     "exit",
+    "windows",
+    "windows-startup",
     "semantics",
     "shapes",
 ]
@@ -47,9 +49,13 @@ SCENARIOS = [
 # nothing of the desktop of whoever runs this is touched.
 PRIVATE_BUS = {"semantics"}
 # They say nothing about the reference: `semantics` waits for what Flust
-# logs, and Flutter's own Linux embedder exits with code 0 whatever exit
-# code the app asks for, which `exit` checks.
-FLUST_ONLY = {"semantics", "exit"}
+# logs, Flutter's own Linux embedder exits with code 0 whatever exit code
+# the app asks for, which `exit` checks, and the `windows` ones use Flust's
+# test hook for windows.
+FLUST_ONLY = {"semantics", "exit", "windows", "windows-startup"}
+# Windows that the app creates can not be drawn into straight: these only
+# run with the framebuffer target.
+FRAMEBUFFER_ONLY = {"windows"}
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 
@@ -95,6 +101,9 @@ def main():
     for name in args.scenarios:
         if args.reference and name in FLUST_ONLY:
             print(f"SKIPPED {name}: not for the reference")
+            continue
+        if args.target == "surface" and name in FRAMEBUFFER_ONLY:
+            print(f"SKIPPED {name}: not for the surface target")
             continue
         out = ROOT / ".waytape/runs" / (name + suffix)
         command = ["waytape", "run", str(HERE / "scenarios" / f"{name}.yaml"), "--quiet", "--out", str(out)]
