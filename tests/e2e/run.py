@@ -8,6 +8,10 @@
     tests/e2e/run.py --skia               # rendering with Skia instead of Impeller
     tests/e2e/run.py --repeat 5 storm     # five times, to catch what is rare
 
+The `windowing` scenarios run the app with windows of its own, which only
+Flutter's master channel can build (see README.md); they are skipped while
+it is not built.
+
 Each scenario is a `waytape run`; its run directory is kept under
 `.waytape/runs/<scenario>[-reference|-surface|-skia]`, replacing the previous
 one (with --repeat, the last failed run of a scenario is the one kept).
@@ -44,6 +48,8 @@ SCENARIOS = [
     "windows-semantics",
     "semantics",
     "shapes",
+    "windowing",
+    "windowing-state",
 ]
 # These read the app through the accessibility API of the desktop, which has
 # to be switched on for that. They get a session of their own, so that
@@ -54,9 +60,13 @@ PRIVATE_BUS = {"semantics", "windows-semantics"}
 # the app asks for, which `exit` checks, and the `windows` ones use Flust's
 # test hook for windows.
 FLUST_ONLY = {"semantics", "exit", "windows", "windows-startup", "windows-semantics"}
+# These run the app with windows of its own, through Flutter's windowing API.
+WINDOWING = {"windowing", "windowing-state"}
+FLUST_ONLY |= WINDOWING
 # Windows that the app creates can not be drawn into straight: these only
 # run with the framebuffer target.
-FRAMEBUFFER_ONLY = {"windows", "windows-semantics"}
+FRAMEBUFFER_ONLY = {"windows", "windows-semantics"} | WINDOWING
+WINDOWING_APP = HERE / "windowing-app/target/debug/flust-e2e-windowing"
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 
@@ -105,6 +115,9 @@ def main():
             continue
         if args.target == "surface" and name in FRAMEBUFFER_ONLY:
             print(f"SKIPPED {name}: not for the surface target")
+            continue
+        if name in WINDOWING and not WINDOWING_APP.exists():
+            print(f"SKIPPED {name}: the windowing app is not built (tests/e2e/build-app.sh windowing)")
             continue
         out = ROOT / ".waytape/runs" / (name + suffix)
         command = ["waytape", "run", str(HERE / "scenarios" / f"{name}.yaml"), "--quiet", "--out", str(out)]

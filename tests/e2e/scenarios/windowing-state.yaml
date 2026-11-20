@@ -1,0 +1,69 @@
+# What the windowing API changes of a window, and reads back: its title,
+# size, size limits and fullscreen state. Maximizing is not checked: sway
+# does not maximize windows.
+# The app is the windowing app, built by `../build-app.sh windowing`: see
+# windowing.yaml.
+app:
+  command: ./flust-e2e-windowing
+  cwd: ../windowing-app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # For the size limits, which sway does not apply when a window is
+    # resized by a command: the scenario checks that they were sent.
+    WAYLAND_DEBUG: "1"
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    position: [40, 40]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: windows, count: 1 }
+  - wait: { for: log, match: "main: size 480x360 activated true" }
+  - click: { at: [20, 20], window: { title: "^main$" } }
+  - wait: { for: windows, count: 2 }
+  - wait: { for: log, match: "window 1: size 320x240 activated true" }
+  # The main window is told that it lost the focus.
+  - wait: { for: log, match: "main: size 480x360 activated false" }
+
+  - mark: title
+  - key: t
+  - wait: { for: log, match: "window 1 renamed: size 320x240" }
+  - assert_window: { window: 2, title: "^window 1 renamed$" }
+
+  - mark: size
+  - key: s
+  - wait: { for: log, match: "window 1 renamed: size 400x300" }
+  - wait: stable
+  - assert_window: { window: 2, size: 400x300 }
+  # A size the compositor gives the window is read back as well.
+  - resize: { size: 360x280, window: 2 }
+  - wait: { for: log, match: "window 1 renamed: size 360x280" }
+
+  - mark: fullscreen
+  - key: f
+  - wait: { for: log, match: "window 1 renamed: size 1280x800 activated true maximized false fullscreen true" }
+  - assert_window: { window: 2, fullscreen: true }
+  - wait: stable
+  - screenshot: fullscreen
+  - key: f
+  - wait: { for: log, match: "window 1 renamed: size 360x280 activated true maximized false fullscreen false" }
+  - wait: stable
+  - assert_window: { window: 2, fullscreen: false, size: 360x280 }
+
+  - mark: size limits
+  - key: c
+  - wait: { for: log, match: "xdg_toplevel#\\d+\\.set_max_size\\(500, 400\\)" }
+  - assert_log: { match: "xdg_toplevel#\\d+\\.set_min_size\\(300, 250\\)" }
+
+  - mark: exit
+  - close: { window: { title: "^main$" } }
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/app_log.py

@@ -1,9 +1,37 @@
 #!/usr/bin/env bash
 # Build the probe app (tests/e2e/app) and put its Flutter bundle next to the
 # binary, where the scenarios run it from: app/target/debug.
+#
+#     build-app.sh              # the probe app
+#     build-app.sh windowing    # the app with windows of its own
+#
+# The app with windows of its own (tests/e2e/windowing-app) uses Flutter's
+# windowing API, which only Flutter's master channel has: `FLUTTER_ROOT` has
+# to point at a checkout of it (see README.md). It is built with the
+# windowing feature on, against the engine library that Flutter builds for
+# that commit.
 set -euo pipefail
 
-cd "$(dirname "$(readlink -f "$0")")/app"
+here="$(dirname "$(readlink -f "$0")")"
+case "${1:-probe}" in
+probe)
+    cd "$here/app"
+    ;;
+windowing)
+    if [ -z "${FLUTTER_ROOT:-}" ]; then
+        echo "FLUTTER_ROOT has to point at a checkout of Flutter's master channel" >&2
+        exit 1
+    fi
+    export PATH="$FLUTTER_ROOT/bin:$PATH"
+    export FLUTTER_WINDOWING=true
+    export FLUTTER_ENGINE_DOWNLOAD_SOURCE=flutter-infra
+    cd "$here/windowing-app"
+    ;;
+*)
+    echo "usage: $0 [probe|windowing]" >&2
+    exit 1
+    ;;
+esac
 
 flutter_root="$(dirname "$(dirname "$(readlink -f "$(command -v flutter)")")")"
 icu_data="$flutter_root/bin/cache/artifacts/engine/linux-x64/icudtl.dat"
@@ -28,4 +56,4 @@ fi
 mkdir -p target/debug/lib
 ln -sf "$(readlink -f "$engine")" target/debug/lib/libflutter_engine.so
 
-echo "built: $(pwd)/target/debug/flust-e2e-probe"
+echo "built: $(pwd)/target/debug"

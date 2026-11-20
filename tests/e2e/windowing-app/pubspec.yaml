@@ -1,0 +1,16 @@
+name: flust_e2e_windowing
+description: "The app with windows of its own that Flust's end-to-end tests drive."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0-0
+
+dependencies:
+  flust_windowing:
+    path: ../../../packages/flust_windowing
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: false

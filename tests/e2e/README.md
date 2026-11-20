@@ -20,6 +20,8 @@ resize handling was reworked.
 
 - `app`: The probe app, a Flutter app with a Flust runner, made to be read
   back from a recording. Most scenarios drive it.
+- `windowing-app`: An app that opens its windows itself, with Flutter's
+  windowing API. The `windowing` scenarios drive it.
 - `scenarios`: One YAML file per test. Each starts an app, drives it and
   names the analyzers to run over the result.
 - `analyzers`: Scripts that check a finished run. A scenario refers to
@@ -38,6 +40,9 @@ against on the next run.
 `waytape` on `PATH` (and what it needs: `sway`, `swaybg`, `ffmpeg`;
 `waytape doctor` checks), Python 3 with `numpy` and `Pillow` for the
 analyzers, and the Flutter SDK and a Rust toolchain to build the app.
+
+The windowing app also needs a checkout of Flutter's master channel: see
+[The windowing app](#the-windowing-app).
 
 The `semantics` scenario also needs AT-SPI (`at-spi2-core`, with its
 `Atspi` bindings for Python through PyGObject), `dbus-run-session`,
@@ -170,6 +175,41 @@ With `PROBE_WINDOWS=startup` it is the usual probe, which also tries to
 open a window, and prints `probe: window refused: CODE: MESSAGE` when it
 is refused, for the `windows-startup` scenario.
 
+## The windowing app
+
+`windowing-app/lib/main.dart` uses Flutter's windowing API the way
+upstream's `examples/multiple_windows` does, through Flust's
+`flust_windowing` package (`packages/flust_windowing`): it starts without
+a window, and opens a main window (`main`, 480x360) of its own. A tap in
+it opens another window (`window N`, 320x240). Every window prints its
+state when it changes:
+
+    window 1: size 320x240 activated true maximized false fullscreen false
+
+and takes keys: `n` opens another window, `m` maximizes or restores the
+window, `f` makes it fullscreen or restores it, `t` renames it to `<title>
+renamed`, `s` asks for the size 400x300, `c` limits its size to between
+300x250 and 500x400, and `w` destroys it. A window that the compositor
+asks to close is destroyed, with `<title>: destroyed`. When the main
+window is, the app exits, after `main: destroyed, exiting`.
+
+The windowing API is only on Flutter's master channel, and changes often,
+so the app is built against a known commit of it. Check it out somewhere,
+and point `FLUTTER_ROOT` at it:
+
+```sh
+git clone https://github.com/flutter/flutter.git ~/code/flutter-master
+git -C ~/code/flutter-master checkout b34b017b48ad7b28544b25d20cda6c4a5564ca08
+FLUTTER_ROOT=~/code/flutter-master tests/e2e/build-app.sh windowing
+```
+
+`build-app.sh windowing` turns the windowing feature on for the build
+(`FLUTTER_WINDOWING=true`) and links the app against the engine library
+that Flutter builds for that commit
+(`FLUTTER_ENGINE_DOWNLOAD_SOURCE=flutter-infra`), which is only there in
+debug mode. `run.py` skips the `windowing` scenarios while the app is not
+built.
+
 ## Accessibility
 
 The `semantics` scenario reads the app through AT-SPI, the accessibility
@@ -249,6 +289,13 @@ For the probe app:
 | `windows-semantics` | Each of two windows is an accessible window of its own |
 | `semantics` | What a screen reader sees of the app, and that what it asks for reaches the app |
 | `shapes` | Paths, clips and antialiasing: what the renderer draws |
+
+For the windowing app, with the framebuffer target only:
+
+| Scenario | What it covers |
+|---|---|
+| `windowing` | Windows opened with Flutter's windowing API: one closed of several, one destroyed from Dart, and the app exits from the main window's delegate |
+| `windowing-state` | A window's title, size, size limits and fullscreen state, changed from Dart and read back |
 
 For the template app (`flust-app-template`, built with `cargo build`
 there), with `window_fill.py` only: `idle`, `resize-drag`, `resize-steps`.

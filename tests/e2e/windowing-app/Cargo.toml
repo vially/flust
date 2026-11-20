@@ -1,0 +1,13 @@
+[package]
+name = "flust-e2e-windowing"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Not a member of the repository's workspace: it needs a Flutter bundle next
+# to its binary, which `tests/e2e/build-app.sh windowing` puts there.
+[workspace]
+
+[dependencies]
+flust = { path = "../../../flust" }
+tracing-subscriber = "0.3"

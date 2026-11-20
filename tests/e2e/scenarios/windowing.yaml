@@ -1,0 +1,68 @@
+# Flutter's windowing API on Flust, as upstream's `examples/multiple_windows`
+# uses it: the app starts without a window, opens a main window of its own,
+# and more from there. Closing one of several windows leaves the others, and
+# the main window's delegate exits the app when the main window is closed.
+# The app is the windowing app, built by `../build-app.sh windowing`, which
+# needs Flutter's master channel; run from its build directory, where the
+# Flutter bundle (data/) and the engine library (lib/) sit next to it.
+app:
+  command: ./flust-e2e-windowing
+  cwd: ../windowing-app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    position: [40, 40]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: windows, count: 1 }
+  - wait: { for: log, match: "main: size 480x360 activated true" }
+  - assert_window: { window: { title: "^main$" }, size: 480x360 }
+
+  - mark: open
+  # A tap in the main window opens a window, which gets the focus.
+  - click: { at: [20, 20], window: { title: "^main$" } }
+  - wait: { for: windows, count: 2 }
+  - wait: { for: log, match: "window 1: size 320x240 activated true" }
+  - assert_window: { window: { title: "^window 1$" }, size: 320x240 }
+  - key: n
+  - wait: { for: windows, count: 3 }
+  - wait: { for: log, match: "window 2: size 320x240 activated true" }
+  - move_window: { to: [40, 40], window: { title: "^main$" } }
+  - move_window: { to: [560, 40], window: { title: "^window 1$" } }
+  - move_window: { to: [560, 330], window: { title: "^window 2$" } }
+  - wait: stable
+  - screenshot: three
+
+  - mark: close one
+  # The delegate's default: a window that is asked to close is destroyed.
+  - close: { window: { title: "^window 2$" } }
+  - wait: { for: log, match: "window 2: destroyed" }
+  - wait: { for: windows, count: 2 }
+  - assert_window: { window: { title: "^window 2$" }, open: false }
+  # Destroyed from Dart.
+  - click: { at: [20, 20], window: { title: "^window 1$" } }
+  - wait: { for: log, match: "window 1: tap" }
+  - key: w
+  - wait: { for: log, match: "window 1: destroyed" }
+  - wait: { for: windows, count: 1 }
+  - assert_running
+  # The main window still draws.
+  - resize: { size: 400x300, window: { title: "^main$" } }
+  - wait: { for: log, match: "main: size 400x300" }
+  - screenshot: { name: main, window: { title: "^main$" } }
+
+  - mark: exit
+  - close: { window: { title: "^main$" } }
+  - wait: { for: log, match: "main: destroyed, exiting" }
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/app_log.py
