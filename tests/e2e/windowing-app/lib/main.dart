@@ -8,12 +8,20 @@
 //
 //     <title>: size <width>x<height> activated <bool> maximized <bool> fullscreen <bool>
 //
-// (a dialog prints only its size and whether it is activated), and takes
-// keys, while it has the keyboard focus:
+// (a dialog prints only its size and whether it is activated, a popup or a
+// tooltip `<name>: offset <x>,<y> size <width>x<height>`), and takes keys,
+// while it has the keyboard focus:
 //
 // - `n`: open a new window, `window <n>`, 320x240;
 // - `d`: open a modal dialog of the window, `dialog <n>`, 300x200;
 // - `e`: open a dialog without a parent, `dialog <n>`, 300x200;
+// - `p`: open a popup of the window, `popup <n>`, 160x100, below the
+//   rectangle (20, 20, 100, 30) of the window, flipped above it if it does
+//   not fit, and slid sideways;
+// - `o`: open a tooltip of the window, `tooltip <n>`, 120x40, placed like
+//   a popup;
+// - `j`: move the rectangle the window's tooltips are placed against 50 to
+//   the right;
 // - `m`: maximize the window, or restore it (not dialogs);
 // - `f`: make the window fullscreen, or restore it (not dialogs);
 // - `t`: rename the window to `<title> renamed`;
@@ -33,6 +41,7 @@ import 'dart:ui' show AppExitType;
 import 'package:flust_windowing/flust_windowing.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/src/widgets/_window.dart';
+import 'package:flutter/src/widgets/_window_positioner.dart';
 import 'package:flutter/widgets.dart';
 
 class MainWindowDelegate with WindowControllerDelegate {
@@ -113,12 +122,127 @@ class _WindowingProbeState extends State<WindowingProbe> {
 
 int _windowCount = 0;
 int _dialogCount = 0;
+int _popupCount = 0;
+int _tooltipCount = 0;
+
+/// The names of popups and tooltips, which have no title.
+final Map<BaseWindowController, String> _names =
+    <BaseWindowController, String>{};
 
 String _title(BaseWindowController controller) => switch (controller) {
   final WindowController window => window.title,
   final DialogWindowController dialog => dialog.title,
-  _ => '?',
+  _ => _names[controller] ?? '?',
 };
+
+/// The rectangle popups and tooltips are placed against, by window.
+final Map<BaseWindowController, Rect> _anchors = <BaseWindowController, Rect>{};
+
+Rect _anchorOf(BaseWindowController window) =>
+    _anchors[window] ?? const Rect.fromLTWH(20, 20, 100, 30);
+
+const WindowPositioner _positioner = WindowPositioner(
+  parentAnchor: WindowPositionerAnchor.bottomLeft,
+  childAnchor: WindowPositionerAnchor.topLeft,
+  constraintAdjustment: WindowPositionerConstraintAdjustment(
+    flipY: true,
+    slideX: true,
+  ),
+);
+
+class ProbePopupDelegate with PopupWindowControllerDelegate {
+  ProbePopupDelegate(this.onDestroyed);
+
+  final VoidCallback onDestroyed;
+
+  @override
+  void onWindowDestroyed() {
+    super.onWindowDestroyed();
+    onDestroyed();
+  }
+}
+
+class ProbeTooltipDelegate with TooltipWindowControllerDelegate {
+  ProbeTooltipDelegate(this.onDestroyed);
+
+  final VoidCallback onDestroyed;
+
+  @override
+  void onWindowDestroyed() {
+    super.onWindowDestroyed();
+    onDestroyed();
+  }
+}
+
+/// Opens a popup of `parent`.
+void openPopup(BuildContext context, BaseWindowController parent) {
+  final WindowRegistry registry = WindowRegistry.of(context);
+  _popupCount += 1;
+  final name = 'popup $_popupCount';
+  late final PopupWindowController controller;
+  late final WindowEntry entry;
+  controller = PopupWindowController(
+    parent: parent,
+    anchorRect: _anchorOf(parent),
+    positioner: _positioner,
+    delegate: ProbePopupDelegate(() {
+      print('$name: destroyed');
+      registry.unregister(entry);
+    }),
+  );
+  _names[controller] = name;
+  entry = WindowEntry(
+    controller: controller,
+    builder: (BuildContext context) => ProbeWindow(
+      controller: controller,
+      color: const Color(0xff8040c0),
+      size: const Size(160, 100),
+    ),
+  );
+  registry.register(entry);
+}
+
+/// Opens a tooltip of `parent`.
+void openTooltip(BuildContext context, BaseWindowController parent) {
+  final WindowRegistry registry = WindowRegistry.of(context);
+  _tooltipCount += 1;
+  final name = 'tooltip $_tooltipCount';
+  late final TooltipWindowController controller;
+  late final WindowEntry entry;
+  controller = TooltipWindowController(
+    parent: parent,
+    anchorRect: _anchorOf(parent),
+    positioner: _positioner,
+    delegate: ProbeTooltipDelegate(() {
+      print('$name: destroyed');
+      registry.unregister(entry);
+    }),
+  );
+  _names[controller] = name;
+  _tooltips.add(controller);
+  entry = WindowEntry(
+    controller: controller,
+    builder: (BuildContext context) => ProbeWindow(
+      controller: controller,
+      color: const Color(0xff40c0c0),
+      size: const Size(120, 40),
+    ),
+  );
+  registry.register(entry);
+}
+
+final List<TooltipWindowController> _tooltips = <TooltipWindowController>[];
+
+/// Moves the rectangle the tooltips of `window` are placed against.
+void moveTooltips(BaseWindowController window) {
+  final Rect anchor = _anchorOf(window).translate(50, 0);
+  _anchors[window] = anchor;
+  for (final TooltipWindowController tooltip in _tooltips) {
+    if (tooltip.parent == window && !tooltip.isDestroyed) {
+      tooltip.updatePosition(anchorRect: anchor);
+    }
+  }
+}
 
 /// Opens a new window, registered with the `WindowManager` above `context`.
 void openWindow(BuildContext context) {
@@ -169,10 +293,18 @@ void openDialog(BuildContext context, BaseWindowController? parent) {
 }
 
 class ProbeWindow extends StatefulWidget {
-  const ProbeWindow({super.key, required this.controller, required this.color});
+  const ProbeWindow({
+    super.key,
+    required this.controller,
+    required this.color,
+    this.size,
+  });
 
   final BaseWindowController controller;
   final Color color;
+
+  /// The size of the content, for a window sized to it.
+  final Size? size;
 
   @override
   State<ProbeWindow> createState() => _ProbeWindowState();
@@ -208,7 +340,10 @@ class _ProbeWindowState extends State<ProbeWindow> {
             'maximized ${window.isMaximized} fullscreen ${window.isFullscreen}',
       final DialogWindowController dialog =>
         '${dialog.title}: size $sizeText activated ${dialog.isActivated}',
-      _ => '?',
+      final PopupWindowController popup =>
+        '${_title(popup)}: offset ${popup.offsetFromParent.dx.round()},'
+            '${popup.offsetFromParent.dy.round()} size $sizeText',
+      _ => '${_title(controller)}: size $sizeText',
     };
     if (state != _printed) {
       _printed = state;
@@ -234,6 +369,12 @@ class _ProbeWindowState extends State<ProbeWindow> {
       openDialog(context, controller);
     } else if (key == LogicalKeyboardKey.keyE) {
       openDialog(context, null);
+    } else if (key == LogicalKeyboardKey.keyP) {
+      openPopup(context, controller);
+    } else if (key == LogicalKeyboardKey.keyO) {
+      openTooltip(context, controller);
+    } else if (key == LogicalKeyboardKey.keyJ) {
+      moveTooltips(controller);
     } else if (key == LogicalKeyboardKey.keyM &&
         controller is WindowController) {
       controller.setMaximized(!controller.isMaximized);
@@ -275,7 +416,8 @@ class _ProbeWindowState extends State<ProbeWindow> {
   @override
   Widget build(BuildContext context) {
     return Focus(
-      autofocus: true,
+      // A tooltip takes no input, and no focus.
+      autofocus: controller is! TooltipWindowController,
       onKeyEvent: _onKey,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -285,7 +427,13 @@ class _ProbeWindowState extends State<ProbeWindow> {
             openWindow(context);
           }
         },
-        child: ColoredBox(color: widget.color, child: const SizedBox.expand()),
+        child: ColoredBox(
+          color: widget.color,
+          child: switch (widget.size) {
+            final Size size => SizedBox.fromSize(size: size),
+            null => const SizedBox.expand(),
+          },
+        ),
       ),
     );
   }

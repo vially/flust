@@ -51,6 +51,7 @@ SCENARIOS = [
     "windowing",
     "windowing-state",
     "windowing-dialog",
+    "windowing-popup",
 ]
 # These read the app through the accessibility API of the desktop, which has
 # to be switched on for that. They get a session of their own, so that
@@ -62,7 +63,7 @@ PRIVATE_BUS = {"semantics", "windows-semantics"}
 # test hook for windows.
 FLUST_ONLY = {"semantics", "exit", "windows", "windows-startup", "windows-semantics"}
 # These run the app with windows of its own, through Flutter's windowing API.
-WINDOWING = {"windowing", "windowing-state", "windowing-dialog"}
+WINDOWING = {"windowing", "windowing-state", "windowing-dialog", "windowing-popup"}
 FLUST_ONLY |= WINDOWING
 # Windows that the app creates can not be drawn into straight: these only
 # run with the framebuffer target.

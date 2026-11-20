@@ -1,0 +1,93 @@
+# Popups and tooltips of Flutter's windowing API on Flust: placed by the
+# compositor against a rectangle of their parent, and sized to their
+# content. A popup takes input, and is dismissed by a click outside of it;
+# a tooltip takes none, and follows its rectangle when it moves.
+# The app is the windowing app, built by `../build-app.sh windowing`: see
+# windowing.yaml.
+app:
+  command: ./flust-e2e-windowing
+  cwd: ../windowing-app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # For where the compositor puts a tooltip, which Flutter does not say.
+    WAYLAND_DEBUG: "1"
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    position: [40, 40]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: windows, count: 1 }
+  - wait: { for: log, match: "main: size 480x360 activated true" }
+
+  - mark: popup
+  # Below the rectangle (20, 20, 100, 30), at the size of its content.
+  - key: p
+  - wait: { for: log, match: "popup 1: offset 20,50 size 160x100" }
+  - wait: stable
+  - screenshot: popup
+  # It takes taps, and keys: a popup of the popup.
+  - click: { at: [80, 100] }
+  - wait: { for: log, match: "popup 1: tap" }
+  - key: p
+  - wait: { for: log, match: "popup 2: offset 20,50 size 160x100" }
+  - wait: stable
+  - screenshot: nested
+
+  - mark: dismissed
+  # A click outside dismisses both, the topmost first, and goes no further.
+  - click: { at: [400, 300] }
+  - wait: { for: log, match: "popup 2: destroyed" }
+  - wait: { for: log, match: "popup 1: destroyed" }
+  - sleep: 300ms
+  - assert_log: { absent: "main: tap" }
+  - assert_window: { window: 2, open: false }
+
+  - mark: flipped
+  # Near the bottom right corner of the output, it does not fit below the
+  # rectangle: it goes above it, and slides to the left.
+  - move_window: { to: [1180, 720], window: { title: "^main$" } }
+  - wait: stable
+  - key: p
+  - wait: { for: log, match: "popup 3: offset -60,-80 size 160x100" }
+  - wait: stable
+  - screenshot: flipped
+  - click: { at: [90, 70], window: { title: "^main$" } }
+  - wait: { for: log, match: "popup 3: destroyed" }
+  - move_window: { to: [40, 40], window: { title: "^main$" } }
+  - wait: stable
+
+  - mark: tooltip
+  - key: o
+  - wait: { for: log, match: "tooltip 1: size 120x40" }
+  - wait: { for: log, match: "xdg_popup#\\d+\\.configure\\(20, 50, 120, 40\\)" }
+  - wait: stable
+  - screenshot: tooltip
+  # It follows its rectangle.
+  - key: j
+  - wait: { for: log, match: "xdg_popup#\\d+\\.configure\\(70, 50, 120, 40\\)" }
+  - wait: stable
+  - screenshot: tooltip-moved
+  # It takes no input: a tap on it reaches the window under it.
+  - assert_log: { absent: "main: tap" }
+  - click: { at: [100, 70], window: { title: "^main$" } }
+  - wait: { for: log, match: "main: tap" }
+  - wait: { for: log, match: "window 1: size 320x240" }
+  # sway dismisses the popups of a window that loses the focus, tooltips
+  # too.
+  - wait: { for: log, match: "tooltip 1: destroyed" }
+  - assert_running
+
+  - mark: exit
+  - close: { window: { title: "^main$" } }
+  - wait: { for: log, match: "main: destroyed, exiting" }
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/app_log.py
