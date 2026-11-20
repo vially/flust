@@ -8,7 +8,7 @@ use crate::{FlutterEngineInner, ViewBaton};
 use core::slice;
 use parking_lot::Mutex;
 use std::ffi::{c_char, c_uint, c_void, CStr};
-use tracing::trace;
+use tracing::{debug, trace, warn};
 
 pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
@@ -102,11 +102,11 @@ pub extern "C" fn compositor_backing_store_create_callback(
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         let config = FlutterBackingStoreConfig::from(*config);
-        if let Ok(backing_store) = engine
-            .compositor_handler_for_view(config.view_id)
-            .unwrap()
-            .create_backing_store(config)
-        {
+        let Some(handler) = engine.compositor_handler_for_view(config.view_id) else {
+            debug!("no backing store for unknown view {}", config.view_id);
+            return false;
+        };
+        if let Ok(backing_store) = handler.create_backing_store(config) {
             backing_store.into_ffi(&mut *backing_store_out);
             return true;
         };
@@ -122,11 +122,14 @@ pub extern "C" fn compositor_backing_store_collect_callback(
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         let backing_store = FlutterBackingStore::from(*backing_store);
-        engine
-            .compositor_handler_for_view(backing_store.user_data.view_id)
-            .unwrap()
-            .collect_backing_store(backing_store)
-            .is_ok()
+        let view_id = backing_store.user_data.view_id;
+        let Some(handler) = engine.compositor_handler_for_view(view_id) else {
+            // A view's backing stores are collected before the engine is
+            // done with it, and it is in the registry until then.
+            warn!("backing store of unknown view {view_id} not collected");
+            return true;
+        };
+        handler.collect_backing_store(backing_store).is_ok()
     }
 }
 
@@ -145,11 +148,13 @@ pub extern "C" fn compositor_present_view_callback(
 
         let info = FlutterPresentViewInfo::new(info.view_id, layers);
 
-        engine
-            .compositor_handler_for_view(info.view_id)
-            .unwrap()
-            .present_view(info)
-            .is_ok()
+        // A view without a window (the implicit view, in an app that starts
+        // without one) has nothing to show the frame in.
+        let Some(handler) = engine.compositor_handler_for_view(info.view_id) else {
+            debug!("not presenting unknown view {}", info.view_id);
+            return true;
+        };
+        handler.present_view(info).is_ok()
     }
 }
 
