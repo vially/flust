@@ -78,12 +78,29 @@ Creating a window is synchronous in the API: the window's view exists when the c
 
 A dialog (`DialogWindowController`) with a parent is modal: it gets the parent with `xdg_toplevel.set_parent`, and is marked modal with `xdg_dialog_v1` where the compositor offers it. Keeping input from the parent is up to the app on Wayland, so Flust does it whether the compositor offers xdg-dialog or not: while a window has a modal dialog open, its presses, scrolling and keys are dropped. A dialog is destroyed with its parent, before it, as on Flutter's other platforms. A dialog without a parent is a regular window on Wayland.
 
+Popups and tooltips (`PopupWindowController`, `TooltipWindowController`) are `xdg_popup`s:
+- **Placement:** the compositor places them against a rectangle of their parent, as Flutter's `WindowPositioner` says. It was modelled on `xdg_positioner`, so the anchors, offset, and flip, slide and resize adjustments map onto it one to one.
+- **Moving:** `updatePosition` moves them with `xdg_popup.reposition` (xdg-shell version 3), which also places them again whenever they change size. GTK can only place a popup once.
+- **Size:** they are sized to their content. The engine lays the view out within its constraints, and when a frame comes at a size the popup doesn't have, Flust gives the popup that size first, then shows the next frame of it.
+
+A popup takes input:
+- **Grab:** when it's opened by the user's input (a press or a key), it takes an explicit grab, and with it the keyboard focus.
+- **Dismissed:** a click outside of it dismisses and destroys it. That's either the compositor (`popup_done`) or Flust itself, for a click into another of the app's windows, which the grab still lets through. That click goes no further.
+- **One menu at a time:** opening a popup dismisses the open popups that aren't its parent's.
+
+A tooltip takes no input: its input region is empty.
+
+Both are destroyed with their parent, the topmost first, as xdg-shell requires.
+
 The work is tracked in https://forge.lab.vially.dev/vially/flust/issues/7.
 
 ### Limitations
 
-- **Only regular windows and dialogs** so far: tooltips, popups and satellite windows throw `UnimplementedError`.
-- **Windows are not sized to their content** (`WindowController.shrinkWrap`): they get the app's default size, as with Flutter's own Linux embedder.
+- **No satellite windows**: they throw `UnimplementedError`, as on Flutter's own Linux embedder.
+- **Regular windows and dialogs are not sized to their content** (`shrinkWrap`): they get the app's default size, as with Flutter's own Linux embedder. Popups and tooltips are.
+- **A popup is not resized to fit.** A compositor that shrinks a popup to fit on the output (the positioner's resize adjustment) gets the size of its content anyway.
+- **A popup wants the user's input to open.** Its grab takes the serial of the user's last press or key, and a compositor may refuse a grab with a serial that is not recent: the popup is dismissed right away then.
+- **Compositors may dismiss tooltips.** sway dismisses every popup of a window that loses the focus, tooltips too, and Flust destroys them then.
 - **Activating a window does nothing.** Wayland only lets a window be activated with a token from the window that has the focus (`xdg_activation_v1`), which Flust does not ask for yet.
 - **Minimizing can not be undone, and is not reported.** Wayland has no way for an app to bring a minimized window back, and compositors do not say whether a window is minimized.
 - **The compositor decides about sizes.** A size asked for with `setSize` does not change a maximized, fullscreen or tiled window, and the size limits are hints.

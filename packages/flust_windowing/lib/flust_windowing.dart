@@ -73,7 +73,7 @@ abstract final class FlustWindowing {
 /// Creates the windows of Flutter's windowing API through Flust. Installed
 /// by [FlustWindowing.ensureInitialized].
 ///
-/// Only regular windows and dialogs are supported so far.
+/// Satellite windows are not supported.
 class WindowingOwnerFlust extends WindowingOwner {
   WindowingOwnerFlust._(this._engineId, this._native, MethodChannel channel) {
     channel.setMethodCallHandler(_handleMethodCall);
@@ -97,6 +97,30 @@ class WindowingOwnerFlust extends WindowingOwner {
         window._closeRequested();
       case 'onWindowDestroyed':
         window._destroyed();
+    }
+  }
+
+  /// Destroys the open popups that `parent` is not, and is not in: a new
+  /// popup of `parent` can only take a grab on top of them.
+  void _dismissPopupsOutside(BaseWindowController parent) {
+    final ancestors = <_FlustWindow>{};
+    for (
+      _FlustWindow? window = parent is _FlustWindow
+          ? parent as _FlustWindow
+          : null;
+      window != null;
+      window = window._parentWindow
+    ) {
+      ancestors.add(window);
+    }
+    final List<PopupWindowControllerFlust> popups = _windows.values
+        .whereType<PopupWindowControllerFlust>()
+        .where((PopupWindowControllerFlust popup) => !ancestors.contains(popup))
+        .toList()
+        .reversed
+        .toList();
+    for (final popup in popups) {
+      popup.destroy();
     }
   }
 
@@ -144,7 +168,14 @@ class WindowingOwnerFlust extends WindowingOwner {
     required WindowPositioner positioner,
     required BaseWindowController parent,
   }) {
-    throw UnimplementedError('Tooltip windows are not supported by Flust yet.');
+    return TooltipWindowControllerFlust._(
+      owner: this,
+      delegate: delegate,
+      constraints: constraints,
+      anchorRect: anchorRect,
+      positioner: positioner,
+      parent: parent,
+    );
   }
 
   @override
@@ -155,7 +186,14 @@ class WindowingOwnerFlust extends WindowingOwner {
     required WindowPositioner positioner,
     required BaseWindowController parent,
   }) {
-    throw UnimplementedError('Popup windows are not supported by Flust yet.');
+    return PopupWindowControllerFlust._(
+      owner: this,
+      delegate: delegate,
+      constraints: constraints,
+      anchorRect: anchorRect,
+      positioner: positioner,
+      parent: parent,
+    );
   }
 
   @override
@@ -175,28 +213,14 @@ class WindowingOwnerFlust extends WindowingOwner {
   }
 }
 
-/// What regular windows and dialogs created by Flust have in common.
-///
-/// Wayland limits what a window can do on its own:
-///
-/// * `activate` does nothing: Wayland only lets a window be activated with a
-///   token from the window that has the focus, which Flust does not ask for
-///   yet.
-/// * `isMinimized` is always false: compositors do not say whether a window
-///   is minimized, and a minimized window can not be brought back by the
-///   app.
-/// * `setSize` is a request: the compositor decides, and does not change the
-///   size of a maximized, fullscreen or tiled window.
-///
-/// A window created with a `shrinkWrap` constructor is not sized to its
-/// content yet: it gets the app's default size, as with Flutter's own Linux
-/// embedder.
+/// What every window created by Flust has: a view, a size, and a life that
+/// ends with the window's windows (its dialogs, popups and tooltips), and
+/// then the window, destroyed.
 ///
 /// Mixed into subclasses of `BaseWindowController`, which is sealed, so it
 /// can not be named here.
 mixin _FlustWindow on ChangeNotifier {
   late final WindowingOwnerFlust _owner;
-  String _title = '';
   bool _isDestroyed = false;
 
   _Native get _native => _owner._native;
@@ -207,31 +231,14 @@ mixin _FlustWindow on ChangeNotifier {
   FlutterView get rootView;
   set rootView(FlutterView view);
 
-  /// Creates the window, and its view, which the engine has when this
-  /// returns. A window with a `modalParent` is a modal dialog of it.
-  void _create(
-    WindowingOwnerFlust owner, {
-    Size? size,
-    BoxConstraints? constraints,
-    String? title,
-    BaseWindowController? modalParent,
-  }) {
+  /// The window this one belongs to, if any: the parent of a dialog, a
+  /// popup or a tooltip.
+  _FlustWindow? get _parentWindow => null;
+
+  /// Takes the window that Flust created with view id `viewId`, or failed
+  /// to create, as a negative `viewId`. The engine has its view by now.
+  void _created(WindowingOwnerFlust owner, int viewId) {
     _owner = owner;
-    _title = title ?? '';
-    final int viewId = _withString(
-      title,
-      (ffi.Pointer<Utf8> title) => _native.createWindow(
-        _engineId,
-        size?.width ?? double.nan,
-        size?.height ?? double.nan,
-        constraints?.minWidth ?? 0,
-        constraints?.minHeight ?? 0,
-        constraints?.maxWidth ?? double.infinity,
-        constraints?.maxHeight ?? double.infinity,
-        title,
-        modalParent?.rootView.viewId ?? -1,
-      ),
-    );
     if (viewId < 0) {
       throw StateError(_createWindowFailure(viewId));
     }
@@ -258,6 +265,111 @@ mixin _FlustWindow on ChangeNotifier {
     );
   }
 
+  bool get isDestroyed => _isDestroyed;
+
+  /// Destroys the window, and its windows first, the newest first. Its view
+  /// is gone when this returns, and the delegate has been told, as with
+  /// Flutter's own embedders.
+  void destroy() {
+    if (_isDestroyed) {
+      return;
+    }
+    // Other platforms destroy a window's dialogs with it. Wayland does not,
+    // and wants popups destroyed the topmost first.
+    final List<_FlustWindow> children = _owner._windows.values
+        .where((_FlustWindow window) => window._parentWindow == this)
+        .toList()
+        .reversed
+        .toList();
+    for (final child in children) {
+      child.destroy();
+    }
+    _native.destroyWindow(_engineId, _viewId);
+    _destroyed();
+  }
+
+  void _changed() {
+    if (!_isDestroyed) {
+      notifyListeners();
+    }
+  }
+
+  void _closeRequested() {
+    if (!_isDestroyed) {
+      _onCloseRequested();
+    }
+  }
+
+  void _destroyed() {
+    if (_isDestroyed) {
+      return;
+    }
+    _isDestroyed = true;
+    _owner._windows.remove(_viewId);
+    _onDestroyed();
+    notifyListeners();
+  }
+
+  /// The compositor asked for the window to close, or dismissed a popup.
+  void _onCloseRequested();
+
+  /// Tells the delegate that the window is destroyed.
+  void _onDestroyed();
+
+  void _checkNotDestroyed() {
+    if (_isDestroyed) {
+      throw StateError('Window has been destroyed.');
+    }
+  }
+}
+
+/// What regular windows and dialogs created by Flust have in common: they
+/// are `xdg_toplevel`s.
+///
+/// Wayland limits what a window can do on its own:
+///
+/// * `activate` does nothing: Wayland only lets a window be activated with a
+///   token from the window that has the focus, which Flust does not ask for
+///   yet.
+/// * `isMinimized` is always false: compositors do not say whether a window
+///   is minimized, and a minimized window can not be brought back by the
+///   app.
+/// * `setSize` is a request: the compositor decides, and does not change the
+///   size of a maximized, fullscreen or tiled window.
+///
+/// A window created with a `shrinkWrap` constructor is not sized to its
+/// content yet: it gets the app's default size, as with Flutter's own Linux
+/// embedder.
+mixin _FlustToplevel on _FlustWindow {
+  String _title = '';
+
+  /// Creates the window, and its view. A window with a `modalParent` is a
+  /// modal dialog of it.
+  void _create(
+    WindowingOwnerFlust owner, {
+    Size? size,
+    BoxConstraints? constraints,
+    String? title,
+    BaseWindowController? modalParent,
+  }) {
+    _title = title ?? '';
+    final int viewId = _withString(
+      title,
+      (ffi.Pointer<Utf8> title) => owner._native.createWindow(
+        owner._engineId,
+        size?.width ?? double.nan,
+        size?.height ?? double.nan,
+        constraints?.minWidth ?? 0,
+        constraints?.minHeight ?? 0,
+        constraints?.maxWidth ?? double.infinity,
+        constraints?.maxHeight ?? double.infinity,
+        title,
+        modalParent?.rootView.viewId ?? -1,
+      ),
+    );
+    _created(owner, viewId);
+  }
+
   int get _state => _isDestroyed ? 0 : _native.getState(_engineId, _viewId);
 
   String get title => _title;
@@ -265,8 +377,6 @@ mixin _FlustWindow on ChangeNotifier {
   bool get isActivated => _state & _Native.stateActivated != 0;
 
   bool get isMinimized => false;
-
-  bool get isDestroyed => _isDestroyed;
 
   void setSize(Size size) {
     _checkNotDestroyed();
@@ -304,64 +414,12 @@ mixin _FlustWindow on ChangeNotifier {
     _checkNotDestroyed();
     _native.setMinimized(_engineId, _viewId, minimized);
   }
-
-  /// Destroys the window, and its dialogs first. Its view is gone when this
-  /// returns, and the delegate has been told, as with Flutter's own
-  /// embedders.
-  void destroy() {
-    if (_isDestroyed) {
-      return;
-    }
-    // Other platforms destroy a window's dialogs with it. Wayland does not.
-    final List<DialogWindowControllerFlust> dialogs = _owner._windows.values
-        .whereType<DialogWindowControllerFlust>()
-        .where((DialogWindowControllerFlust dialog) => dialog.parent == this)
-        .toList();
-    for (final dialog in dialogs) {
-      dialog.destroy();
-    }
-    _native.destroyWindow(_engineId, _viewId);
-    _destroyed();
-  }
-
-  void _changed() {
-    if (!_isDestroyed) {
-      notifyListeners();
-    }
-  }
-
-  void _closeRequested() {
-    if (!_isDestroyed) {
-      _onCloseRequested();
-    }
-  }
-
-  void _destroyed() {
-    if (_isDestroyed) {
-      return;
-    }
-    _isDestroyed = true;
-    _owner._windows.remove(_viewId);
-    _onDestroyed();
-    notifyListeners();
-  }
-
-  /// Tells the delegate that the compositor asked for the window to close.
-  void _onCloseRequested();
-
-  /// Tells the delegate that the window is destroyed.
-  void _onDestroyed();
-
-  void _checkNotDestroyed() {
-    if (_isDestroyed) {
-      throw StateError('Window has been destroyed.');
-    }
-  }
 }
 
-/// A regular window, created by Flust. See [_FlustWindow] for what Wayland
-/// limits.
-class WindowControllerFlust extends WindowController with _FlustWindow {
+/// A regular window, created by Flust. See [_FlustToplevel] for what
+/// Wayland limits.
+class WindowControllerFlust extends WindowController
+    with _FlustWindow, _FlustToplevel {
   WindowControllerFlust._({
     required WindowingOwnerFlust owner,
     required WindowControllerDelegate delegate,
@@ -400,7 +458,7 @@ class WindowControllerFlust extends WindowController with _FlustWindow {
   void _onDestroyed() => _delegate.onWindowDestroyed();
 }
 
-/// A dialog window, created by Flust. See [_FlustWindow] for what Wayland
+/// A dialog window, created by Flust. See [_FlustToplevel] for what Wayland
 /// limits.
 ///
 /// A dialog with a parent is modal: the compositor keeps it above its
@@ -408,7 +466,7 @@ class WindowControllerFlust extends WindowController with _FlustWindow {
 /// is destroyed with its parent. A dialog without a parent is a regular
 /// window on Wayland.
 class DialogWindowControllerFlust extends DialogWindowController
-    with _FlustWindow {
+    with _FlustWindow, _FlustToplevel {
   DialogWindowControllerFlust._({
     required WindowingOwnerFlust owner,
     required DialogWindowControllerDelegate delegate,
@@ -419,12 +477,8 @@ class DialogWindowControllerFlust extends DialogWindowController
   }) : _delegate = delegate,
        _parent = parent,
        super.empty() {
-    if (parent != null && (parent is! _FlustWindow || parent.isDestroyed)) {
-      throw ArgumentError.value(
-        parent,
-        'parent',
-        'Not a window of Flust that is still open',
-      );
+    if (parent != null) {
+      _checkParent(parent);
     }
     _create(
       owner,
@@ -442,10 +496,208 @@ class DialogWindowControllerFlust extends DialogWindowController
   BaseWindowController? get parent => _parent;
 
   @override
+  _FlustWindow? get _parentWindow => _parent as _FlustWindow?;
+
+  @override
   void _onCloseRequested() => _delegate.onWindowCloseRequested(this);
 
   @override
   void _onDestroyed() => _delegate.onWindowDestroyed();
+}
+
+/// What popups and tooltips created by Flust have in common: they are
+/// `xdg_popup`s, placed by the compositor against a rectangle of their
+/// parent, and sized to their content.
+mixin _FlustPopup on _FlustWindow {
+  late final _FlustWindow _parent;
+  late Rect _anchorRect;
+  late WindowPositioner _positioner;
+
+  @override
+  _FlustWindow? get _parentWindow => _parent;
+
+  void _createPopup(
+    WindowingOwnerFlust owner, {
+    required BaseWindowController parent,
+    required Rect anchorRect,
+    required WindowPositioner positioner,
+    required BoxConstraints constraints,
+    required bool tooltip,
+  }) {
+    _parent = _checkParent(parent);
+    _anchorRect = anchorRect;
+    _positioner = positioner;
+    final int viewId = owner._native.createPopup(
+      owner._engineId,
+      parent.rootView.viewId,
+      anchorRect.left,
+      anchorRect.top,
+      anchorRect.width,
+      anchorRect.height,
+      positioner.parentAnchor.index,
+      positioner.childAnchor.index,
+      positioner.offset.dx,
+      positioner.offset.dy,
+      _adjustment(positioner.constraintAdjustment),
+      constraints.minWidth,
+      constraints.minHeight,
+      constraints.maxWidth,
+      constraints.maxHeight,
+      tooltip,
+    );
+    _created(owner, viewId);
+  }
+
+  void setConstraints(BoxConstraints constraints) {
+    _checkNotDestroyed();
+    _native.setContentConstraints(
+      _engineId,
+      _viewId,
+      constraints.minWidth,
+      constraints.minHeight,
+      constraints.maxWidth,
+      constraints.maxHeight,
+    );
+  }
+
+  /// Places the window again. The compositor moves it without it being
+  /// shown anywhere in between.
+  void updatePosition({Rect? anchorRect, WindowPositioner? positioner}) {
+    _checkNotDestroyed();
+    _anchorRect = anchorRect ?? _anchorRect;
+    _positioner = positioner ?? _positioner;
+    _native.updatePosition(
+      _engineId,
+      _viewId,
+      _anchorRect.left,
+      _anchorRect.top,
+      _anchorRect.width,
+      _anchorRect.height,
+      _positioner.parentAnchor.index,
+      _positioner.childAnchor.index,
+      _positioner.offset.dx,
+      _positioner.offset.dy,
+      _adjustment(_positioner.constraintAdjustment),
+    );
+  }
+
+  Offset get _offsetFromParent {
+    if (_isDestroyed) {
+      return Offset.zero;
+    }
+    return Offset(
+      _native.getOffsetX(_engineId, _viewId),
+      _native.getOffsetY(_engineId, _viewId),
+    );
+  }
+}
+
+/// A popup, created by Flust.
+///
+/// It takes the keyboard focus, with a grab, when it is opened by the
+/// user's input. It is dismissed, and destroyed, when the user clicks
+/// outside of it: into another of the app's windows, or into another
+/// application. Opening a popup dismisses the open popups that are not its
+/// parent's.
+///
+/// It is sized to its content, within its constraints. The compositor may
+/// flip and slide it as its positioner allows; resizing it to fit is not
+/// supported: it keeps the size of its content.
+class PopupWindowControllerFlust extends PopupWindowController
+    with _FlustWindow, _FlustPopup {
+  PopupWindowControllerFlust._({
+    required WindowingOwnerFlust owner,
+    required PopupWindowControllerDelegate delegate,
+    required BoxConstraints constraints,
+    required Rect anchorRect,
+    required WindowPositioner positioner,
+    required BaseWindowController parent,
+  }) : _delegate = delegate,
+       super.empty() {
+    if (parent is TooltipWindowController) {
+      throw ArgumentError.value(parent, 'parent', 'A tooltip has no popups');
+    }
+    owner._dismissPopupsOutside(parent);
+    _createPopup(
+      owner,
+      parent: parent,
+      anchorRect: anchorRect,
+      positioner: positioner,
+      constraints: constraints,
+      tooltip: false,
+    );
+  }
+
+  final PopupWindowControllerDelegate _delegate;
+
+  @override
+  BaseWindowController get parent => _parent as BaseWindowController;
+
+  @override
+  Offset get offsetFromParent => _offsetFromParent;
+
+  @override
+  void _onCloseRequested() => destroy();
+
+  @override
+  void _onDestroyed() => _delegate.onWindowDestroyed();
+}
+
+/// A tooltip, created by Flust. It takes no input: what is under it gets
+/// it. It is sized to its content, within its constraints.
+class TooltipWindowControllerFlust extends TooltipWindowController
+    with _FlustWindow, _FlustPopup {
+  TooltipWindowControllerFlust._({
+    required WindowingOwnerFlust owner,
+    required TooltipWindowControllerDelegate delegate,
+    required BoxConstraints constraints,
+    required Rect anchorRect,
+    required WindowPositioner positioner,
+    required BaseWindowController parent,
+  }) : _delegate = delegate,
+       super.empty() {
+    _createPopup(
+      owner,
+      parent: parent,
+      anchorRect: anchorRect,
+      positioner: positioner,
+      constraints: constraints,
+      tooltip: true,
+    );
+  }
+
+  final TooltipWindowControllerDelegate _delegate;
+
+  @override
+  BaseWindowController get parent => _parent as BaseWindowController;
+
+  @override
+  void _onCloseRequested() => destroy();
+
+  @override
+  void _onDestroyed() => _delegate.onWindowDestroyed();
+}
+
+/// `parent`, if it is a window of Flust that is still open.
+_FlustWindow _checkParent(BaseWindowController parent) {
+  if (parent is! _FlustWindow || parent.isDestroyed) {
+    throw ArgumentError.value(
+      parent,
+      'parent',
+      'Not a window of Flust that is still open',
+    );
+  }
+  return parent as _FlustWindow;
+}
+
+/// `adjustment` as the flags of `flust-sctk/src/windowing.rs`.
+int _adjustment(WindowPositionerConstraintAdjustment adjustment) {
+  return (adjustment.flipX ? 1 << 0 : 0) |
+      (adjustment.flipY ? 1 << 1 : 0) |
+      (adjustment.slideX ? 1 << 2 : 0) |
+      (adjustment.slideY ? 1 << 3 : 0) |
+      (adjustment.resizeX ? 1 << 4 : 0) |
+      (adjustment.resizeY ? 1 << 5 : 0);
 }
 
 String _createWindowFailure(int failure) {
@@ -523,7 +775,27 @@ class _Native {
       setFullscreen =
           ffi.Pointer<ffi.NativeFunction<_SetBoolNative>>.fromAddress(
             _address(functions, 'setFullscreen'),
-          ).asFunction<_SetBool>();
+          ).asFunction<_SetBool>(),
+      createPopup =
+          ffi.Pointer<ffi.NativeFunction<_CreatePopupNative>>.fromAddress(
+            _address(functions, 'createPopup'),
+          ).asFunction<_CreatePopup>(),
+      updatePosition =
+          ffi.Pointer<ffi.NativeFunction<_UpdatePositionNative>>.fromAddress(
+            _address(functions, 'updatePosition'),
+          ).asFunction<_UpdatePosition>(),
+      getOffsetX =
+          ffi.Pointer<ffi.NativeFunction<_GetDoubleNative>>.fromAddress(
+            _address(functions, 'getOffsetX'),
+          ).asFunction<_GetDouble>(),
+      getOffsetY =
+          ffi.Pointer<ffi.NativeFunction<_GetDoubleNative>>.fromAddress(
+            _address(functions, 'getOffsetY'),
+          ).asFunction<_GetDouble>(),
+      setContentConstraints =
+          ffi.Pointer<ffi.NativeFunction<_SetConstraintsNative>>.fromAddress(
+            _address(functions, 'setContentConstraints'),
+          ).asFunction<_SetConstraints>();
 
   static const int stateActivated = 1 << 0;
   static const int stateMaximized = 1 << 1;
@@ -541,6 +813,11 @@ class _Native {
   final _SetBool setMaximized;
   final _SetBool setMinimized;
   final _SetBool setFullscreen;
+  final _CreatePopup createPopup;
+  final _UpdatePosition updatePosition;
+  final _GetDouble getOffsetX;
+  final _GetDouble getOffsetY;
+  final _SetConstraints setContentConstraints;
 
   static int _address(Map<String, int> functions, String name) {
     final int? address = functions[name];
@@ -629,3 +906,65 @@ typedef _SetBoolNative = ffi.Void Function(
   ffi.Bool value,
 );
 typedef _SetBool = void Function(int engineId, int viewId, bool value);
+typedef _CreatePopupNative = ffi.Int64 Function(
+  ffi.Int64 engineId,
+  ffi.Int64 parent,
+  ffi.Double x,
+  ffi.Double y,
+  ffi.Double width,
+  ffi.Double height,
+  ffi.Uint32 parentAnchor,
+  ffi.Uint32 childAnchor,
+  ffi.Double offsetX,
+  ffi.Double offsetY,
+  ffi.Uint32 adjustment,
+  ffi.Double minWidth,
+  ffi.Double minHeight,
+  ffi.Double maxWidth,
+  ffi.Double maxHeight,
+  ffi.Bool tooltip,
+);
+typedef _CreatePopup = int Function(
+  int engineId,
+  int parent,
+  double x,
+  double y,
+  double width,
+  double height,
+  int parentAnchor,
+  int childAnchor,
+  double offsetX,
+  double offsetY,
+  int adjustment,
+  double minWidth,
+  double minHeight,
+  double maxWidth,
+  double maxHeight,
+  bool tooltip,
+);
+typedef _UpdatePositionNative = ffi.Void Function(
+  ffi.Int64 engineId,
+  ffi.Int64 viewId,
+  ffi.Double x,
+  ffi.Double y,
+  ffi.Double width,
+  ffi.Double height,
+  ffi.Uint32 parentAnchor,
+  ffi.Uint32 childAnchor,
+  ffi.Double offsetX,
+  ffi.Double offsetY,
+  ffi.Uint32 adjustment,
+);
+typedef _UpdatePosition = void Function(
+  int engineId,
+  int viewId,
+  double x,
+  double y,
+  double width,
+  double height,
+  int parentAnchor,
+  int childAnchor,
+  double offsetX,
+  double offsetY,
+  int adjustment,
+);
