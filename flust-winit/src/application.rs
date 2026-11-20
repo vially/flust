@@ -64,7 +64,7 @@ impl WinitApplication {
 
         let pointers = Pointers::new(engine.clone());
 
-        engine.add_view(implicit_view.create_flutter_view());
+        engine.add_implicit_view(implicit_view.create_flutter_view());
 
         let state = WinitApplicationState {
             implicit_view,

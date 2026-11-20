@@ -175,7 +175,7 @@ impl SctkApplication {
             config,
         )?;
 
-        engine.add_view(implicit_window.create_flutter_view());
+        engine.add_implicit_view(implicit_window.create_flutter_view());
         accessibility.add_view(implicit_window.view_id(), &window_title);
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");

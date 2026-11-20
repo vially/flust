@@ -4,7 +4,7 @@ use crate::ffi::{
 };
 use crate::semantics::FlutterSemanticsUpdate;
 use crate::tasks::{TaskRunner, TaskRunnerInner};
-use crate::FlutterEngineInner;
+use crate::{FlutterEngineInner, ViewBaton};
 use core::slice;
 use parking_lot::Mutex;
 use std::ffi::{c_char, c_uint, c_void, CStr};
@@ -233,4 +233,71 @@ pub extern "C" fn gl_external_texture_frame(
         }
         false
     }
+}
+
+/// The engine has tried to add a view: see `FlutterEngine::add_view`. Called
+/// on a thread of the engine's.
+pub extern "C" fn add_view_callback(result: *const flust_engine_sys::FlutterAddViewResult) {
+    let (added, baton) = unsafe {
+        let result = &*result;
+        (
+            result.added,
+            Box::from_raw(result.user_data as *mut ViewBaton),
+        )
+    };
+    trace!(
+        "add_view_callback: view {}: added: {}",
+        baton.view_id,
+        added
+    );
+
+    let Some(engine) = baton.engine.upgrade() else {
+        return;
+    };
+    engine.run_on_platform_thread(move |engine| {
+        if !added {
+            let view = engine
+                .inner
+                .view_registry
+                .write()
+                .remove_view(baton.view_id);
+            // Not while the registry is locked.
+            drop(view);
+        }
+        (baton.callback)(added);
+    });
+}
+
+/// The engine has tried to remove a view: see `FlutterEngine::remove_view`.
+/// Called on the raster thread, once the engine is done with the view.
+pub extern "C" fn remove_view_callback(result: *const flust_engine_sys::FlutterRemoveViewResult) {
+    let (removed, baton) = unsafe {
+        let result = &*result;
+        (
+            result.removed,
+            Box::from_raw(result.user_data as *mut ViewBaton),
+        )
+    };
+    trace!(
+        "remove_view_callback: view {}: removed: {}",
+        baton.view_id,
+        removed
+    );
+
+    let Some(engine) = baton.engine.upgrade() else {
+        return;
+    };
+    // The view is dropped on the platform thread, where it was created.
+    engine.run_on_platform_thread(move |engine| {
+        if removed {
+            let view = engine
+                .inner
+                .view_registry
+                .write()
+                .remove_view(baton.view_id);
+            // Not while the registry is locked.
+            drop(view);
+        }
+        (baton.callback)(removed);
+    });
 }

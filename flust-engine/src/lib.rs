@@ -25,7 +25,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::{
     FlutterEngineAOTData, FlutterEngineDisplay, FlutterEngineDisplaysUpdateType,
     FlutterEngineResult, FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent,
-    FlutterViewId, FlutterWindowMetrics,
+    FlutterViewId, FlutterWindowMetrics, IMPLICIT_VIEW_ID,
 };
 use flust_engine_api::FlutterOpenGLHandler;
 use flust_engine_sys::{
@@ -64,6 +64,8 @@ static NEXT_ENGINE_ID: AtomicI64 = AtomicI64::new(1);
 struct FlutterEngineInner {
     engine_id: i64,
     view_registry: RwLock<ViewRegistry>,
+    /// The id of the next view: see [`FlutterEngine::allocate_view_id`].
+    next_view_id: AtomicI64,
     vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     engine_ptr: flust_engine_sys::FlutterEngine,
@@ -99,6 +101,14 @@ impl FlutterEngineInner {
             .read()
             .compositor_handler_for_view(view_id)
     }
+}
+
+/// What the engine hands back to the callback of an add or remove view
+/// call: the view, and what to tell about the result.
+pub(crate) struct ViewBaton {
+    pub(crate) engine: FlutterEngineWeakRef,
+    pub(crate) view_id: FlutterViewId,
+    pub(crate) callback: Box<dyn FnOnce(bool) + Send>,
 }
 
 pub struct FlutterEngineWeakRef {
@@ -190,6 +200,7 @@ impl FlutterEngine {
             inner: Arc::new(FlutterEngineInner {
                 engine_id,
                 view_registry: RwLock::new(ViewRegistry::default()),
+                next_view_id: AtomicI64::new(IMPLICIT_VIEW_ID + 1),
                 vsync_handler: builder.vsync_handler,
                 semantics_handler: builder.semantics_handler,
                 engine_ptr: ptr::null_mut(),
@@ -462,12 +473,114 @@ impl FlutterEngine {
         FlutterEngineResult::from_ffi(result)
     }
 
-    pub fn add_view(&self, view: FlutterView) {
-        self.inner.view_registry.write().add_view(view);
+    /// Gives the engine's callbacks for the implicit view somewhere to go.
+    /// The engine always has the implicit view: it is not added or removed
+    /// like the others.
+    pub fn add_implicit_view(&self, view: FlutterView) {
+        assert_eq!(view.id(), IMPLICIT_VIEW_ID, "not the implicit view");
+        if self.inner.view_registry.write().add_view(view).is_err() {
+            panic!("The implicit view was added twice");
+        }
     }
 
-    pub fn remove_view(&self, view_id: FlutterViewId) {
-        self.inner.view_registry.write().remove_view(view_id);
+    /// An id for a view that is then added with [`Self::add_view`]. Ids are
+    /// not used twice, and are never the implicit view's.
+    pub fn allocate_view_id(&self) -> FlutterViewId {
+        self.inner.next_view_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Adds a view to the running engine, with its first metrics.
+    ///
+    /// The view is not to be used (sent metrics or input) until `on_added`
+    /// is called with `true`. `on_added` is called on the platform thread,
+    /// with whether the engine added the view, if this returns `Ok`. The
+    /// engine's callbacks for the view go to its handlers from now on, and
+    /// until it is removed again.
+    pub fn add_view(
+        &self,
+        view: FlutterView,
+        metrics: FlutterWindowMetrics,
+        on_added: impl FnOnce(bool) + Send + 'static,
+    ) -> Result<(), ViewError> {
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        let view_id = view.id();
+        if view_id == IMPLICIT_VIEW_ID {
+            return Err(ViewError::ImplicitView);
+        }
+        if self.inner.view_registry.write().add_view(view).is_err() {
+            return Err(ViewError::AlreadyExists(view_id));
+        }
+
+        let baton = Box::into_raw(Box::new(ViewBaton {
+            engine: self.downgrade(),
+            view_id,
+            callback: Box::new(on_added),
+        }));
+        let metrics = metrics.to_ffi(view_id);
+        let info = flust_engine_sys::FlutterAddViewInfo {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterAddViewInfo>(),
+            view_id,
+            view_metrics: &metrics,
+            user_data: baton as *mut c_void,
+            add_view_callback: Some(flutter_callbacks::add_view_callback),
+        };
+
+        let result = unsafe { flust_engine_sys::FlutterEngineAddView(self.engine_ptr(), &info) };
+        if let Err(err) = FlutterEngineResult::from_ffi(result) {
+            // The callback is not called: the baton is still this call's.
+            drop(unsafe { Box::from_raw(baton) });
+            let view = self.inner.view_registry.write().remove_view(view_id);
+            drop(view);
+            return Err(err.into());
+        }
+        Ok(())
+    }
+
+    /// Removes a view from the running engine.
+    ///
+    /// The view's handlers keep getting the engine's callbacks until the
+    /// engine is done with the view: what they draw to has to outlive them.
+    /// `on_removed` is called on the platform thread after that, with
+    /// whether the engine removed the view, if this returns `Ok`. The view
+    /// is dropped right before.
+    pub fn remove_view(
+        &self,
+        view_id: FlutterViewId,
+        on_removed: impl FnOnce(bool) + Send + 'static,
+    ) -> Result<(), ViewError> {
+        if !self.is_platform_thread() {
+            panic!("Not on platform thread");
+        }
+
+        if view_id == IMPLICIT_VIEW_ID {
+            return Err(ViewError::ImplicitView);
+        }
+        if !self.inner.view_registry.read().contains(view_id) {
+            return Err(ViewError::UnknownView(view_id));
+        }
+
+        let baton = Box::into_raw(Box::new(ViewBaton {
+            engine: self.downgrade(),
+            view_id,
+            callback: Box::new(on_removed),
+        }));
+        let info = flust_engine_sys::FlutterRemoveViewInfo {
+            struct_size: std::mem::size_of::<flust_engine_sys::FlutterRemoveViewInfo>(),
+            view_id,
+            user_data: baton as *mut c_void,
+            remove_view_callback: Some(flutter_callbacks::remove_view_callback),
+        };
+
+        let result = unsafe { flust_engine_sys::FlutterEngineRemoveView(self.engine_ptr(), &info) };
+        if let Err(err) = FlutterEngineResult::from_ffi(result) {
+            // The callback is not called: the baton is still this call's.
+            drop(unsafe { Box::from_raw(baton) });
+            return Err(err.into());
+        }
+        Ok(())
     }
 
     pub(crate) fn post_platform_callback(&self, callback: MainThreadCallback) {
@@ -809,6 +922,21 @@ pub enum CreateError {
 
     #[error("Engine pointer is null")]
     EnginePtrNull,
+}
+
+#[derive(Error, Debug)]
+pub enum ViewError {
+    #[error("The implicit view can be neither added nor removed")]
+    ImplicitView,
+
+    #[error("A view with id {0} exists already")]
+    AlreadyExists(FlutterViewId),
+
+    #[error("There is no view with id {0}")]
+    UnknownView(FlutterViewId),
+
+    #[error(transparent)]
+    Engine(#[from] FlutterEngineError),
 }
 
 #[derive(Error, Debug)]
