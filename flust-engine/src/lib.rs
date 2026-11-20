@@ -34,10 +34,12 @@ use flust_engine_sys::{
 };
 use parking_lot::{Mutex, RwLock};
 use semantics::{FlutterAccessibilityFeatures, FlutterSemanticsAction, FlutterSemanticsHandler};
+use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{info, trace};
@@ -51,7 +53,16 @@ pub(crate) enum MainThreadCallback {
     RenderThread(MainThreadRenderThreadFn),
 }
 
+/// The engines that exist, by their id: see [`FlutterEngine::engine_id`].
+static ENGINES: LazyLock<Mutex<HashMap<i64, FlutterEngineWeakRef>>> =
+    LazyLock::new(Default::default);
+
+/// The id of the next engine. 0 is not used: the engine takes it to mean
+/// that there is no id, and Dart then gets none.
+static NEXT_ENGINE_ID: AtomicI64 = AtomicI64::new(1);
+
 struct FlutterEngineInner {
+    engine_id: i64,
     view_registry: RwLock<ViewRegistry>,
     vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
@@ -67,6 +78,12 @@ struct FlutterEngineInner {
     persistent_cache: PathBuf,
     arguments: Vec<String>,
     renderer: Renderer,
+}
+
+impl Drop for FlutterEngineInner {
+    fn drop(&mut self) {
+        ENGINES.lock().remove(&self.engine_id);
+    }
 }
 
 impl FlutterEngineInner {
@@ -167,9 +184,11 @@ impl FlutterEngine {
 
         let (main_tx, main_rx) = unbounded();
 
+        let engine_id = NEXT_ENGINE_ID.fetch_add(1, Ordering::Relaxed);
         let engine = Self {
             #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(FlutterEngineInner {
+                engine_id,
                 view_registry: RwLock::new(ViewRegistry::default()),
                 vsync_handler: builder.vsync_handler,
                 semantics_handler: builder.semantics_handler,
@@ -191,6 +210,7 @@ impl FlutterEngine {
         };
 
         let inner = &engine.inner;
+        ENGINES.lock().insert(engine_id, engine.downgrade());
         inner.channel_registry.write().init(engine.downgrade());
         inner.platform_runner.init(engine.downgrade());
 
@@ -321,7 +341,7 @@ impl FlutterEngine {
             update_semantics_callback2,
             channel_update_callback: None,
             view_focus_change_request_callback: None,
-            engine_id: 0,
+            engine_id: inner.engine_id,
             enable_wide_gamut: false,
         };
 
@@ -344,6 +364,18 @@ impl FlutterEngine {
                 Ok(engine)
             }
         }
+    }
+
+    /// The id of this engine, which Dart sees as `PlatformDispatcher.engineId`.
+    /// Native code that Dart calls can find the engine by it, with
+    /// [`Self::from_engine_id`]. Never 0.
+    pub fn engine_id(&self) -> i64 {
+        self.inner.engine_id
+    }
+
+    /// The engine with this id, if it still exists: see [`Self::engine_id`].
+    pub fn from_engine_id(engine_id: i64) -> Option<FlutterEngine> {
+        ENGINES.lock().get(&engine_id)?.upgrade()
     }
 
     pub fn get_current_time_duration() -> Duration {
