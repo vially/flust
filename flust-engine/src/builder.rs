@@ -6,12 +6,14 @@ use std::sync::Arc;
 use crate::renderer::Renderer;
 use crate::semantics::FlutterSemanticsHandler;
 use crate::tasks::TaskRunnerHandler;
+use crate::view::FlutterViewFocusHandler;
 use crate::{CreateError, FlutterEngine, FlutterVsyncHandler};
 
 pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     pub(crate) semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
+    pub(crate) view_focus_handler: Option<Arc<dyn FlutterViewFocusHandler + Send + Sync>>,
     pub(crate) compositor_enabled: bool,
     pub(crate) merged_platform_ui_thread: bool,
     pub(crate) aot_library: PathBuf,
@@ -29,6 +31,7 @@ impl FlutterEngineBuilder {
             platform_handler: None,
             vsync_handler: None,
             semantics_handler: None,
+            view_focus_handler: None,
             compositor_enabled: false,
             merged_platform_ui_thread: false,
             aot_library: Default::default(),
@@ -62,6 +65,16 @@ impl FlutterEngineBuilder {
         handler: Arc<dyn FlutterSemanticsHandler + Send + Sync>,
     ) -> Self {
         self.semantics_handler = Some(handler);
+        self
+    }
+
+    /// Without a handler, the framework's requests to move the platform's
+    /// focus between views are ignored.
+    pub fn with_view_focus_handler(
+        mut self,
+        handler: Arc<dyn FlutterViewFocusHandler + Send + Sync>,
+    ) -> Self {
+        self.view_focus_handler = Some(handler);
         self
     }
 

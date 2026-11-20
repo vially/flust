@@ -7,6 +7,76 @@ use crate::{
     ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
 };
 
+/// Whether a view has the platform's focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlutterViewFocusState {
+    Unfocused,
+    Focused,
+}
+
+/// How focus moved between views: forward or backward is from the
+/// keyboard (tab or shift+tab), undefined is anything else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlutterViewFocusDirection {
+    Undefined,
+    Forward,
+    Backward,
+}
+
+/// The framework moved focus to or from a view, and asks for the platform's
+/// focus to follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlutterViewFocusChangeRequest {
+    pub view_id: FlutterViewId,
+    pub state: FlutterViewFocusState,
+    pub direction: FlutterViewFocusDirection,
+}
+
+/// Gets the framework's requests to move the platform's focus between
+/// views.
+pub trait FlutterViewFocusHandler {
+    /// Called on the platform thread.
+    fn request_view_focus_change(&self, request: FlutterViewFocusChangeRequest);
+}
+
+impl From<FlutterViewFocusState> for flust_engine_sys::FlutterViewFocusState {
+    fn from(state: FlutterViewFocusState) -> Self {
+        match state {
+            FlutterViewFocusState::Unfocused => Self::kUnfocused,
+            FlutterViewFocusState::Focused => Self::kFocused,
+        }
+    }
+}
+
+impl From<flust_engine_sys::FlutterViewFocusState> for FlutterViewFocusState {
+    fn from(state: flust_engine_sys::FlutterViewFocusState) -> Self {
+        match state {
+            flust_engine_sys::FlutterViewFocusState::kUnfocused => Self::Unfocused,
+            flust_engine_sys::FlutterViewFocusState::kFocused => Self::Focused,
+        }
+    }
+}
+
+impl From<FlutterViewFocusDirection> for flust_engine_sys::FlutterViewFocusDirection {
+    fn from(direction: FlutterViewFocusDirection) -> Self {
+        match direction {
+            FlutterViewFocusDirection::Undefined => Self::kUndefined,
+            FlutterViewFocusDirection::Forward => Self::kForward,
+            FlutterViewFocusDirection::Backward => Self::kBackward,
+        }
+    }
+}
+
+impl From<flust_engine_sys::FlutterViewFocusDirection> for FlutterViewFocusDirection {
+    fn from(direction: flust_engine_sys::FlutterViewFocusDirection) -> Self {
+        match direction {
+            flust_engine_sys::FlutterViewFocusDirection::kUndefined => Self::Undefined,
+            flust_engine_sys::FlutterViewFocusDirection::kForward => Self::Forward,
+            flust_engine_sys::FlutterViewFocusDirection::kBackward => Self::Backward,
+        }
+    }
+}
+
 /// The view capable of acting as a rendering target and input source for the Flutter engine.
 pub struct FlutterView {
     id: FlutterViewId,

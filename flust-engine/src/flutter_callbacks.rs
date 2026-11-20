@@ -4,6 +4,7 @@ use crate::ffi::{
 };
 use crate::semantics::FlutterSemanticsUpdate;
 use crate::tasks::{TaskRunner, TaskRunnerInner};
+use crate::view::FlutterViewFocusChangeRequest;
 use crate::{FlutterEngineInner, ViewBaton};
 use core::slice;
 use parking_lot::Mutex;
@@ -184,6 +185,27 @@ pub extern "C" fn update_semantics_callback(
             return;
         };
         handler.update_semantics(FlutterSemanticsUpdate::from_ffi(update));
+    }
+}
+
+/// Called from a task on the platform thread.
+pub extern "C" fn view_focus_change_request_callback(
+    request: *const flust_engine_sys::FlutterViewFocusChangeRequest,
+    user_data: *mut c_void,
+) {
+    trace!("view_focus_change_request_callback");
+    unsafe {
+        let engine = &*(user_data as *const FlutterEngineInner);
+        let request = &*request;
+        let request = FlutterViewFocusChangeRequest {
+            view_id: request.view_id,
+            state: request.state.into(),
+            direction: request.direction.into(),
+        };
+        match engine.view_focus_handler.as_ref() {
+            Some(handler) => handler.request_view_focus_change(request),
+            None => debug!("ignoring view focus change request: {request:?}"),
+        }
     }
 }
 
