@@ -2,7 +2,7 @@ use crate::FlutterEngineWeakRef;
 use flust_engine_sys::{FlutterEngineGetCurrentTime, FlutterTask};
 use parking_lot::{Mutex, MutexGuard};
 use priority_queue::PriorityQueue;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -19,7 +19,26 @@ pub(crate) struct TaskRunnerInner {
     engine: FlutterEngineWeakRef,
     pub(crate) handler: Arc<dyn TaskRunnerHandler + Send + Sync>,
     thread_id: ThreadId,
-    tasks: PriorityQueue<Task, TaskPriority>,
+    tasks: TaskQueue,
+}
+
+/// The tasks, earliest first: `PriorityQueue` hands out the greatest
+/// priority first, and a task that is due earlier, or was posted earlier
+/// for the same time, is the more urgent.
+type TaskQueue = PriorityQueue<Task, Reverse<TaskPriority>>;
+
+/// Takes the tasks that are due at `now` off the queue, in the order they
+/// are to run.
+fn take_due_tasks(tasks: &mut TaskQueue, now: Instant) -> Vec<Task> {
+    let mut due = Vec::new();
+    while let Some((_, Reverse(priority))) = tasks.peek() {
+        if priority.time > now {
+            break;
+        }
+        let (task, _) = tasks.pop().unwrap();
+        due.push(task);
+    }
+    due
 }
 
 pub struct TaskRunner {
@@ -65,14 +84,7 @@ impl TaskRunner {
 
         let engine = {
             let mut inner = self.inner.lock();
-            let tasks = &mut inner.tasks;
-            while let Some((_, priority)) = tasks.peek() {
-                if priority.time > now {
-                    break;
-                }
-                let (task, _) = tasks.pop().unwrap();
-                expired_tasks.push(task);
-            }
+            expired_tasks.append(&mut take_due_tasks(&mut inner.tasks, now));
             // make sure to unlock mutex before actually running the tasks as they may post another task
             inner.engine.upgrade().unwrap()
         };
@@ -83,13 +95,11 @@ impl TaskRunner {
         }
 
         // next task time
-        let mut inner = self.inner.lock();
-        let tasks = &mut inner.tasks;
-        if let Some((_, priority)) = tasks.peek() {
-            Some(priority.time)
-        } else {
-            None
-        }
+        let inner = self.inner.lock();
+        inner
+            .tasks
+            .peek()
+            .map(|(_, Reverse(priority))| priority.time)
     }
 
     fn flutter_time_to_instant(target_time_nanos: u64) -> Instant {
@@ -114,8 +124,7 @@ impl TaskRunner {
             order: GLOBAL_ORDER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         let task = Task { task };
-        let tasks = &mut guard.tasks;
-        tasks.push(task, task_priority);
+        guard.tasks.push(task, Reverse(task_priority));
 
         let handler = guard.handler.clone();
 
@@ -174,5 +183,78 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.task.task.hash(state);
         std::ptr::hash(self.task.runner, state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(id: u64) -> Task {
+        Task {
+            task: FlutterTask {
+                runner: std::ptr::null_mut(),
+                task: id,
+            },
+        }
+    }
+
+    fn ids(tasks: Vec<Task>) -> Vec<u64> {
+        tasks.into_iter().map(|task| task.task.task).collect()
+    }
+
+    #[test]
+    fn due_tasks_run_in_the_order_they_were_posted() {
+        let now = Instant::now();
+        let mut tasks = TaskQueue::new();
+        for order in 0..3 {
+            tasks.push(task(order), Reverse(TaskPriority { order, time: now }));
+        }
+        assert_eq!(ids(take_due_tasks(&mut tasks, now)), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn earlier_tasks_run_first() {
+        let now = Instant::now();
+        let mut tasks = TaskQueue::new();
+        let at = |ms| now + Duration::from_millis(ms);
+        tasks.push(
+            task(0),
+            Reverse(TaskPriority {
+                order: 0,
+                time: at(20),
+            }),
+        );
+        tasks.push(
+            task(1),
+            Reverse(TaskPriority {
+                order: 1,
+                time: at(10),
+            }),
+        );
+        assert_eq!(ids(take_due_tasks(&mut tasks, at(30))), vec![1, 0]);
+    }
+
+    #[test]
+    fn a_task_for_later_does_not_hold_back_due_ones() {
+        let now = Instant::now();
+        let later = now + Duration::from_millis(500);
+        let mut tasks = TaskQueue::new();
+        tasks.push(
+            task(0),
+            Reverse(TaskPriority {
+                order: 0,
+                time: later,
+            }),
+        );
+        tasks.push(
+            task(1),
+            Reverse(TaskPriority {
+                order: 1,
+                time: now,
+            }),
+        );
+        assert_eq!(ids(take_due_tasks(&mut tasks, now)), vec![1]);
+        assert_eq!(tasks.len(), 1);
     }
 }
