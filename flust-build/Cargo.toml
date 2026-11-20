@@ -19,3 +19,4 @@ xz2 = "0.1.7"
 tar = "0.4"
 flust-sdk-api = { path = "../flust-sdk-api" }
 flate2 = "1.0.35"
+zip = { version = "2.3.0", default-features = false, features = ["deflate"] }

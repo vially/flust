@@ -31,12 +31,14 @@ pub enum Error {
     CargoRunFailed,
     DownloadNotFound,
     DartNotFound,
+    DownloadSourceUnsupported(String),
     Io(std::io::Error),
     Which(which::Error),
     Curl(curl::Error),
     Reqwest(reqwest::Error),
     Indicatif(indicatif::style::TemplateError),
     Utf8(std::string::FromUtf8Error),
+    Zip(zip::result::ZipError),
 }
 
 impl std::fmt::Display for Error {
@@ -70,12 +72,14 @@ You'll find the available builds on our github releases page [0].
 - [0] https://github.com/flutter-rs/engine-builds/releases"#,
             ),
             Error::DartNotFound => write!(f, "Could't find dart"),
+            Error::DownloadSourceUnsupported(reason) => write!(f, "{reason}"),
             Error::Which(error) => error.fmt(f),
             Error::Io(error) => error.fmt(f),
             Error::Curl(error) => error.fmt(f),
             Error::Reqwest(error) => error.fmt(f),
             Error::Indicatif(error) => error.fmt(f),
             Error::Utf8(error) => error.fmt(f),
+            Error::Zip(error) => error.fmt(f),
         }
     }
 }
@@ -109,6 +113,12 @@ impl From<reqwest::Error> for Error {
 impl From<indicatif::style::TemplateError> for Error {
     fn from(error: TemplateError) -> Self {
         Error::Indicatif(error)
+    }
+}
+
+impl From<zip::result::ZipError> for Error {
+    fn from(error: zip::result::ZipError) -> Self {
+        Error::Zip(error)
     }
 }
 
@@ -276,6 +286,9 @@ impl FlutterReleaseExt for FlutterRelease {
 pub enum EngineDownloadSource {
     FlutterPi,
     MetaFlutter,
+    /// Flutter's own storage, which has the embedder library of every
+    /// engine version, the master channel's too, in debug mode only.
+    FlutterInfra,
 }
 
 impl EngineDownloadSource {
@@ -283,6 +296,7 @@ impl EngineDownloadSource {
         match std::env::var("FLUTTER_ENGINE_DOWNLOAD_SOURCE") {
             Ok(source) => match source.as_str() {
                 "meta-flutter" => Self::MetaFlutter,
+                "flutter-infra" => Self::FlutterInfra,
                 _ => Self::FlutterPi,
             },
             _ => Self::FlutterPi,
@@ -294,10 +308,18 @@ impl EngineDownloadSource {
         build: &EngineLibraryBuild,
         target_library_path: P,
     ) -> Result<(), Error> {
+        if matches!(self, Self::FlutterInfra) && build.build_mode.is_aot() {
+            return Err(Error::DownloadSourceUnsupported(format!(
+                "Flutter's storage only has the engine library in debug mode, not {}",
+                build.build_mode
+            )));
+        }
+
         let tempdir = tempfile::tempdir()?;
         let filename = match self {
             Self::FlutterPi => "engine.tar.xz",
             Self::MetaFlutter => "engine.tar.gz",
+            Self::FlutterInfra => "engine.zip",
         };
         let download_file = tempdir.path().join(filename);
         let url = self.download_url(build);
@@ -342,6 +364,16 @@ impl EngineDownloadSource {
                     build.release.framework_version,
                 )
             }
+            Self::FlutterInfra => {
+                let platform = match build.target {
+                    FlutterTargetArch::X86_64 => "x64",
+                    FlutterTargetArch::Aarch64 => "arm64",
+                };
+                format!(
+                    "https://storage.googleapis.com/flutter_infra_release/flutter/{}/linux-{platform}/linux-{platform}-embedder.zip",
+                    build.release.engine_version,
+                )
+            }
         }
     }
 
@@ -365,6 +397,10 @@ impl EngineDownloadSource {
                 let mut archive = tar::Archive::new(decoder);
                 archive.unpack(target_dir)?;
             }
+            EngineDownloadSource::FlutterInfra => {
+                let mut archive = zip::ZipArchive::new(File::open(archive_path)?)?;
+                archive.extract(target_dir)?;
+            }
         };
 
         let platform = match build.target {
@@ -380,7 +416,9 @@ impl EngineDownloadSource {
         };
 
         let temp_library_path = match self {
-            EngineDownloadSource::FlutterPi => tempdir.path().join(&build.library_name),
+            EngineDownloadSource::FlutterPi | EngineDownloadSource::FlutterInfra => {
+                tempdir.path().join(&build.library_name)
+            }
             EngineDownloadSource::MetaFlutter => tempdir
                 .path()
                 .join("flutter")
