@@ -90,11 +90,16 @@ impl EngineLibraryBuildContext {
     }
 
     fn target_build_dir(&self) -> PathBuf {
-        // `OUT_DIR` points to `./target/debug/build/<pkg>/out` so we need to go
-        // up 3 levels to get to the target directory.
-        PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set"))
+        // `OUT_DIR` is `./target/<profile>/build/<pkg>-<hash>/out`, or
+        // `./target/<profile>/build/<pkg>/<hash>/out` with Cargo's newer
+        // build-dir layout, so the profile directory is the parent of the
+        // closest `build` ancestor rather than a fixed number of levels up.
+        let out_dir =
+            PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set"));
+        out_dir
             .ancestors()
-            .nth(3)
+            .find(|dir| dir.file_name().is_some_and(|name| name == "build"))
+            .and_then(Path::parent)
             .expect("Unable to determine target build directory from OUT_DIR")
             .into()
     }
