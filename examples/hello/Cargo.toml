@@ -1,0 +1,13 @@
+[package]
+name = "flust-example-hello"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Not a member of the repository's workspace: the app loads its Flutter
+# bundle from next to its binary, so it needs a target directory of its own.
+[workspace]
+
+[dependencies]
+flust = { path = "../../flust" }
+tracing-subscriber = "0.3"
