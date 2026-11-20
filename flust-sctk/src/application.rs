@@ -16,9 +16,8 @@ use flust_engine::{
     CreateError, FlutterEngine,
 };
 use flust_engine::{
-    ffi::{FlutterOpenGLTargetType, FlutterViewId, IMPLICIT_VIEW_ID},
+    ffi::{FlutterViewId, IMPLICIT_VIEW_ID},
     view::{FlutterViewFocusDirection, FlutterViewFocusState},
-    ViewError,
 };
 use flust_engine_sys::FlutterEngineGetCurrentTime;
 use flust_plugins::{
@@ -43,7 +42,7 @@ use smithay_client_toolkit::{
         calloop::{
             self,
             timer::{TimeoutAction, Timer},
-            EventLoop, LoopHandle, LoopSignal,
+            EventLoop, LoopHandle,
         },
         calloop_wayland_source::WaylandSource,
     },
@@ -90,6 +89,7 @@ use crate::{
         SctkFlutterWindow, SctkFlutterWindowCreateError, SctkRendering, SctkShell, SctkViewState,
         SctkWindowAttributes,
     },
+    windows::SctkWindows,
 };
 
 pub struct SctkApplication {
@@ -97,35 +97,19 @@ pub struct SctkApplication {
     state: SctkApplicationState,
 }
 
-// Windows are only created at runtime by the test hook, until Flutter's
-// windowing API can create them.
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 pub struct SctkApplicationState {
     loop_handle: LoopHandle<'static, SctkApplicationState>,
     /// Set, by the exit handler of the platform plugin, to leave the event
     /// loop and exit with this code.
     exit_code: Arc<Mutex<Option<i32>>>,
-    /// Window metrics can not be sent before the engine is running: that
-    /// results in a `Viewport metrics were invalid` embedder error. Until it
-    /// is, the windows are not polled, so the first configure waits.
-    is_engine_running: bool,
     registry_state: RegistryState,
-    /// What windows are created with on the Wayland side.
-    shell: SctkShell,
-    rendering: SctkRendering,
-    /// What windows are created with unless asked for something else: the
-    /// application's title, app id and size.
-    window_attributes: SctkWindowAttributes,
-    /// Whether the application has a startup window. Windows can only be
-    /// created while it runs if it does not.
-    has_startup_window: bool,
-    loop_signal: LoopSignal,
-    qh: QueueHandle<SctkApplicationState>,
     shm_state: Shm,
     output_state: OutputState,
     seat_state: SeatState,
     engine: FlutterEngine,
-    windows: HashMap<FlutterViewId, SctkFlutterWindow>,
+    /// Until the engine runs, the windows are not polled, so the first
+    /// configure waits.
+    windows: Rc<SctkWindows>,
     /// Whether each window is activated: the application is resumed while
     /// one of them is.
     active_state: HashMap<FlutterViewId, bool>,
@@ -289,23 +273,24 @@ impl SctkApplication {
             MouseCursorPlugin::new(mouse_cursor_handler.clone()),
         );
 
-        let state = SctkApplicationState {
-            loop_handle: event_loop.handle(),
-            exit_code,
-            is_engine_running: false,
-            windows: startup_window
-                .into_iter()
-                .map(|window| (window.view_id(), window))
-                .collect(),
-            pointers: HashMap::new(),
-            keyboards: HashMap::new(),
-            active_state: HashMap::new(),
+        let windows = Rc::new(SctkWindows::new(
+            engine.downgrade(),
+            qh.clone(),
             shell,
             rendering,
             window_attributes,
-            has_startup_window: config.startup_window,
-            loop_signal: event_loop.get_signal(),
-            qh: qh.clone(),
+            startup_window,
+            accessibility.clone(),
+            event_loop.get_signal(),
+        ));
+
+        let state = SctkApplicationState {
+            loop_handle: event_loop.handle(),
+            exit_code,
+            windows,
+            pointers: HashMap::new(),
+            keyboards: HashMap::new(),
+            active_state: HashMap::new(),
             shm_state,
             registry_state,
             output_state,
@@ -340,7 +325,7 @@ impl SctkApplication {
                 state.accessibility.engine_started(&state.engine);
                 state.schedule_async_startup_tasks();
 
-                state.is_engine_running = true;
+                state.windows.engine_started();
                 state.notify_display_update();
 
                 TimeoutAction::Drop
@@ -405,24 +390,25 @@ impl SctkApplicationState {
         self.plugins.write().with_plugin_mut(f)
     }
 
-    fn find_window_by_surface_id_mut(
-        &mut self,
-        surface_id: ObjectId,
-    ) -> Option<&mut SctkFlutterWindow> {
-        self.windows.iter_mut().find_map(|(_key, val)| {
-            if val.wl_surface_id() == surface_id {
-                Some(val)
-            } else {
-                None
-            }
-        })
+    fn find_window_by_surface_id(&self, surface_id: ObjectId) -> Option<SctkFlutterWindow> {
+        self.windows
+            .find(|window| window.wl_surface_id() == surface_id)
+    }
+
+    fn is_engine_running(&self) -> bool {
+        self.windows.is_engine_running()
+    }
+
+    #[cfg(feature = "testing")]
+    pub(crate) fn windows(&self) -> &SctkWindows {
+        &self.windows
     }
 
     /// Returns the engine's vsync baton and lets the windows act on their
     /// surface state, as far as they are due. Returns when to call this
     /// again, if nothing else happens before then.
     fn poll(&mut self) -> Option<Instant> {
-        if !self.is_engine_running {
+        if !self.is_engine_running() {
             return None;
         }
 
@@ -454,7 +440,8 @@ impl SctkApplicationState {
 
         let now = Instant::now();
         self.windows
-            .values()
+            .all()
+            .iter()
             .filter(|window| window.view_state() == SctkViewState::Added)
             .filter_map(|window| window.poll(now, may_request))
             .min()
@@ -463,22 +450,11 @@ impl SctkApplicationState {
     /// Drops the windows whose view the engine is done with, or never
     /// added.
     fn drop_finished_windows(&mut self) {
-        let finished: Vec<FlutterViewId> = self
-            .windows
-            .iter()
-            .filter(|(_, window)| {
-                matches!(
-                    window.view_state(),
-                    SctkViewState::Removed | SctkViewState::Failed
-                )
-            })
-            .map(|(&view_id, _)| view_id)
-            .collect();
-
-        for view_id in finished {
+        for window in self.windows.take_finished() {
+            let view_id = window.view_id();
             debug!("[view {view_id}] window destroyed");
             // Its EGL surface goes first, then its role and its surface.
-            self.windows.remove(&view_id);
+            drop(window);
             if self.active_state.contains_key(&view_id) {
                 self.maybe_update_lifecycle_state(view_id, false);
                 self.active_state.remove(&view_id);
@@ -490,109 +466,13 @@ impl SctkApplicationState {
         }
     }
 
-    /// Creates a window, with a view of its own, while the engine runs. It
-    /// is shown once the engine has drawn its first frame.
-    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
-    pub(crate) fn create_window(
-        &mut self,
-        attributes: SctkWindowAttributes,
-    ) -> Result<FlutterViewId, SctkCreateWindowError> {
-        if self.has_startup_window {
-            return Err(SctkCreateWindowError::StartupWindow);
-        }
-        // Only the startup window can be drawn into straight.
-        if !matches!(
-            self.rendering.opengl_target_type,
-            FlutterOpenGLTargetType::Framebuffer
-        ) {
-            return Err(SctkCreateWindowError::UnsupportedTargetType(
-                self.rendering.opengl_target_type,
-            ));
-        }
-        if !self.is_engine_running {
-            return Err(SctkCreateWindowError::EngineNotRunning);
-        }
-
-        let attributes = SctkWindowAttributes {
-            title: attributes.title.or(self.window_attributes.title.clone()),
-            app_id: attributes.app_id.or(self.window_attributes.app_id.clone()),
-            inner_size: attributes.inner_size.or(self.window_attributes.inner_size),
-        };
-        let title = attributes.title.clone().unwrap_or_default();
-
-        let view_id = self.engine.allocate_view_id();
-        let window = SctkFlutterWindow::new(
-            view_id,
-            self.engine.downgrade(),
-            &self.qh,
-            &self.shell,
-            &self.rendering,
-            attributes,
-        )?;
-
-        let view_state = window.shared_view_state();
-        let signal = self.loop_signal.clone();
-        self.engine.add_view(
-            window.create_flutter_view(),
-            window.initial_metrics(),
-            move |added| {
-                debug!("[view {view_id}] added: {added}");
-                *view_state.lock() = match added {
-                    true => SctkViewState::Added,
-                    false => SctkViewState::Failed,
-                };
-                // The window's first configure may be waiting to be sent.
-                signal.wakeup();
-            },
-        )?;
-
-        self.accessibility.add_view(view_id, &title);
-        self.windows.insert(view_id, window);
-        debug!("[view {view_id}] window created");
-        Ok(view_id)
-    }
-
-    /// Destroys a window that was created with `create_window`. The window
-    /// stays until the engine is done with its view.
-    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
-    pub(crate) fn destroy_window(
-        &mut self,
-        view_id: FlutterViewId,
-    ) -> Result<(), SctkDestroyWindowError> {
-        if view_id == IMPLICIT_VIEW_ID {
-            return Err(SctkDestroyWindowError::StartupWindow);
-        }
-        let window = self
-            .windows
-            .get(&view_id)
-            .ok_or(SctkDestroyWindowError::UnknownWindow(view_id))?;
-        if window.view_state() != SctkViewState::Added {
-            return Ok(());
-        }
-
-        window.set_view_state(SctkViewState::Removing);
-        self.accessibility.remove_view(view_id);
-
-        let view_state = window.shared_view_state();
-        let signal = self.loop_signal.clone();
-        self.engine.remove_view(view_id, move |removed| {
-            debug!("[view {view_id}] removed: {removed}");
-            *view_state.lock() = match removed {
-                true => SctkViewState::Removed,
-                // The engine did not have it: nothing draws to it.
-                false => SctkViewState::Removed,
-            };
-            signal.wakeup();
-        })?;
-        Ok(())
-    }
-
     /// The engine has one vsync for all windows: the frame interval of the
     /// fastest output that shows one of them, or 60Hz as long as none is
     /// shown. A window on a slower output presents some of the frames.
     fn get_frame_interval_in_nanos(&self) -> u64 {
         self.windows
-            .values()
+            .all()
+            .iter()
             .filter_map(|window| self.get_surface_frame_interval_in_nanos(&window.wl_surface()))
             .min()
             .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS)
@@ -603,7 +483,7 @@ impl SctkApplicationState {
         self.active_state.insert(view_id, is_active);
         let is_active = self.active_state.values().any(|&active| active);
 
-        if was_active != is_active && self.is_engine_running {
+        if was_active != is_active && self.is_engine_running() {
             self.with_plugin(|lifecycle: &LifecyclePlugin| match is_active {
                 true => lifecycle.send_app_is_resumed(),
                 false => lifecycle.send_app_is_inactive(),
@@ -657,7 +537,7 @@ impl SctkApplicationState {
         // Ignore display update events if the engine is not running. This
         // method will be called again once the engine is running to ensure the
         // display state is up-to-date on the engine side.
-        if !self.is_engine_running {
+        if !self.is_engine_running() {
             return;
         }
 
@@ -803,7 +683,7 @@ impl CompositorHandler for SctkApplicationState {
             new_scale_factor
         );
 
-        let Some(window) = self.find_window_by_surface_id_mut(surface.id()) else {
+        let Some(window) = self.find_window_by_surface_id(surface.id()) else {
             debug!(
                 "[{}] ignoring `scale_factor_changed` event for unknown flutter window",
                 surface.id()
@@ -853,7 +733,7 @@ impl CompositorHandler for SctkApplicationState {
     ) {
         trace!("[{}] entered {}", surface.id(), output.id());
 
-        let Some(window) = self.find_window_by_surface_id_mut(surface.id()) else {
+        let Some(window) = self.find_window_by_surface_id(surface.id()) else {
             debug!(
                 "[{}] ignoring `surface_enter` event for unknown flutter window",
                 surface.id()
@@ -873,7 +753,7 @@ impl CompositorHandler for SctkApplicationState {
     ) {
         trace!("[{}] left {}", surface.id(), output.id());
 
-        let Some(window) = self.find_window_by_surface_id_mut(surface.id()) else {
+        let Some(window) = self.find_window_by_surface_id(surface.id()) else {
             debug!(
                 "[{}] ignoring `surface_leave` event for unknown flutter window",
                 surface.id()
@@ -900,7 +780,7 @@ impl PointerHandler for SctkApplicationState {
         events: &[PointerEvent],
     ) {
         for event in events {
-            let Some(window) = self.find_window_by_surface_id_mut(event.surface.id()) else {
+            let Some(window) = self.find_window_by_surface_id(event.surface.id()) else {
                 debug!(
                     "[{}] ignoring pointer event for unknown flutter window",
                     event.surface.id()
@@ -1054,7 +934,7 @@ impl SeatHandler for SctkApplicationState {
         capability: Capability,
     ) {
         if capability == Capability::Pointer {
-            let surface = self.shell.compositor_state.create_surface(qh);
+            let surface = self.windows.shell.compositor_state.create_surface(qh);
             let themed_pointer = self
                 .seat_state
                 .get_pointer_with_theme(
@@ -1159,8 +1039,10 @@ impl OutputHandler for SctkApplicationState {
 
 impl SctkApplicationState {
     pub(crate) fn toplevel_close_requested(&mut self, xdg_toplevel: &XdgToplevel) {
-        let Some(view_id) =
-            self.find_view_id(|window| window.xdg_toplevel_id() == xdg_toplevel.id())
+        let Some(view_id) = self
+            .windows
+            .find(|window| window.xdg_toplevel_id() == xdg_toplevel.id())
+            .map(|window| window.view_id())
         else {
             debug!(
                 "[{}] ignoring close request for unknown window",
@@ -1188,25 +1070,17 @@ impl SctkApplicationState {
     /// Tells the engine that the window of `surface` got or lost the
     /// keyboard focus.
     fn send_view_focus_event(&self, surface: &WlSurface, state: FlutterViewFocusState) {
-        let Some(view_id) = self.find_view_id(|window| window.wl_surface_id() == surface.id())
-        else {
+        let Some(window) = self.find_window_by_surface_id(surface.id()) else {
             return;
         };
-        if !self.is_engine_running || self.windows[&view_id].view_state() != SctkViewState::Added {
+        if !self.is_engine_running() || window.view_state() != SctkViewState::Added {
             return;
         }
+        let view_id = window.view_id();
         let direction = FlutterViewFocusDirection::Undefined;
         if let Err(err) = self.engine.send_view_focus_event(view_id, state, direction) {
             error!("[view {view_id}] failed to send focus {state:?}: {err}");
         }
-    }
-
-    /// The id of the first window that `matches`.
-    fn find_view_id(&self, matches: impl Fn(&SctkFlutterWindow) -> bool) -> Option<FlutterViewId> {
-        self.windows
-            .iter()
-            .find(|(_, window)| matches(window))
-            .map(|(&view_id, _)| view_id)
     }
 
     pub(crate) fn toplevel_configured(
@@ -1215,7 +1089,9 @@ impl SctkApplicationState {
         configure: ToplevelConfigure,
         serial: u32,
     ) {
-        let Some(view_id) = self.find_view_id(|window| window.xdg_surface_id() == xdg_surface.id())
+        let Some(window) = self
+            .windows
+            .find(|window| window.xdg_surface_id() == xdg_surface.id())
         else {
             debug!(
                 "[{}] ignoring `configure` event for unknown flutter window",
@@ -1224,6 +1100,7 @@ impl SctkApplicationState {
             return;
         };
 
+        let view_id = window.view_id();
         trace!(
             "[view {}] configure: {}x{}",
             view_id,
@@ -1235,42 +1112,10 @@ impl SctkApplicationState {
 
         // The window acknowledges the configure when it commits a frame for
         // it: see `SurfaceSync`.
-        if let Some(window) = self.windows.get_mut(&view_id) {
-            self.accessibility
-                .set_view_focused(window.view_id(), configure.activated);
-            window.configure(configure, serial);
-        }
+        self.accessibility
+            .set_view_focused(view_id, configure.activated);
+        window.configure(configure, serial);
     }
-}
-
-#[derive(Error, Debug)]
-pub enum SctkCreateWindowError {
-    #[error("Windows can only be created by an application that starts without a window")]
-    StartupWindow,
-
-    #[error("Windows can not be created with the {0:?} OpenGL target type")]
-    UnsupportedTargetType(FlutterOpenGLTargetType),
-
-    #[error("Windows can only be created while the engine runs")]
-    EngineNotRunning,
-
-    #[error(transparent)]
-    Window(#[from] SctkFlutterWindowCreateError),
-
-    #[error(transparent)]
-    View(#[from] ViewError),
-}
-
-#[derive(Error, Debug)]
-pub enum SctkDestroyWindowError {
-    #[error("The startup window can not be destroyed")]
-    StartupWindow,
-
-    #[error("There is no window with view id {0}")]
-    UnknownWindow(FlutterViewId),
-
-    #[error(transparent)]
-    View(#[from] ViewError),
 }
 
 #[derive(Error, Debug)]

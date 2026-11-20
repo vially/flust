@@ -41,14 +41,18 @@ pub(crate) enum WindowRequest {
 impl WindowRequest {
     pub(crate) fn handle(self, state: &mut SctkApplicationState) {
         match self {
-            WindowRequest::Create(call, attributes) => match state.create_window(attributes) {
-                Ok(view_id) => call.success(view_id),
-                Err(err) => call.error("create-failed", err.to_string(), Value::Null),
-            },
-            WindowRequest::Destroy(call, view_id) => match state.destroy_window(view_id) {
-                Ok(()) => call.success_empty(),
-                Err(err) => call.error("destroy-failed", err.to_string(), Value::Null),
-            },
+            WindowRequest::Create(call, attributes) => {
+                match state.windows().create_window(attributes) {
+                    Ok(window) => call.success(window.view_id()),
+                    Err(err) => call.error("create-failed", err.to_string(), Value::Null),
+                }
+            }
+            WindowRequest::Destroy(call, view_id) => {
+                match state.windows().destroy_window(view_id) {
+                    Ok(()) => call.success_empty(),
+                    Err(err) => call.error("destroy-failed", err.to_string(), Value::Null),
+                }
+            }
         }
     }
 }

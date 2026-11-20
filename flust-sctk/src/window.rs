@@ -324,6 +324,8 @@ pub(crate) enum SctkViewState {
     Removed,
 }
 
+/// A window of the application. Clones are the same window.
+#[derive(Clone)]
 pub struct SctkFlutterWindow {
     inner: Arc<SctkFlutterWindowInner>,
     /// Set by the platform thread, and by the engine's callbacks for adding
@@ -510,7 +512,7 @@ impl SctkFlutterWindow {
         }
     }
 
-    pub(crate) fn scale_factor_changed(&mut self, new_scale_factor: i32) {
+    pub(crate) fn scale_factor_changed(&self, new_scale_factor: i32) {
         // Keep the size the same in surface coordinates.
         let scale_factor = self.inner.load_current_scale_factor();
         if let Some(size) = self.inner.load_current_size() {
@@ -527,7 +529,7 @@ impl SctkFlutterWindow {
         }
     }
 
-    pub(crate) fn configure(&mut self, configure: ToplevelConfigure, serial: u32) {
+    pub(crate) fn configure(&self, configure: ToplevelConfigure, serial: u32) {
         // A configure without a size leaves it to the window.
         let new_logical_size = configure
             .size
@@ -546,7 +548,7 @@ impl SctkFlutterWindow {
         self.inner.sync.lock().unwrap().configure(serial, geometry);
     }
 
-    pub(crate) fn surface_outputs_changed(&mut self) {
+    pub(crate) fn surface_outputs_changed(&self) {
         // Only the display changed: tell the engine, for the size it is
         // drawing at.
         let geometry = self.inner.sync.lock().unwrap().engine_geometry();
@@ -555,7 +557,7 @@ impl SctkFlutterWindow {
         }
     }
 
-    pub(crate) fn pointer_event(&mut self, pointer: &WlPointer, event: &PointerEvent) {
+    pub(crate) fn pointer_event(&self, pointer: &WlPointer, event: &PointerEvent) {
         let sctk_pointer_event = {
             let mut pointers = self.inner.pointers.write().unwrap();
             let pointer = pointers
