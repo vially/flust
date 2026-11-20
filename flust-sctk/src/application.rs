@@ -9,6 +9,7 @@ use std::{
 
 use calloop::futures::{Executor, Scheduler};
 use flust_accessibility::Accessibility;
+use flust_engine::ffi::{FlutterViewId, IMPLICIT_VIEW_ID};
 use flust_engine::{
     builder::FlutterEngineBuilder,
     ffi::{FlutterEngineDisplay, FlutterKeyEventDeviceType, FlutterKeyEventType},
@@ -81,7 +82,10 @@ use crate::{
     output::SctkOutput,
     settings::read_and_monitor_desktop_settings,
     toplevel::ToplevelConfigure,
-    window::{SctkFlutterWindow, SctkFlutterWindowCreateError},
+    window::{
+        SctkFlutterWindow, SctkFlutterWindowCreateError, SctkRendering, SctkShell,
+        SctkWindowAttributes,
+    },
 };
 
 pub struct SctkApplication {
@@ -99,13 +103,16 @@ pub struct SctkApplicationState {
     /// is, the windows are not polled, so the first configure waits.
     is_engine_running: bool,
     registry_state: RegistryState,
-    compositor_state: CompositorState,
+    /// What windows are created with on the Wayland side.
+    shell: SctkShell,
     shm_state: Shm,
     output_state: OutputState,
     seat_state: SeatState,
     engine: FlutterEngine,
-    windows: HashMap<ObjectId, SctkFlutterWindow>,
-    active_state: HashMap<ObjectId, bool>,
+    windows: HashMap<FlutterViewId, SctkFlutterWindow>,
+    /// Whether each window is activated: the application is resumed while
+    /// one of them is.
+    active_state: HashMap<FlutterViewId, bool>,
     pointers: HashMap<ObjectId, WlPointer>,
     keyboards: HashMap<ObjectId, WlKeyboard>,
     plugins: Rc<RwLock<PluginRegistrar>>,
@@ -178,16 +185,30 @@ impl SctkApplication {
             .with_merged_platform_ui_thread(true)
             .build()?;
 
+        let shell = SctkShell {
+            compositor_state,
+            xdg_shell_state,
+            frame_clock: frame_clock.clone(),
+        };
+        let rendering = SctkRendering {
+            render_context,
+            framebuffer,
+            opengl_target_type: config.opengl_target_type,
+            renderer,
+        };
+        let window_attributes = SctkWindowAttributes {
+            title: attributes.title.clone(),
+            app_id: attributes.app_id.clone(),
+            inner_size: attributes.inner_size,
+        };
+
         let implicit_window = SctkFlutterWindow::new(
+            IMPLICIT_VIEW_ID,
             engine.downgrade(),
             &qh,
-            &compositor_state,
-            &xdg_shell_state,
-            frame_clock.clone(),
-            render_context,
-            &framebuffer,
-            attributes,
-            config,
+            &shell,
+            &rendering,
+            window_attributes,
         )?;
 
         engine.add_implicit_view(implicit_window.create_flutter_view());
@@ -232,11 +253,11 @@ impl SctkApplication {
             loop_handle: event_loop.handle(),
             exit_code,
             is_engine_running: false,
-            windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
+            windows: HashMap::from([(implicit_window.view_id(), implicit_window)]),
             pointers: HashMap::new(),
             keyboards: HashMap::new(),
             active_state: HashMap::new(),
-            compositor_state,
+            shell,
             shm_state,
             registry_state,
             output_state,
@@ -388,20 +409,21 @@ impl SctkApplicationState {
             .min()
     }
 
-    /// The frame interval of the implicit window: of the fastest output it
-    /// is on, or 60Hz as long as it is on none.
+    /// The engine has one vsync for all windows: the frame interval of the
+    /// fastest output that shows one of them, or 60Hz as long as none is
+    /// shown. A window on a slower output presents some of the frames.
     fn get_frame_interval_in_nanos(&self) -> u64 {
         self.windows
             .values()
-            .last()
-            .and_then(|window| self.get_surface_frame_interval_in_nanos(&window.wl_surface()))
+            .filter_map(|window| self.get_surface_frame_interval_in_nanos(&window.wl_surface()))
+            .min()
             .unwrap_or(FRAME_INTERVAL_60_HZ_IN_NANOS)
     }
 
-    fn maybe_update_lifecycle_state(&mut self, xdg_toplevel_id: ObjectId, is_active: bool) {
-        let was_active = self.active_state.iter().any(|(_, &active)| active);
-
-        self.active_state.insert(xdg_toplevel_id, is_active);
+    fn maybe_update_lifecycle_state(&mut self, view_id: FlutterViewId, is_active: bool) {
+        let was_active = self.active_state.values().any(|&active| active);
+        self.active_state.insert(view_id, is_active);
+        let is_active = self.active_state.values().any(|&active| active);
 
         if was_active != is_active && self.is_engine_running {
             self.with_plugin(|lifecycle: &LifecyclePlugin| match is_active {
@@ -846,7 +868,7 @@ impl SeatHandler for SctkApplicationState {
         capability: Capability,
     ) {
         if capability == Capability::Pointer {
-            let surface = self.compositor_state.create_surface(qh);
+            let surface = self.shell.compositor_state.create_surface(qh);
             let themed_pointer = self
                 .seat_state
                 .get_pointer_with_theme(
@@ -961,11 +983,11 @@ impl SctkApplicationState {
         configure: ToplevelConfigure,
         serial: u32,
     ) {
-        let Some(xdg_toplevel_id) = self
+        let Some(view_id) = self
             .windows
             .iter()
             .find(|(_, window)| window.xdg_surface_id() == xdg_surface.id())
-            .map(|(id, _)| id.clone())
+            .map(|(&view_id, _)| view_id)
         else {
             warn!(
                 "[{}] ignoring `configure` event for unknown flutter window",
@@ -975,17 +997,17 @@ impl SctkApplicationState {
         };
 
         trace!(
-            "[{}] configure: {}x{}",
-            xdg_toplevel_id,
+            "[view {}] configure: {}x{}",
+            view_id,
             configure.size.map_or(0, |size| size.0.get()),
             configure.size.map_or(0, |size| size.1.get()),
         );
 
-        self.maybe_update_lifecycle_state(xdg_toplevel_id.clone(), configure.activated);
+        self.maybe_update_lifecycle_state(view_id, configure.activated);
 
         // The window acknowledges the configure when it commits a frame for
         // it: see `SurfaceSync`.
-        if let Some(window) = self.windows.get_mut(&xdg_toplevel_id) {
+        if let Some(window) = self.windows.get_mut(&view_id) {
             self.accessibility
                 .set_view_focused(window.view_id(), configure.activated);
             window.configure(configure, serial);

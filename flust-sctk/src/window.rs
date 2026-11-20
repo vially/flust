@@ -8,14 +8,13 @@ use std::{
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flust_engine::{
     compositor::CompositorPresentError,
-    ffi::{FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId, IMPLICIT_VIEW_ID},
+    ffi::{FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId},
     renderer::Renderer,
     view::FlutterView,
     FlutterEngineWeakRef,
 };
 use flust_engine_sys::{FlutterEngineDisplayId, FlutterEngineGetCurrentTime};
 use flust_glutin::render::{RenderContext, WindowSurface};
-use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
@@ -281,32 +280,57 @@ impl SctkFlutterWindowInner {
     }
 }
 
+/// What every window is drawn with, the same for all of them.
+pub(crate) struct SctkRendering {
+    pub(crate) render_context: Arc<Mutex<RenderContext>>,
+    pub(crate) framebuffer: SctkOpenGLCompositorHandlerFramebuffer,
+    pub(crate) opengl_target_type: FlutterOpenGLTargetType,
+    pub(crate) renderer: Renderer,
+}
+
+/// What a window is created with on the Wayland side.
+pub(crate) struct SctkShell {
+    pub(crate) compositor_state: CompositorState,
+    pub(crate) xdg_shell_state: XdgShell,
+    pub(crate) frame_clock: FrameClock,
+}
+
+/// What one window is created with.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SctkWindowAttributes {
+    pub(crate) title: Option<String>,
+    pub(crate) app_id: Option<String>,
+    pub(crate) inner_size: Option<Size>,
+}
+
 pub struct SctkFlutterWindow {
     inner: Arc<SctkFlutterWindowInner>,
 }
 
 impl SctkFlutterWindow {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        view_id: FlutterViewId,
         engine: FlutterEngineWeakRef,
         qh: &QueueHandle<SctkApplicationState>,
-        compositor_state: &CompositorState,
-        xdg_shell_state: &XdgShell,
-        frame_clock: FrameClock,
-        render_context: Arc<Mutex<RenderContext>>,
-        framebuffer: &SctkOpenGLCompositorHandlerFramebuffer,
-        attributes: ApplicationAttributes,
-        config: BackendConfigSctk,
+        shell: &SctkShell,
+        rendering: &SctkRendering,
+        attributes: SctkWindowAttributes,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
-        let renderer = attributes.renderer();
+        let SctkShell {
+            compositor_state,
+            xdg_shell_state,
+            frame_clock,
+        } = shell;
+        let renderer = rendering.renderer;
+        let opengl_target_type = rendering.opengl_target_type;
         // The engine has no Impeller path for these backing stores
         // (https://github.com/flutter/flutter/issues/151670): it would draw
         // nothing at all.
         if renderer == Renderer::Impeller
-            && matches!(config.opengl_target_type, FlutterOpenGLTargetType::Surface)
+            && matches!(opengl_target_type, FlutterOpenGLTargetType::Surface)
         {
             return Err(SctkFlutterWindowCreateError::UnsupportedTargetType(
-                config.opengl_target_type,
+                opengl_target_type,
                 renderer,
             ));
         }
@@ -331,6 +355,7 @@ impl SctkFlutterWindow {
             .inner_size
             .unwrap_or(Size::Logical(LogicalSize::<f64>::new(1280.0, 720.0)));
 
+        let render_context = rendering.render_context.clone();
         let surface = new_wayland_window_surface(
             &render_context.lock().unwrap(),
             window.wl_surface(),
@@ -338,18 +363,18 @@ impl SctkFlutterWindow {
         )?;
 
         let inner = Arc::new_cyclic(|inner| SctkFlutterWindowInner {
-            id: IMPLICIT_VIEW_ID,
+            id: view_id,
             surface: Mutex::new(surface),
             window,
             engine,
             qh: qh.clone(),
             compositor_handler: SctkCompositorHandler::new(
                 inner.clone(),
-                framebuffer,
-                config.opengl_target_type,
+                &rendering.framebuffer,
+                opengl_target_type,
             ),
             render_context,
-            frame_clock,
+            frame_clock: frame_clock.clone(),
             sync: Default::default(),
             surface_frame: Default::default(),
             pointers: Default::default(),
