@@ -25,19 +25,35 @@ impl From<BackendConfigSctk> for Backend {
 #[derive(Debug, Clone)]
 pub struct BackendConfigSctk {
     pub opengl_target_type: FlutterOpenGLTargetType,
+    /// Whether the application starts with a window, the implicit view,
+    /// which is what an app that calls `runApp` draws into. On by default.
+    ///
+    /// Without it, the app creates its windows itself, from Dart, and only
+    /// then can it have more than one: Flutter does not combine a window
+    /// the embedder creates with windows created from Dart.
+    pub startup_window: bool,
+}
+
+impl BackendConfigSctk {
+    /// See [`Self::startup_window`].
+    pub fn with_startup_window(mut self, startup_window: bool) -> Self {
+        self.startup_window = startup_window;
+        self
+    }
 }
 
 impl Default for BackendConfigSctk {
     fn default() -> Self {
-        Self {
-            opengl_target_type: FlutterOpenGLTargetType::Framebuffer,
-        }
+        Self::from(FlutterOpenGLTargetType::Framebuffer)
     }
 }
 
 impl From<FlutterOpenGLTargetType> for BackendConfigSctk {
     fn from(opengl_target_type: FlutterOpenGLTargetType) -> Self {
-        Self { opengl_target_type }
+        Self {
+            opengl_target_type,
+            startup_window: true,
+        }
     }
 }
 

@@ -825,10 +825,12 @@ impl ExitHandler for SctkExitHandler {
     }
 }
 
-// TODO(multi-view): Add support for multi-view once the `flutter/platform`
-// plugin supports it.
 pub struct SctkPlatformHandler {
-    implicit_xdg_toplevel: XdgToplevel,
+    /// The startup window, if the application has one. The
+    /// `flutter/platform` messages that are about a window name none: they
+    /// are about this one. Windows created from Dart get their title from
+    /// the windowing API.
+    startup_xdg_toplevel: Option<XdgToplevel>,
     clipboard: Clipboard,
 }
 
@@ -837,9 +839,9 @@ impl SctkPlatformHandler {
     ///
     /// `display` must be a valid `*mut wl_display` pointer, and it must remain
     /// valid for as long as `Clipboard` object is alive.
-    pub unsafe fn new(display: WlDisplay, xdg_toplevel: XdgToplevel) -> Self {
+    pub unsafe fn new(display: WlDisplay, startup_xdg_toplevel: Option<XdgToplevel>) -> Self {
         Self {
-            implicit_xdg_toplevel: xdg_toplevel,
+            startup_xdg_toplevel,
             clipboard: Clipboard::new(display.id().as_ptr() as *mut _),
         }
     }
@@ -847,7 +849,10 @@ impl SctkPlatformHandler {
 
 impl PlatformHandler for SctkPlatformHandler {
     fn set_application_switcher_description(&mut self, description: AppSwitcherDescription) {
-        self.implicit_xdg_toplevel.set_title(description.label);
+        match &self.startup_xdg_toplevel {
+            Some(xdg_toplevel) => xdg_toplevel.set_title(description.label),
+            None => trace!("no startup window to set the title of"),
+        }
     }
 
     fn set_clipboard_data(&mut self, text: String) {

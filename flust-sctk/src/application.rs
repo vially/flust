@@ -54,7 +54,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 use thiserror::Error;
-use tracing::{error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     delegate_dispatch,
@@ -202,21 +202,32 @@ impl SctkApplication {
             inner_size: attributes.inner_size,
         };
 
-        let implicit_window = SctkFlutterWindow::new(
-            IMPLICIT_VIEW_ID,
-            engine.downgrade(),
-            &qh,
-            &shell,
-            &rendering,
-            window_attributes,
-        )?;
-
-        engine.add_implicit_view(implicit_window.create_flutter_view());
-        accessibility.add_view(implicit_window.view_id(), &window_title);
+        // Without a startup window, the implicit view exists in the engine
+        // but has nothing to show its frames in.
+        let startup_window = match config.startup_window {
+            true => {
+                let window = SctkFlutterWindow::new(
+                    IMPLICIT_VIEW_ID,
+                    engine.downgrade(),
+                    &qh,
+                    &shell,
+                    &rendering,
+                    window_attributes,
+                )?;
+                engine.add_implicit_view(window.create_flutter_view());
+                accessibility.add_view(window.view_id(), &window_title);
+                Some(window)
+            }
+            false => None,
+        };
 
         let noop_isolate_cb = || trace!("[isolate-plugin] isolate has been created");
-        let platform_handler =
-            unsafe { SctkPlatformHandler::new(conn.display(), implicit_window.xdg_toplevel()) };
+        let platform_handler = unsafe {
+            SctkPlatformHandler::new(
+                conn.display(),
+                startup_window.as_ref().map(|window| window.xdg_toplevel()),
+            )
+        };
         let platform_handler = Arc::new(Mutex::new(platform_handler));
         let mouse_cursor_handler = Arc::new(Mutex::new(SctkMouseCursorHandler::new(conn.clone())));
         let text_input_handler = Arc::new(Mutex::new(SctkTextInputHandler::new()));
@@ -253,7 +264,10 @@ impl SctkApplication {
             loop_handle: event_loop.handle(),
             exit_code,
             is_engine_running: false,
-            windows: HashMap::from([(implicit_window.view_id(), implicit_window)]),
+            windows: startup_window
+                .into_iter()
+                .map(|window| (window.view_id(), window))
+                .collect(),
             pointers: HashMap::new(),
             keyboards: HashMap::new(),
             active_state: HashMap::new(),
@@ -972,9 +986,30 @@ impl OutputHandler for SctkApplicationState {
 }
 
 impl SctkApplicationState {
-    /// Dart decides whether the application exits: it can cancel.
-    pub(crate) fn toplevel_close_requested(&mut self, _xdg_toplevel: &XdgToplevel) {
-        self.with_plugin(|platform: &PlatformPlugin| platform.request_app_exit());
+    pub(crate) fn toplevel_close_requested(&mut self, xdg_toplevel: &XdgToplevel) {
+        let Some(view_id) =
+            self.find_view_id(|window| window.xdg_toplevel_id() == xdg_toplevel.id())
+        else {
+            debug!(
+                "[{}] ignoring close request for unknown window",
+                xdg_toplevel.id()
+            );
+            return;
+        };
+
+        // Closing the startup window is closing the application. Dart
+        // decides whether that happens: it can cancel.
+        if view_id == IMPLICIT_VIEW_ID {
+            self.with_plugin(|platform: &PlatformPlugin| platform.request_app_exit());
+        }
+    }
+
+    /// The id of the first window that `matches`.
+    fn find_view_id(&self, matches: impl Fn(&SctkFlutterWindow) -> bool) -> Option<FlutterViewId> {
+        self.windows
+            .iter()
+            .find(|(_, window)| matches(window))
+            .map(|(&view_id, _)| view_id)
     }
 
     pub(crate) fn toplevel_configured(
@@ -983,11 +1018,7 @@ impl SctkApplicationState {
         configure: ToplevelConfigure,
         serial: u32,
     ) {
-        let Some(view_id) = self
-            .windows
-            .iter()
-            .find(|(_, window)| window.xdg_surface_id() == xdg_surface.id())
-            .map(|(&view_id, _)| view_id)
+        let Some(view_id) = self.find_view_id(|window| window.xdg_surface_id() == xdg_surface.id())
         else {
             warn!(
                 "[{}] ignoring `configure` event for unknown flutter window",
