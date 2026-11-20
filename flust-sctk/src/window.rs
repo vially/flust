@@ -8,7 +8,10 @@ use std::{
 use dpi::{LogicalSize, PhysicalSize, Size};
 use flust_engine::{
     compositor::CompositorPresentError,
-    ffi::{FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId},
+    ffi::{
+        FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId, FlutterWindowMetrics,
+        IMPLICIT_VIEW_ID,
+    },
     renderer::Renderer,
     view::FlutterView,
     FlutterEngineWeakRef,
@@ -303,8 +306,29 @@ pub(crate) struct SctkWindowAttributes {
     pub(crate) inner_size: Option<Size>,
 }
 
+/// Where a window's view is in its life in the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "testing"), allow(dead_code))]
+pub(crate) enum SctkViewState {
+    /// The engine was asked to add the view, and has not said whether it
+    /// did. The view can not be sent anything yet.
+    Adding,
+    /// The engine has the view.
+    Added,
+    /// The engine did not add the view. The window is of no use.
+    Failed,
+    /// The engine was asked to remove the view, and may still draw to the
+    /// window until it is done.
+    Removing,
+    /// The engine is done with the view. The window can go.
+    Removed,
+}
+
 pub struct SctkFlutterWindow {
     inner: Arc<SctkFlutterWindowInner>,
+    /// Set by the platform thread, and by the engine's callbacks for adding
+    /// and removing the view, which run on the platform thread too.
+    view_state: Arc<parking_lot::Mutex<SctkViewState>>,
 }
 
 impl SctkFlutterWindow {
@@ -383,7 +407,46 @@ impl SctkFlutterWindow {
             default_size,
         });
 
-        Ok(Self { inner })
+        // The startup window is the implicit view, which the engine always
+        // has.
+        let view_state = match view_id {
+            IMPLICIT_VIEW_ID => SctkViewState::Added,
+            _ => SctkViewState::Adding,
+        };
+
+        Ok(Self {
+            inner,
+            view_state: Arc::new(parking_lot::Mutex::new(view_state)),
+        })
+    }
+
+    pub(crate) fn view_state(&self) -> SctkViewState {
+        *self.view_state.lock()
+    }
+
+    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
+    pub(crate) fn set_view_state(&self, view_state: SctkViewState) {
+        *self.view_state.lock() = view_state;
+    }
+
+    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
+    /// For the engine's callbacks, which report back on the view.
+    pub(crate) fn shared_view_state(&self) -> Arc<parking_lot::Mutex<SctkViewState>> {
+        self.view_state.clone()
+    }
+
+    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
+    /// What the engine is told about the window's view before the
+    /// compositor has said how large it is: the size it asks for.
+    pub(crate) fn initial_metrics(&self) -> FlutterWindowMetrics {
+        let size = self.inner.default_size.to_physical::<u32>(1.0);
+        FlutterWindowMetrics {
+            width: size.width as usize,
+            height: size.height as usize,
+            pixel_ratio: 1.0,
+            display_id: self.inner.get_display_id().unwrap_or_default(),
+            constraints: None,
+        }
     }
 
     pub fn view_id(&self) -> FlutterViewId {

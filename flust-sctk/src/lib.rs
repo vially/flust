@@ -8,5 +8,7 @@ mod output;
 mod pointer;
 mod settings;
 mod sync;
+#[cfg(feature = "testing")]
+mod testing;
 mod toplevel;
 pub mod window;

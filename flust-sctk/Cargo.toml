@@ -3,6 +3,11 @@ name = "flust-sctk"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Lets the end-to-end tests open and close windows from Dart: see
+# `src/testing.rs`.
+testing = []
+
 [dependencies]
 ashpd = { version = "0.12.3", default-features = false, features = ["async-std"] }
 calloop = { version = "0.13.0", features = ["executor"] }

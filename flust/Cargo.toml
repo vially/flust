@@ -9,6 +9,8 @@ license = "MIT"
 
 [features]
 default = ["flust-sctk"]
+# For Flust's own end-to-end tests: see `flust-sctk/src/testing.rs`.
+testing = ["flust-sctk/testing"]
 
 [dependencies]
 dpi = "0.1.0"
