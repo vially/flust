@@ -23,6 +23,9 @@
 //! could be drawn are skipped.
 //!
 //! Background: <https://forge.lab.vially.dev/vially/flust/issues/1>
+//!
+//! A window that is sized to its content turns this around: the engine
+//! decides the size, and the surface follows. See `ContentSync`.
 
 use std::{
     collections::VecDeque,
@@ -59,6 +62,9 @@ pub(crate) enum PlatformAction {
     /// Acknowledge this configure and commit the surface as it is: what it
     /// shows is already what the configure asked for.
     Acknowledge(u32),
+    /// Give the window this geometry, and wait for the compositor to
+    /// configure it. Only for a window sized to its content.
+    Resize(SurfaceGeometry),
 }
 
 /// What the raster thread has to do with a frame, from `SurfaceSync::frame`.
@@ -76,6 +82,10 @@ pub(crate) enum FrameAction {
     /// The frame is for a geometry the surface does not have and was not
     /// asked to get. Do not show it.
     Drop,
+    /// The frame is not shown: the surface has to get its size first. Wake
+    /// the platform thread for that. Only for a window sized to its
+    /// content.
+    Resize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -251,6 +261,224 @@ impl SurfaceSync {
         }
 
         FrameAction::Drop
+    }
+}
+
+/// The surface state of a window that is sized to its content: the engine
+/// draws at the size it lays the content out at, within the constraints it
+/// is given, and the window takes the size of its frames.
+///
+/// A frame of a size the window does not have is not shown: the window is
+/// given that size first (`PlatformAction::Resize`), and once the
+/// compositor has configured it for it, the engine is asked for a frame
+/// again (`PlatformAction::Request`, which makes it draw one). That frame
+/// is committed with the acknowledgement of the configure.
+///
+/// The size in a configure is not imposed on the content: the window keeps
+/// the size of its content. A configure that only moves the window is
+/// acknowledged without a new frame.
+#[derive(Debug)]
+pub(crate) struct ContentSync {
+    /// The buffer scale frames are drawn at.
+    scale: u32,
+    /// The size the window was last given, in buffer pixels.
+    placed: PhysicalSize<u32>,
+    /// The size of the engine's last frame.
+    content: Option<PhysicalSize<u32>>,
+    /// The last configure that has not been acknowledged. Acknowledging it
+    /// answers the ones before it.
+    unacknowledged: Option<u32>,
+    /// Whether the engine has to be told again what to draw: the scale or
+    /// the constraints changed.
+    needs_frame: bool,
+    /// When the frame asked for may be asked for again, while it has not
+    /// come.
+    deadline: Option<Instant>,
+    /// The geometry of the buffer that was committed last.
+    committed: Option<SurfaceGeometry>,
+}
+
+impl ContentSync {
+    /// A window that has been given `size` (in buffer pixels) to start
+    /// with: the engine's first frame decides the size it gets next.
+    pub(crate) fn new(size: PhysicalSize<u32>, scale: u32) -> Self {
+        Self {
+            scale,
+            placed: size,
+            content: None,
+            unacknowledged: None,
+            needs_frame: true,
+            deadline: None,
+            committed: None,
+        }
+    }
+
+    fn geometry(&self, size: PhysicalSize<u32>) -> SurfaceGeometry {
+        SurfaceGeometry {
+            size,
+            scale: self.scale,
+        }
+    }
+
+    /// The compositor configured the window. Called on the platform thread.
+    pub(crate) fn configure(&mut self, serial: u32) {
+        self.unacknowledged = Some(serial);
+    }
+
+    /// The buffer scale changed. Called on the platform thread.
+    pub(crate) fn set_scale(&mut self, scale: u32) {
+        if self.scale != scale {
+            self.scale = scale;
+            self.needs_frame = true;
+        }
+    }
+
+    /// The engine has to be told what to draw again, as its constraints
+    /// changed. Called on the platform thread.
+    pub(crate) fn request_frame(&mut self) {
+        self.needs_frame = true;
+    }
+
+    /// The scale the engine draws at, with the size it drew at last.
+    pub(crate) fn engine_geometry(&self) -> SurfaceGeometry {
+        self.geometry(self.content.unwrap_or(self.placed))
+    }
+
+    /// See `SurfaceSync::poll`.
+    pub(crate) fn poll(
+        &mut self,
+        now: Instant,
+        may_request: bool,
+    ) -> (PlatformAction, Option<Instant>) {
+        // The engine drew at a size the window does not have.
+        if let Some(content) = self.content.filter(|&content| content != self.placed) {
+            self.placed = content;
+            // The frame is asked for again once the compositor configured
+            // the window for its size.
+            self.deadline = None;
+            return (PlatformAction::Resize(self.geometry(content)), None);
+        }
+
+        // Only moved, or configured again for what it shows.
+        if let Some(serial) = self.unacknowledged {
+            if self.committed == Some(self.geometry(self.placed)) {
+                self.unacknowledged = None;
+                return (PlatformAction::Acknowledge(serial), None);
+            }
+        }
+
+        // A frame is wanted: for a configure, or for a new scale.
+        let wants_frame =
+            self.needs_frame || (self.unacknowledged.is_some() && self.deadline.is_none());
+        let late = self.deadline.is_some_and(|deadline| now >= deadline);
+        if !(wants_frame || late) {
+            return (PlatformAction::None, self.deadline);
+        }
+        if !may_request {
+            return (PlatformAction::None, None);
+        }
+
+        self.needs_frame = false;
+        let deadline = now + REQUEST_TIMEOUT;
+        // Asked again, if it does not come, for as long as it is wanted.
+        self.deadline = self.unacknowledged.is_some().then_some(deadline);
+        (
+            PlatformAction::Request(self.engine_geometry()),
+            self.deadline,
+        )
+    }
+
+    /// Whether a frame of this size would be shown: see `SurfaceSync`.
+    pub(crate) fn admit(&mut self, size: PhysicalSize<u32>) -> bool {
+        size == self.placed
+    }
+
+    /// See `SurfaceSync::frame`.
+    pub(crate) fn frame(&mut self, size: Option<PhysicalSize<u32>>) -> FrameAction {
+        let Some(size) = size else {
+            // A frame without content has no size: it fits what is shown.
+            return match self.committed {
+                Some(_) => FrameAction::Present,
+                None => FrameAction::Drop,
+            };
+        };
+
+        let resized = self.content != Some(size);
+        self.content = Some(size);
+        if size != self.placed {
+            // `poll` gives the window the size. The frame is asked for
+            // again once the compositor configured the window for it.
+            return match resized {
+                true => FrameAction::Resize,
+                false => FrameAction::Drop,
+            };
+        }
+
+        let geometry = self.geometry(size);
+        if let Some(serial) = self.unacknowledged.take() {
+            self.deadline = None;
+            self.committed = Some(geometry);
+            return FrameAction::Commit {
+                geometry,
+                acknowledge: Some(serial),
+            };
+        }
+        if self.committed == Some(geometry) {
+            return FrameAction::Present;
+        }
+
+        // The window has the size, but the compositor has not configured
+        // it for it yet: the frame is asked for again once it has.
+        FrameAction::Drop
+    }
+}
+
+/// The surface state of a window: sized by the compositor, or sized to its
+/// content. Closed once the window's role is gone: nothing may be
+/// committed to its surface then.
+#[derive(Debug)]
+pub(crate) enum WindowSync {
+    Sized(SurfaceSync),
+    Content(ContentSync),
+    Closed,
+}
+
+impl WindowSync {
+    pub(crate) fn poll(
+        &mut self,
+        now: Instant,
+        may_request: bool,
+    ) -> (PlatformAction, Option<Instant>) {
+        match self {
+            Self::Sized(sync) => sync.poll(now, may_request),
+            Self::Content(sync) => sync.poll(now, may_request),
+            Self::Closed => (PlatformAction::None, None),
+        }
+    }
+
+    pub(crate) fn admit(&mut self, size: PhysicalSize<u32>, now: Instant) -> bool {
+        match self {
+            Self::Sized(sync) => sync.admit(size, now),
+            Self::Content(sync) => sync.admit(size),
+            Self::Closed => false,
+        }
+    }
+
+    pub(crate) fn frame(&mut self, size: Option<PhysicalSize<u32>>) -> FrameAction {
+        match self {
+            Self::Sized(sync) => sync.frame(size),
+            Self::Content(sync) => sync.frame(size),
+            Self::Closed => FrameAction::Drop,
+        }
+    }
+
+    /// The geometry the engine draws for at the moment.
+    pub(crate) fn engine_geometry(&self) -> Option<SurfaceGeometry> {
+        match self {
+            Self::Sized(sync) => sync.engine_geometry(),
+            Self::Content(sync) => Some(sync.engine_geometry()),
+            Self::Closed => None,
+        }
     }
 }
 
@@ -636,5 +864,161 @@ mod tests {
                 acknowledge: Some(2)
             }
         );
+    }
+
+    mod content {
+        use super::*;
+
+        fn content_sync() -> ContentSync {
+            ContentSync::new(PhysicalSize::new(1, 1), 1)
+        }
+
+        /// A window that shows its content, of size A, for configure 2.
+        fn shown(now: Instant) -> ContentSync {
+            let mut sync = content_sync();
+            sync.configure(1);
+            assert_eq!(
+                sync.poll(now, true).0,
+                PlatformAction::Request(geometry(1, 1))
+            );
+            assert_eq!(sync.frame(s(A)), FrameAction::Resize);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Resize(g(A)));
+            sync.configure(2);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(A)));
+            assert_eq!(
+                sync.frame(s(A)),
+                FrameAction::Commit {
+                    geometry: g(A),
+                    acknowledge: Some(2)
+                }
+            );
+            assert_eq!(sync.poll(now, true), (PlatformAction::None, None));
+            sync
+        }
+
+        #[test]
+        fn takes_the_size_of_its_first_frame() {
+            shown(Instant::now());
+        }
+
+        #[test]
+        fn nothing_is_shown_before_a_configure() {
+            let now = Instant::now();
+            let mut sync = content_sync();
+            assert_eq!(
+                sync.poll(now, true).0,
+                PlatformAction::Request(geometry(1, 1))
+            );
+            assert_eq!(sync.frame(s(A)), FrameAction::Resize);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Resize(g(A)));
+            // Placed, but not configured yet.
+            assert_eq!(sync.frame(s(A)), FrameAction::Drop);
+            assert_eq!(sync.frame(None), FrameAction::Drop);
+            // Not asked for again before the window is configured.
+            assert_eq!(sync.poll(now, true), (PlatformAction::None, None));
+            sync.configure(1);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(A)));
+            assert_eq!(
+                sync.frame(s(A)),
+                FrameAction::Commit {
+                    geometry: g(A),
+                    acknowledge: Some(1)
+                }
+            );
+        }
+
+        #[test]
+        fn later_frames_of_its_size_are_presented() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+            assert_eq!(sync.frame(s(A)), FrameAction::Present);
+            assert_eq!(sync.frame(None), FrameAction::Present);
+            assert_eq!(sync.poll(now, true), (PlatformAction::None, None));
+        }
+
+        #[test]
+        fn follows_its_content() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+
+            assert_eq!(sync.frame(s(B)), FrameAction::Resize);
+            // The same size again only waits.
+            assert_eq!(sync.frame(s(B)), FrameAction::Drop);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Resize(g(B)));
+            assert_eq!(sync.poll(now, true).0, PlatformAction::None);
+            sync.configure(3);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(B)));
+            assert_eq!(
+                sync.frame(s(B)),
+                FrameAction::Commit {
+                    geometry: g(B),
+                    acknowledge: Some(3)
+                }
+            );
+        }
+
+        #[test]
+        fn a_move_needs_no_frame() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+            sync.configure(3);
+            assert_eq!(sync.poll(now, true), (PlatformAction::Acknowledge(3), None));
+            assert_eq!(sync.poll(now, true), (PlatformAction::None, None));
+        }
+
+        #[test]
+        fn a_frame_that_does_not_come_is_asked_for_again() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+            assert_eq!(sync.frame(s(B)), FrameAction::Resize);
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Resize(g(B)));
+            sync.configure(3);
+            let deadline = now + REQUEST_TIMEOUT;
+            assert_eq!(
+                sync.poll(now, true),
+                (PlatformAction::Request(g(B)), Some(deadline))
+            );
+            assert_eq!(sync.poll(now, true), (PlatformAction::None, Some(deadline)));
+            assert_eq!(sync.poll(deadline, true).0, PlatformAction::Request(g(B)));
+        }
+
+        #[test]
+        fn a_new_scale_is_drawn_for() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+            sync.set_scale(2);
+            let scaled = |size: (u32, u32)| SurfaceGeometry {
+                size: PhysicalSize::new(size.0, size.1),
+                scale: 2,
+            };
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Request(scaled(A)));
+            // The content at the new scale is twice as large.
+            assert_eq!(sync.frame(size(1280, 960)), FrameAction::Resize);
+            assert_eq!(
+                sync.poll(now, true).0,
+                PlatformAction::Resize(scaled((1280, 960)))
+            );
+            sync.configure(3);
+            assert_eq!(
+                sync.poll(now, true).0,
+                PlatformAction::Request(scaled((1280, 960)))
+            );
+            assert_eq!(
+                sync.frame(size(1280, 960)),
+                FrameAction::Commit {
+                    geometry: scaled((1280, 960)),
+                    acknowledge: Some(3)
+                }
+            );
+        }
+
+        #[test]
+        fn requests_wait_for_a_good_moment() {
+            let now = Instant::now();
+            let mut sync = shown(now);
+            sync.request_frame();
+            assert_eq!(sync.poll(now, false), (PlatformAction::None, None));
+            assert_eq!(sync.poll(now, true).0, PlatformAction::Request(g(A)));
+        }
     }
 }

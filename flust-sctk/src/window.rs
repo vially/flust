@@ -9,8 +9,8 @@ use dpi::{LogicalSize, PhysicalSize, Size};
 use flust_engine::{
     compositor::CompositorPresentError,
     ffi::{
-        FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewId, FlutterWindowMetrics,
-        IMPLICIT_VIEW_ID,
+        FlutterOpenGLTargetType, FlutterPointerEvent, FlutterViewConstraints, FlutterViewId,
+        FlutterWindowMetrics, IMPLICIT_VIEW_ID,
     },
     renderer::Renderer,
     view::FlutterView,
@@ -22,13 +22,13 @@ use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
     reexports::protocols::xdg::{
         dialog::v1::client::xdg_wm_dialog_v1::XdgWmDialogV1,
-        shell::client::xdg_toplevel::XdgToplevel,
+        shell::client::{xdg_popup::XdgPopup, xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel},
     },
     seat::pointer::{PointerEvent, PointerEventKind},
     shell::xdg::XdgShell,
 };
 use thiserror::Error;
-use tracing::{error, trace};
+use tracing::{debug, error, trace};
 use wayland_backend::client::ObjectId;
 use wayland_client::{
     protocol::{wl_pointer::WlPointer, wl_surface::WlSurface},
@@ -41,7 +41,8 @@ use crate::{
     frame_clock::FrameClock,
     handler::{SctkCompositorHandler, SctkOpenGLCompositorHandlerFramebuffer},
     pointer::SctkPointerEvent,
-    sync::{FrameAction, PlatformAction, SurfaceGeometry, SurfaceSync},
+    popup::{Popup, PopupInput, PopupKind, PopupPlacement},
+    sync::{ContentSync, FrameAction, PlatformAction, SurfaceGeometry, SurfaceSync, WindowSync},
     toplevel::{Toplevel, ToplevelConfigure},
 };
 use crate::{
@@ -54,7 +55,7 @@ pub(crate) struct SctkFlutterWindowInner {
     /// The window's EGL surface. Declared before `window`, so that it is
     /// dropped first: it is backed by the window's `wl_surface`.
     surface: Mutex<WindowSurface>,
-    window: Toplevel,
+    window: Role,
     engine: FlutterEngineWeakRef,
     qh: QueueHandle<SctkApplicationState>,
     current_size: RwLock<Option<Size>>,
@@ -70,7 +71,7 @@ pub(crate) struct SctkFlutterWindowInner {
     /// thread holds this lock for the whole of a present, so that a frame,
     /// the surface state it was drawn for and the acknowledgement of the
     /// configure it answers reach the compositor in one commit.
-    sync: Mutex<SurfaceSync>,
+    sync: Mutex<WindowSync>,
     /// The size of the frame the engine has drawn straight into the window's
     /// framebuffer and not presented yet. Only used with
     /// `FlutterOpenGLTargetType::Surface`.
@@ -79,6 +80,79 @@ pub(crate) struct SctkFlutterWindowInner {
     toplevel_state: Mutex<ToplevelConfigure>,
     /// The window this one is a modal dialog of.
     modal_parent: Option<FlutterViewId>,
+    /// For a popup: the window it is a popup of, and how it takes input.
+    popup_parent: Option<(FlutterViewId, PopupKind)>,
+    /// For a window sized to its content: the sizes the content may take.
+    content_constraints: Mutex<Option<SizeConstraints>>,
+}
+
+/// What a window's surface is to the compositor.
+pub(crate) enum Role {
+    Toplevel(Toplevel),
+    Popup(Popup),
+}
+
+impl Role {
+    fn wl_surface(&self) -> &WlSurface {
+        match self {
+            Self::Toplevel(toplevel) => toplevel.wl_surface(),
+            Self::Popup(popup) => popup.wl_surface(),
+        }
+    }
+
+    fn xdg_surface(&self) -> &XdgSurface {
+        match self {
+            Self::Toplevel(toplevel) => toplevel.xdg_surface(),
+            Self::Popup(popup) => popup.xdg_surface(),
+        }
+    }
+
+    fn toplevel(&self) -> Option<&Toplevel> {
+        match self {
+            Self::Toplevel(toplevel) => Some(toplevel),
+            Self::Popup(_) => None,
+        }
+    }
+
+    fn popup(&self) -> Option<&Popup> {
+        match self {
+            Self::Toplevel(_) => None,
+            Self::Popup(popup) => Some(popup),
+        }
+    }
+}
+
+/// The smallest and largest size of a window's content, in logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SizeConstraints {
+    pub(crate) min: LogicalSize<f64>,
+    pub(crate) max: LogicalSize<f64>,
+}
+
+/// The largest a window sized to its content gets, in buffer pixels, so
+/// that content without a limit of its own does not ask for a buffer
+/// larger than any output.
+const MAX_CONTENT_SIZE: u32 = 8192;
+
+impl SizeConstraints {
+    /// In buffer pixels, at `scale`.
+    fn to_physical(self, scale: f64) -> FlutterViewConstraints {
+        let physical = |value: f64, at_least: u32| {
+            let value = value * scale;
+            match value.is_finite() {
+                true => (value.round() as u32).clamp(at_least, MAX_CONTENT_SIZE),
+                false => MAX_CONTENT_SIZE,
+            }
+        };
+        let min_width = physical(self.min.width, 1);
+        let min_height = physical(self.min.height, 1);
+        FlutterViewConstraints {
+            min_width: min_width as usize,
+            min_height: min_height as usize,
+            max_width: physical(self.max.width, min_width) as usize,
+            max_height: physical(self.max.height, min_height) as usize,
+        }
+    }
 }
 
 impl SctkFlutterWindowInner {
@@ -131,10 +205,17 @@ impl SctkFlutterWindowInner {
         let action = sync.frame(size);
         trace!("present frame {:?}: {:?}", size, action);
 
-        if action == FrameAction::Drop {
+        match action {
             // Not an error for the engine: there is nothing it could do
             // about it, and the frame that was asked for is on its way.
-            return Ok(());
+            FrameAction::Drop => return Ok(()),
+            // The window gets the size of the frame first.
+            FrameAction::Resize => {
+                drop(sync);
+                self.frame_clock.wake_platform_thread();
+                return Ok(());
+            }
+            FrameAction::Commit { .. } | FrameAction::Present => {}
         }
 
         let render_context = self.render_context.lock().unwrap();
@@ -270,12 +351,30 @@ impl SctkFlutterWindowInner {
             geometry.scale
         );
 
-        engine.send_window_metrics_event(
+        let constraints = self
+            .content_constraints
+            .lock()
+            .unwrap()
+            .map(|constraints| constraints.to_physical(geometry.scale.into()));
+        // The engine wants a size within the constraints.
+        let (width, height) = match constraints {
+            Some(constraints) => (
+                (geometry.size.width as usize).clamp(constraints.min_width, constraints.max_width),
+                (geometry.size.height as usize)
+                    .clamp(constraints.min_height, constraints.max_height),
+            ),
+            None => (geometry.size.width as usize, geometry.size.height as usize),
+        };
+
+        engine.send_window_metrics(
             self.id,
-            usize::try_from(geometry.size.width).unwrap(),
-            usize::try_from(geometry.size.height).unwrap(),
-            geometry.scale.into(),
-            self.get_display_id().unwrap_or_default(),
+            FlutterWindowMetrics {
+                width,
+                height,
+                pixel_ratio: geometry.scale.into(),
+                display_id: self.get_display_id().unwrap_or_default(),
+                constraints,
+            },
         );
     }
 
@@ -327,6 +426,18 @@ pub(crate) struct SctkWindowAttributes {
     pub(crate) max_size: Option<LogicalSize<u32>>,
     /// Makes the window a modal dialog of another one.
     pub(crate) modal_parent: Option<SctkModalParent>,
+    /// Makes the window a popup, sized to its content.
+    pub(crate) popup: Option<SctkPopupAttributes>,
+}
+
+/// What a popup or a tooltip is created with.
+#[derive(Clone, Debug)]
+pub(crate) struct SctkPopupAttributes {
+    pub(crate) parent_view_id: FlutterViewId,
+    pub(crate) parent_xdg_surface: XdgSurface,
+    pub(crate) placement: PopupPlacement,
+    pub(crate) constraints: SizeConstraints,
+    pub(crate) input: PopupInput,
 }
 
 /// Where a window's view is in its life in the engine.
@@ -385,33 +496,76 @@ impl SctkFlutterWindow {
         }
 
         let surface = compositor_state.create_surface(qh);
-        let mut window = Toplevel::new(xdg_shell_state, surface, qh);
+        let popup_parent = attributes
+            .popup
+            .as_ref()
+            .map(|popup| (popup.parent_view_id, popup.input.kind()));
+        let (window, default_size, sync, content_constraints) = match attributes.popup {
+            Some(popup) => {
+                // Sized to its content: its first frame decides its size.
+                let constraints = popup.constraints;
+                let size = LogicalSize::new(
+                    constraints.min.width.max(1.0).round() as i32,
+                    constraints.min.height.max(1.0).round() as i32,
+                );
+                let window = Popup::new(
+                    xdg_shell_state,
+                    compositor_state,
+                    surface,
+                    &popup.parent_xdg_surface,
+                    popup.placement,
+                    (size.width, size.height),
+                    popup.input,
+                    qh,
+                )
+                .ok_or(SctkFlutterWindowCreateError::Popup)?;
+                // The initial commit, without a buffer: the compositor
+                // answers it with the first configure.
+                window.wl_surface().commit();
+                let physical = PhysicalSize::new(size.width as u32, size.height as u32);
+                (
+                    Role::Popup(window),
+                    Size::Logical(size.cast()),
+                    WindowSync::Content(ContentSync::new(physical, 1)),
+                    Some(constraints),
+                )
+            }
+            None => {
+                let mut window = Toplevel::new(xdg_shell_state, surface, qh);
 
-        if let Some(title) = attributes.title {
-            window.xdg_toplevel().set_title(title);
-        }
+                if let Some(title) = attributes.title {
+                    window.xdg_toplevel().set_title(title);
+                }
 
-        if let Some(app_id) = attributes.app_id {
-            window.xdg_toplevel().set_app_id(app_id);
-        }
+                if let Some(app_id) = attributes.app_id {
+                    window.xdg_toplevel().set_app_id(app_id);
+                }
 
-        set_size_limits(
-            window.xdg_toplevel(),
-            attributes.min_size,
-            attributes.max_size,
-        );
+                set_size_limits(
+                    window.xdg_toplevel(),
+                    attributes.min_size,
+                    attributes.max_size,
+                );
 
-        if let Some(parent) = &attributes.modal_parent {
-            window.set_modal_parent(&parent.xdg_toplevel, xdg_wm_dialog.as_ref(), qh);
-        }
+                if let Some(parent) = &attributes.modal_parent {
+                    window.set_modal_parent(&parent.xdg_toplevel, xdg_wm_dialog.as_ref(), qh);
+                }
 
-        // The initial commit, without a buffer: the compositor answers it
-        // with the first configure.
-        window.wl_surface().commit();
+                // The initial commit, without a buffer: the compositor
+                // answers it with the first configure.
+                window.wl_surface().commit();
 
-        let default_size = attributes
-            .inner_size
-            .unwrap_or(Size::Logical(LogicalSize::<f64>::new(1280.0, 720.0)));
+                let default_size = attributes
+                    .inner_size
+                    .unwrap_or(Size::Logical(LogicalSize::<f64>::new(1280.0, 720.0)));
+                (
+                    Role::Toplevel(window),
+                    default_size,
+                    WindowSync::Sized(SurfaceSync::default()),
+                    None,
+                )
+            }
+        };
 
         let render_context = rendering.render_context.clone();
         let surface = new_wayland_window_surface(
@@ -433,7 +587,7 @@ impl SctkFlutterWindow {
             ),
             render_context,
             frame_clock: frame_clock.clone(),
-            sync: Default::default(),
+            sync: Mutex::new(sync),
             surface_frame: Default::default(),
             pointers: Default::default(),
             current_size: Default::default(),
@@ -441,6 +595,8 @@ impl SctkFlutterWindow {
             default_size,
             toplevel_state: Default::default(),
             modal_parent: attributes.modal_parent.map(|parent| parent.view_id),
+            popup_parent,
+            content_constraints: Mutex::new(content_constraints),
         });
 
         // The startup window is the implicit view, which the engine always
@@ -473,12 +629,18 @@ impl SctkFlutterWindow {
     /// compositor has said how large it is: the size it asks for.
     pub(crate) fn initial_metrics(&self) -> FlutterWindowMetrics {
         let size = self.inner.default_size.to_physical::<u32>(1.0);
+        let constraints = self
+            .inner
+            .content_constraints
+            .lock()
+            .unwrap()
+            .map(|constraints| constraints.to_physical(1.0));
         FlutterWindowMetrics {
             width: size.width as usize,
             height: size.height as usize,
             pixel_ratio: 1.0,
             display_id: self.inner.get_display_id().unwrap_or_default(),
-            constraints: None,
+            constraints,
         }
     }
 
@@ -491,8 +653,13 @@ impl SctkFlutterWindow {
         self.inner.modal_parent
     }
 
-    pub fn xdg_toplevel_id(&self) -> ObjectId {
-        self.inner.window.xdg_toplevel().id()
+    /// For a popup: the window it is a popup of, and how it takes input.
+    pub(crate) fn popup_parent(&self) -> Option<(FlutterViewId, PopupKind)> {
+        self.inner.popup_parent
+    }
+
+    pub fn xdg_toplevel_id(&self) -> Option<ObjectId> {
+        Some(self.inner.window.toplevel()?.xdg_toplevel().id())
     }
 
     pub(crate) fn xdg_surface_id(&self) -> ObjectId {
@@ -507,8 +674,20 @@ impl SctkFlutterWindow {
         self.inner.window.wl_surface().id()
     }
 
-    pub fn xdg_toplevel(&self) -> XdgToplevel {
-        self.inner.window.xdg_toplevel().clone()
+    pub fn xdg_toplevel(&self) -> Option<XdgToplevel> {
+        Some(self.inner.window.toplevel()?.xdg_toplevel().clone())
+    }
+
+    pub(crate) fn xdg_surface(&self) -> XdgSurface {
+        self.inner.window.xdg_surface().clone()
+    }
+
+    /// Whether this is the window of `xdg_popup`.
+    pub(crate) fn is_xdg_popup(&self, xdg_popup: &XdgPopup) -> bool {
+        self.inner
+            .window
+            .popup()
+            .is_some_and(|popup| popup.is_xdg_popup(xdg_popup))
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
@@ -544,6 +723,17 @@ impl SctkFlutterWindow {
                     self.inner.window.xdg_surface().ack_configure(serial);
                     self.inner.window.wl_surface().commit();
                 }
+                (PlatformAction::Resize(geometry), _) => {
+                    drop(sync);
+                    let size = geometry.size.to_logical::<f64>(geometry.scale.into());
+                    self.inner.store_current_size(size.into());
+                    if let Some(popup) = self.inner.window.popup() {
+                        popup.reposition(
+                            (size.width.round() as i32, size.height.round() as i32),
+                            None,
+                        );
+                    }
+                }
             }
         }
     }
@@ -560,8 +750,14 @@ impl SctkFlutterWindow {
 
         // The buffer scale is set by the raster thread, in the commit of the
         // first frame that was drawn for it.
-        if let Some(geometry) = self.inner.current_geometry() {
-            self.inner.sync.lock().unwrap().set_geometry(geometry);
+        match &mut *self.inner.sync.lock().unwrap() {
+            WindowSync::Sized(sync) => {
+                if let Some(geometry) = self.inner.current_geometry() {
+                    sync.set_geometry(geometry);
+                }
+            }
+            WindowSync::Content(sync) => sync.set_scale(new_scale_factor.max(1) as u32),
+            WindowSync::Closed => {}
         }
     }
 
@@ -583,7 +779,63 @@ impl SctkFlutterWindow {
         };
 
         // Neither acknowledged nor sent to the engine here: see `poll`.
-        self.inner.sync.lock().unwrap().configure(serial, geometry);
+        if let WindowSync::Sized(sync) = &mut *self.inner.sync.lock().unwrap() {
+            sync.configure(serial, geometry);
+        }
+    }
+
+    /// The compositor placed the popup. It keeps the size of its content.
+    pub(crate) fn popup_configured(&self, serial: u32) {
+        // Acknowledged with the next frame, or right away if the window
+        // already shows its content: see `poll`.
+        if let WindowSync::Content(sync) = &mut *self.inner.sync.lock().unwrap() {
+            sync.configure(serial);
+        }
+    }
+
+    /// Where the compositor put the popup, relative to its parent, in
+    /// logical pixels.
+    pub(crate) fn popup_position(&self) -> Option<(i32, i32)> {
+        let position = self.inner.window.popup()?.position();
+        Some((position.x, position.y))
+    }
+
+    /// Places the popup again.
+    pub(crate) fn set_placement(&self, placement: PopupPlacement) {
+        let Some(popup) = self.inner.window.popup() else {
+            return;
+        };
+        let size = self.content_size();
+        popup.reposition(
+            (size.width.round() as i32, size.height.round() as i32),
+            Some(placement),
+        );
+    }
+
+    /// The sizes the content of a window sized to it may take.
+    pub(crate) fn set_content_constraints(&self, constraints: SizeConstraints) {
+        let mut current = self.inner.content_constraints.lock().unwrap();
+        if current.is_none() {
+            return;
+        }
+        *current = Some(constraints);
+        drop(current);
+        if let WindowSync::Content(sync) = &mut *self.inner.sync.lock().unwrap() {
+            sync.request_frame();
+        }
+    }
+
+    /// Takes a popup off the screen for good: nothing is committed to its
+    /// surface after this. A popup with a grab has to be the topmost one.
+    /// Its view may still draw until the engine removes it.
+    pub(crate) fn dismiss(&self) {
+        let Some(popup) = self.inner.window.popup() else {
+            return;
+        };
+        // Under the lock: the raster thread does not commit in between.
+        let mut sync = self.inner.sync.lock().unwrap();
+        *sync = WindowSync::Closed;
+        popup.dismiss();
     }
 
     pub(crate) fn surface_outputs_changed(&self) {
@@ -609,18 +861,38 @@ impl SctkFlutterWindow {
         *self.inner.toplevel_state.lock().unwrap()
     }
 
+    /// The window's `xdg_toplevel`, for what only a toplevel has. A popup
+    /// has none: what is asked of it is ignored.
+    fn toplevel(&self) -> Option<&XdgToplevel> {
+        let toplevel = self.inner.window.toplevel().map(Toplevel::xdg_toplevel);
+        if toplevel.is_none() {
+            debug!(
+                "[view {}] ignoring what only a toplevel can do",
+                self.inner.id
+            );
+        }
+        toplevel
+    }
+
     pub(crate) fn set_title(&self, title: String) {
-        self.inner.window.xdg_toplevel().set_title(title);
+        if let Some(toplevel) = self.toplevel() {
+            toplevel.set_title(title);
+        }
     }
 
     /// Asks for another size. The compositor has the last word: a
     /// maximized, fullscreen or tiled window keeps the size it was given.
+    /// A window sized to its content keeps that size.
     pub(crate) fn set_size(&self, size: LogicalSize<f64>) {
+        let mut sync = self.inner.sync.lock().unwrap();
+        let WindowSync::Sized(sync) = &mut *sync else {
+            return;
+        };
         self.inner.store_current_size(size.into());
         // The engine is asked for frames of this size, and the window takes
         // it with the first of them: see `poll`.
         if let Some(geometry) = self.inner.current_geometry() {
-            self.inner.sync.lock().unwrap().set_geometry(geometry);
+            sync.set_geometry(geometry);
         }
     }
 
@@ -629,27 +901,33 @@ impl SctkFlutterWindow {
         min_size: Option<LogicalSize<u32>>,
         max_size: Option<LogicalSize<u32>>,
     ) {
-        set_size_limits(self.inner.window.xdg_toplevel(), min_size, max_size);
-        self.commit_state();
+        if let Some(toplevel) = self.toplevel() {
+            set_size_limits(toplevel, min_size, max_size);
+            self.commit_state();
+        }
     }
 
     pub(crate) fn set_maximized(&self, maximized: bool) {
-        match maximized {
-            true => self.inner.window.xdg_toplevel().set_maximized(),
-            false => self.inner.window.xdg_toplevel().unset_maximized(),
+        match (self.toplevel(), maximized) {
+            (Some(toplevel), true) => toplevel.set_maximized(),
+            (Some(toplevel), false) => toplevel.unset_maximized(),
+            (None, _) => {}
         }
     }
 
     /// Wayland has no way to bring a minimized window back, and compositors
     /// do not say whether a window is minimized.
     pub(crate) fn set_minimized(&self) {
-        self.inner.window.xdg_toplevel().set_minimized();
+        if let Some(toplevel) = self.toplevel() {
+            toplevel.set_minimized();
+        }
     }
 
     pub(crate) fn set_fullscreen(&self, fullscreen: bool) {
-        match fullscreen {
-            true => self.inner.window.xdg_toplevel().set_fullscreen(None),
-            false => self.inner.window.xdg_toplevel().unset_fullscreen(),
+        match (self.toplevel(), fullscreen) {
+            (Some(toplevel), true) => toplevel.set_fullscreen(None),
+            (Some(toplevel), false) => toplevel.unset_fullscreen(),
+            (None, _) => {}
         }
     }
 
@@ -723,4 +1001,7 @@ pub enum SctkFlutterWindowCreateError {
 
     #[error("The {0:?} OpenGL target type is not supported with {1:?}")]
     UnsupportedTargetType(FlutterOpenGLTargetType, Renderer),
+
+    #[error("Failed to create a popup")]
+    Popup,
 }

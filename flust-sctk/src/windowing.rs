@@ -17,7 +17,8 @@
 //!
 //! - `onWindowChanged` when a window's size or state changed;
 //! - `onWindowCloseRequested` when the compositor asks for a window to
-//!   close (the window stays until Dart destroys it);
+//!   close, or a popup is dismissed (the window stays until Dart destroys
+//!   it);
 //! - `onWindowDestroyed` when a window is gone.
 
 use std::{
@@ -38,7 +39,8 @@ use flust_engine::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    window::{SctkFlutterWindow, SctkWindowAttributes},
+    popup::{PlacementAnchor, PopupPlacement},
+    window::{SctkFlutterWindow, SctkWindowAttributes, SizeConstraints},
     windows::{SctkCreateWindowError, SctkWindows},
 };
 
@@ -160,6 +162,177 @@ unsafe extern "C" fn create_window(
     }
 }
 
+/// Flutter's `WindowPositionerConstraintAdjustment`, as flags.
+const ADJUST_FLIP_X: u32 = 1 << 0;
+const ADJUST_FLIP_Y: u32 = 1 << 1;
+const ADJUST_SLIDE_X: u32 = 1 << 2;
+const ADJUST_SLIDE_Y: u32 = 1 << 3;
+const ADJUST_RESIZE_X: u32 = 1 << 4;
+const ADJUST_RESIZE_Y: u32 = 1 << 5;
+
+/// A placement from Dart: the anchor rectangle and the offset in logical
+/// pixels of the parent, the anchors as indices of Flutter's
+/// `WindowPositionerAnchor`, and the adjustments as `ADJUST_*` flags.
+#[allow(clippy::too_many_arguments)]
+fn placement(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    parent_anchor: u32,
+    child_anchor: u32,
+    offset_x: f64,
+    offset_y: f64,
+    adjustment: u32,
+) -> Option<PopupPlacement> {
+    let int = |value: f64| match value.is_finite() {
+        true => value.round() as i32,
+        false => 0,
+    };
+    let adjust = |flag: u32| adjustment & flag != 0;
+    Some(PopupPlacement {
+        anchor_rect: (int(x), int(y), int(width), int(height)),
+        parent_anchor: PlacementAnchor::from_index(parent_anchor)?,
+        child_anchor: PlacementAnchor::from_index(child_anchor)?,
+        offset: (int(offset_x), int(offset_y)),
+        flip_x: adjust(ADJUST_FLIP_X),
+        flip_y: adjust(ADJUST_FLIP_Y),
+        slide_x: adjust(ADJUST_SLIDE_X),
+        slide_y: adjust(ADJUST_SLIDE_Y),
+        resize_x: adjust(ADJUST_RESIZE_X),
+        resize_y: adjust(ADJUST_RESIZE_Y),
+    })
+}
+
+/// Constraints from Dart, in logical pixels. A maximum that is not finite
+/// is not limited.
+fn constraints(
+    min_width: f64,
+    min_height: f64,
+    max_width: f64,
+    max_height: f64,
+) -> SizeConstraints {
+    let min = |value: f64| match value.is_finite() {
+        true => value.max(0.0),
+        false => 0.0,
+    };
+    SizeConstraints {
+        min: LogicalSize::new(min(min_width), min(min_height)),
+        max: LogicalSize::new(max_width, max_height),
+    }
+}
+
+/// Creates a popup of the window with view id `parent`, or a tooltip, and
+/// returns the id of its view, or a negative `CreateWindowFailure`. It is
+/// placed as `placement` says (see there), and sized to its content within
+/// the constraints, in logical pixels.
+#[allow(clippy::too_many_arguments)]
+unsafe extern "C" fn create_popup(
+    engine_id: i64,
+    parent: FlutterViewId,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    parent_anchor: u32,
+    child_anchor: u32,
+    offset_x: f64,
+    offset_y: f64,
+    adjustment: u32,
+    min_width: f64,
+    min_height: f64,
+    max_width: f64,
+    max_height: f64,
+    tooltip: bool,
+) -> i64 {
+    let Some(windows) = windows(engine_id) else {
+        return CreateWindowFailure::Other as i64;
+    };
+    let Some(placement) = placement(
+        x,
+        y,
+        width,
+        height,
+        parent_anchor,
+        child_anchor,
+        offset_x,
+        offset_y,
+        adjustment,
+    ) else {
+        error!("windowing: invalid anchors {parent_anchor} and {child_anchor}");
+        return CreateWindowFailure::Other as i64;
+    };
+    let constraints = constraints(min_width, min_height, max_width, max_height);
+    match windows.create_popup(parent, placement, constraints, tooltip) {
+        Ok(window) => window.view_id(),
+        Err(err) => {
+            error!("windowing: failed to create a popup: {err}");
+            CreateWindowFailure::from(&err) as i64
+        }
+    }
+}
+
+/// Places a popup again: see `create_popup`.
+#[allow(clippy::too_many_arguments)]
+unsafe extern "C" fn update_position(
+    engine_id: i64,
+    view_id: FlutterViewId,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    parent_anchor: u32,
+    child_anchor: u32,
+    offset_x: f64,
+    offset_y: f64,
+    adjustment: u32,
+) {
+    let placement = placement(
+        x,
+        y,
+        width,
+        height,
+        parent_anchor,
+        child_anchor,
+        offset_x,
+        offset_y,
+        adjustment,
+    );
+    match (window(engine_id, view_id), placement) {
+        (Some(window), Some(placement)) => window.set_placement(placement),
+        (_, None) => error!("windowing: invalid anchors {parent_anchor} and {child_anchor}"),
+        (None, _) => {}
+    }
+}
+
+/// Where the compositor put a popup, relative to its parent, in logical
+/// pixels.
+unsafe extern "C" fn get_offset_x(engine_id: i64, view_id: FlutterViewId) -> f64 {
+    window(engine_id, view_id)
+        .and_then(|window| window.popup_position())
+        .map_or(0.0, |(x, _)| x.into())
+}
+
+unsafe extern "C" fn get_offset_y(engine_id: i64, view_id: FlutterViewId) -> f64 {
+    window(engine_id, view_id)
+        .and_then(|window| window.popup_position())
+        .map_or(0.0, |(_, y)| y.into())
+}
+
+/// The sizes the content of a popup may take, in logical pixels.
+unsafe extern "C" fn set_content_constraints(
+    engine_id: i64,
+    view_id: FlutterViewId,
+    min_width: f64,
+    min_height: f64,
+    max_width: f64,
+    max_height: f64,
+) {
+    if let Some(window) = window(engine_id, view_id) {
+        window.set_content_constraints(constraints(min_width, min_height, max_width, max_height));
+    }
+}
+
 unsafe extern "C" fn destroy_window(engine_id: i64, view_id: FlutterViewId) {
     let Some(windows) = windows(engine_id) else {
         return;
@@ -270,7 +443,7 @@ unsafe extern "C" fn set_fullscreen(engine_id: i64, view_id: FlutterViewId, full
 fn functions() -> HashMap<String, Value> {
     type Engine = i64;
     type View = FlutterViewId;
-    let functions: [(&str, usize); 12] = [
+    let functions: [(&str, usize); 17] = [
         (
             "createWindow",
             create_window
@@ -285,6 +458,47 @@ fn functions() -> HashMap<String, Value> {
                     *const c_char,
                     View,
                 ) -> i64 as usize,
+        ),
+        (
+            "createPopup",
+            create_popup
+                as unsafe extern "C" fn(
+                    Engine,
+                    View,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    u32,
+                    u32,
+                    f64,
+                    f64,
+                    u32,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    bool,
+                ) -> i64 as usize,
+        ),
+        (
+            "updatePosition",
+            update_position
+                as unsafe extern "C" fn(Engine, View, f64, f64, f64, f64, u32, u32, f64, f64, u32)
+                as usize,
+        ),
+        (
+            "getOffsetX",
+            get_offset_x as unsafe extern "C" fn(Engine, View) -> f64 as usize,
+        ),
+        (
+            "getOffsetY",
+            get_offset_y as unsafe extern "C" fn(Engine, View) -> f64 as usize,
+        ),
+        (
+            "setContentConstraints",
+            set_content_constraints as unsafe extern "C" fn(Engine, View, f64, f64, f64, f64)
+                as usize,
         ),
         (
             "destroyWindow",

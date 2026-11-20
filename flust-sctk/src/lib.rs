@@ -6,6 +6,7 @@ mod key_mapping_gen;
 mod keyboard;
 mod output;
 mod pointer;
+mod popup;
 mod settings;
 mod sync;
 #[cfg(feature = "testing")]

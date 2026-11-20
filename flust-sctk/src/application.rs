@@ -37,7 +37,8 @@ use smithay_client_toolkit::{
     globals::GlobalData,
     output::{OutputHandler, OutputState},
     reexports::protocols::xdg::shell::client::{
-        xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base::XdgWmBase,
+        xdg_popup::XdgPopup, xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel,
+        xdg_wm_base::XdgWmBase,
     },
     reexports::{
         calloop::{
@@ -51,7 +52,7 @@ use smithay_client_toolkit::{
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers},
-        pointer::{PointerEvent, PointerHandler, ThemeSpec},
+        pointer::{PointerEvent, PointerEventKind, PointerHandler, ThemeSpec},
         Capability, SeatHandler, SeatState,
     },
     shell::xdg::XdgShell,
@@ -215,6 +216,7 @@ impl SctkApplication {
             min_size: Some(LogicalSize::new(256, 256)),
             max_size: None,
             modal_parent: None,
+            popup: None,
         };
 
         // Without a startup window, the implicit view exists in the engine
@@ -240,7 +242,9 @@ impl SctkApplication {
         let platform_handler = unsafe {
             SctkPlatformHandler::new(
                 conn.display(),
-                startup_window.as_ref().map(|window| window.xdg_toplevel()),
+                startup_window
+                    .as_ref()
+                    .and_then(|window| window.xdg_toplevel()),
             )
         };
         let platform_handler = Arc::new(Mutex::new(platform_handler));
@@ -425,6 +429,24 @@ impl SctkApplicationState {
             .clone()
             .and_then(|surface_id| self.find_window_by_surface_id(surface_id))
             .is_some_and(|window| self.windows.is_blocked(window.view_id()))
+    }
+
+    /// Remembers the user's input on `seat`, for the grab of a popup it
+    /// opens.
+    fn user_input(&self, seat: Option<WlSeat>, serial: u32) {
+        if let Some(seat) = seat {
+            self.windows.set_last_input(seat, serial);
+        }
+    }
+
+    /// Asks Dart to destroy popups: their windows are dismissed.
+    fn dismiss_popups(&self, popups: &[FlutterViewId]) {
+        for &view_id in popups {
+            debug!("[view {view_id}] popup dismissed");
+            self.with_plugin(|windowing: &WindowingPlugin| {
+                windowing.window_close_requested(view_id)
+            });
+        }
     }
 
     #[cfg(feature = "testing")]
@@ -822,6 +844,26 @@ impl PointerHandler for SctkApplicationState {
             if window.view_state() != SctkViewState::Added {
                 continue;
             }
+            if let PointerEventKind::Press { serial, .. }
+            | PointerEventKind::Release { serial, .. } = event.kind
+            {
+                let seat = self
+                    .seat_state
+                    .seats()
+                    .find(|seat| self.pointers.get(&seat.id()) == Some(pointer));
+                self.user_input(seat, serial);
+            }
+
+            // A press outside of the open popups dismisses them, and does
+            // nothing else.
+            if let PointerEventKind::Press { .. } = event.kind {
+                let popups = self.windows.popups_outside(window.view_id());
+                if !popups.is_empty() {
+                    self.dismiss_popups(&popups);
+                    continue;
+                }
+            }
+
             let blocked = self.windows.is_blocked(window.view_id());
             window.pointer_event(pointer, event, blocked);
         }
@@ -874,10 +916,15 @@ impl KeyboardHandler for SctkApplicationState {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _keyboard: &WlKeyboard,
-        _serial: u32,
+        keyboard: &WlKeyboard,
+        serial: u32,
         event: KeyEvent,
     ) {
+        let seat = self
+            .seat_state
+            .seats()
+            .find(|seat| self.keyboards.get(&seat.id()) == Some(keyboard));
+        self.user_input(seat, serial);
         trace!(
             "key pressed: {}",
             event.keysym.name().unwrap_or("[unknown]"),
@@ -1094,7 +1141,7 @@ impl SctkApplicationState {
     pub(crate) fn toplevel_close_requested(&mut self, xdg_toplevel: &XdgToplevel) {
         let Some(view_id) = self
             .windows
-            .find(|window| window.xdg_toplevel_id() == xdg_toplevel.id())
+            .find(|window| window.xdg_toplevel_id() == Some(xdg_toplevel.id()))
             .map(|window| window.view_id())
         else {
             debug!(
@@ -1132,6 +1179,28 @@ impl SctkApplicationState {
         let direction = FlutterViewFocusDirection::Undefined;
         if let Err(err) = self.engine.send_view_focus_event(view_id, state, direction) {
             error!("[view {view_id}] failed to send focus {state:?}: {err}");
+        }
+    }
+
+    /// The compositor placed a popup.
+    pub(crate) fn popup_configured(&mut self, xdg_surface: &XdgSurface, serial: u32) {
+        let Some(window) = self
+            .windows
+            .find(|window| window.xdg_surface_id() == xdg_surface.id())
+        else {
+            return;
+        };
+        window.popup_configured(serial);
+        // Where it is may have changed.
+        let view_id = window.view_id();
+        self.with_plugin(|windowing: &WindowingPlugin| windowing.window_changed(view_id));
+    }
+
+    /// The compositor dismissed a popup: the user clicked into another
+    /// application, or it denied the popup's grab. Dart destroys it.
+    pub(crate) fn popup_dismissed(&mut self, xdg_popup: &XdgPopup) {
+        if let Some(window) = self.windows.find(|window| window.is_xdg_popup(xdg_popup)) {
+            self.dismiss_popups(&[window.view_id()]);
         }
     }
 

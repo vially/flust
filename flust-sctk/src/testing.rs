@@ -34,7 +34,7 @@ const CHANNEL_NAME: &str = "flust/testing/windows";
 /// A request from Dart, handled on the event loop, where the application's
 /// state is at hand.
 pub(crate) enum WindowRequest {
-    Create(MethodCall, SctkWindowAttributes),
+    Create(MethodCall, Box<SctkWindowAttributes>),
     Destroy(MethodCall, FlutterViewId),
 }
 
@@ -42,7 +42,7 @@ impl WindowRequest {
     pub(crate) fn handle(self, state: &mut SctkApplicationState) {
         match self {
             WindowRequest::Create(call, attributes) => {
-                match state.windows().create_window(attributes, None) {
+                match state.windows().create_window(*attributes, None) {
                     Ok(window) => call.success(window.view_id()),
                     Err(err) => call.error("create-failed", err.to_string(), Value::Null),
                 }
@@ -132,7 +132,7 @@ impl MethodCallHandler for Handler {
                     inner_size,
                     ..Default::default()
                 };
-                WindowRequest::Create(call, attributes)
+                WindowRequest::Create(call, Box::new(attributes))
             }
             "destroyWindow" => match int("viewId") {
                 Some(view_id) => WindowRequest::Destroy(call, view_id),

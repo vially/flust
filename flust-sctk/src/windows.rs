@@ -11,13 +11,14 @@ use flust_engine::{
 use smithay_client_toolkit::reexports::calloop::LoopSignal;
 use thiserror::Error;
 use tracing::debug;
-use wayland_client::QueueHandle;
+use wayland_client::{protocol::wl_seat::WlSeat, QueueHandle};
 
 use crate::{
     application::SctkApplicationState,
+    popup::{PopupInput, PopupKind, PopupPlacement},
     window::{
-        SctkFlutterWindow, SctkFlutterWindowCreateError, SctkModalParent, SctkRendering, SctkShell,
-        SctkViewState, SctkWindowAttributes,
+        SctkFlutterWindow, SctkFlutterWindowCreateError, SctkModalParent, SctkPopupAttributes,
+        SctkRendering, SctkShell, SctkViewState, SctkWindowAttributes, SizeConstraints,
     },
 };
 
@@ -45,6 +46,8 @@ pub(crate) struct SctkWindows {
     is_engine_running: Cell<bool>,
     accessibility: Accessibility,
     loop_signal: LoopSignal,
+    /// The seat and serial of the user's last press or key.
+    last_input: RefCell<Option<(WlSeat, u32)>>,
 }
 
 impl SctkWindows {
@@ -76,6 +79,7 @@ impl SctkWindows {
             is_engine_running: Cell::new(false),
             accessibility,
             loop_signal,
+            last_input: RefCell::default(),
         }
     }
 
@@ -153,6 +157,140 @@ impl SctkWindows {
         attributes: SctkWindowAttributes,
         modal_parent: Option<FlutterViewId>,
     ) -> Result<SctkFlutterWindow, SctkCreateWindowError> {
+        let modal_parent = match modal_parent {
+            Some(view_id) => {
+                // A dialog of a popup is a dialog of the window the popup
+                // belongs to: only a toplevel can be a parent.
+                let parent = self
+                    .toplevel_of(view_id)
+                    .ok_or(SctkCreateWindowError::UnknownParent(view_id))?;
+                Some(SctkModalParent {
+                    view_id,
+                    xdg_toplevel: parent
+                        .xdg_toplevel()
+                        .ok_or(SctkCreateWindowError::UnknownParent(view_id))?,
+                })
+            }
+            None => None,
+        };
+
+        let attributes = SctkWindowAttributes {
+            title: attributes.title.or(self.window_attributes.title.clone()),
+            app_id: attributes.app_id.or(self.window_attributes.app_id.clone()),
+            inner_size: attributes.inner_size.or(self.window_attributes.inner_size),
+            modal_parent,
+            popup: None,
+            ..attributes
+        };
+        self.add_window(attributes)
+    }
+
+    /// Creates a popup of `parent`, or a tooltip: a window placed against a
+    /// rectangle of its parent, and sized to its content, within
+    /// `constraints`. See `create_window`.
+    ///
+    /// A popup takes an explicit grab, with the user's last input, when it
+    /// can: when its parent is a toplevel or a popup with a grab. It takes
+    /// the keyboard focus then, and the compositor dismisses it when the
+    /// user clicks into another application.
+    pub(crate) fn create_popup(
+        &self,
+        parent: FlutterViewId,
+        placement: PopupPlacement,
+        constraints: SizeConstraints,
+        tooltip: bool,
+    ) -> Result<SctkFlutterWindow, SctkCreateWindowError> {
+        let parent_window = self
+            .get(parent)
+            .filter(|window| window.view_state() == SctkViewState::Added)
+            .ok_or(SctkCreateWindowError::UnknownParent(parent))?;
+        let parent_kind = parent_window.popup_parent().map(|(_, kind)| kind);
+        // Only a toplevel or a popup with a grab can have a popup with a
+        // grab, and a tooltip has no popups.
+        let input = match (tooltip, parent_kind) {
+            (true, _) => PopupInput::None,
+            (false, Some(PopupKind::Tooltip)) => {
+                return Err(SctkCreateWindowError::UnknownParent(parent))
+            }
+            (false, None | Some(PopupKind::Grabbing)) => match self.last_input.borrow().clone() {
+                Some((seat, serial)) => PopupInput::Grab(seat, serial),
+                None => PopupInput::Normal,
+            },
+            (false, Some(PopupKind::Normal)) => PopupInput::Normal,
+        };
+
+        let attributes = SctkWindowAttributes {
+            popup: Some(SctkPopupAttributes {
+                parent_view_id: parent,
+                parent_xdg_surface: parent_window.xdg_surface(),
+                placement,
+                constraints,
+                input,
+            }),
+            ..Default::default()
+        };
+        self.add_window(attributes)
+    }
+
+    /// The window of `view_id`, or the toplevel its popup belongs to.
+    fn toplevel_of(&self, view_id: FlutterViewId) -> Option<SctkFlutterWindow> {
+        let window = self
+            .get(view_id)
+            .filter(|window| window.view_state() == SctkViewState::Added)?;
+        match window.popup_parent() {
+            Some((parent, _)) => self.toplevel_of(parent),
+            None => Some(window),
+        }
+    }
+
+    /// Whether `ancestor` is `view_id`, or a window that `view_id` is a
+    /// popup of, directly or not.
+    fn is_popup_ancestor(&self, ancestor: FlutterViewId, view_id: FlutterViewId) -> bool {
+        let mut current = Some(view_id);
+        while let Some(view_id) = current {
+            if view_id == ancestor {
+                return true;
+            }
+            current = self
+                .get(view_id)
+                .and_then(|window| window.popup_parent())
+                .map(|(parent, _)| parent);
+        }
+        false
+    }
+
+    /// The popups that a press into the window of `view_id` dismisses: the
+    /// ones that take input and are not that window or below it. Under a
+    /// grab, the compositor sends the press to the app's own windows, and
+    /// leaves dismissing popups to it.
+    pub(crate) fn popups_outside(&self, view_id: FlutterViewId) -> Vec<FlutterViewId> {
+        self.all()
+            .into_iter()
+            .filter(|window| {
+                matches!(
+                    window.popup_parent(),
+                    Some((_, PopupKind::Grabbing | PopupKind::Normal))
+                ) && matches!(
+                    window.view_state(),
+                    SctkViewState::Adding | SctkViewState::Added
+                )
+            })
+            .map(|window| window.view_id())
+            .filter(|&popup| !self.is_popup_ancestor(popup, view_id))
+            .collect()
+    }
+
+    /// The seat and serial of the user's last press or key, for a popup's
+    /// grab.
+    pub(crate) fn set_last_input(&self, seat: WlSeat, serial: u32) {
+        *self.last_input.borrow_mut() = Some((seat, serial));
+    }
+
+    /// Creates a window as `attributes` say: see `create_window`.
+    fn add_window(
+        &self,
+        attributes: SctkWindowAttributes,
+    ) -> Result<SctkFlutterWindow, SctkCreateWindowError> {
         if self.has_startup_window {
             return Err(SctkCreateWindowError::StartupWindow);
         }
@@ -170,28 +308,7 @@ impl SctkWindows {
             _ => return Err(SctkCreateWindowError::EngineNotRunning),
         };
 
-        let modal_parent = match modal_parent {
-            Some(view_id) => match self.get(view_id) {
-                Some(parent) if parent.view_state() == SctkViewState::Added => {
-                    Some(SctkModalParent {
-                        view_id,
-                        xdg_toplevel: parent.xdg_toplevel(),
-                    })
-                }
-                _ => return Err(SctkCreateWindowError::UnknownParent(view_id)),
-            },
-            None => None,
-        };
-
-        let attributes = SctkWindowAttributes {
-            title: attributes.title.or(self.window_attributes.title.clone()),
-            modal_parent,
-            app_id: attributes.app_id.or(self.window_attributes.app_id.clone()),
-            inner_size: attributes.inner_size.or(self.window_attributes.inner_size),
-            ..attributes
-        };
         let title = attributes.title.clone().unwrap_or_default();
-
         let view_id = engine.allocate_view_id();
         let window = SctkFlutterWindow::new(
             view_id,
@@ -251,6 +368,9 @@ impl SctkWindows {
         };
 
         window.set_view_state(SctkViewState::Removing);
+        // A popup goes right away: popups with a grab have to be destroyed
+        // in order, the topmost first, and a new one may be opened next.
+        window.dismiss();
         self.accessibility.remove_view(view_id);
 
         let view_state = window.shared_view_state();
@@ -276,7 +396,7 @@ pub enum SctkCreateWindowError {
     #[error("Windows can only be created while the engine runs")]
     EngineNotRunning,
 
-    #[error("There is no window with view id {0} to be the parent")]
+    #[error("There is no window with view id {0} that can be the parent")]
     UnknownParent(FlutterViewId),
 
     #[error(transparent)]
