@@ -186,10 +186,13 @@ state when it changes:
 
     window 1: size 320x240 activated true maximized false fullscreen false
 
-and takes keys: `n` opens another window, `m` maximizes or restores the
-window, `f` makes it fullscreen or restores it, `t` renames it to `<title>
-renamed`, `s` asks for the size 400x300, `c` limits its size to between
-300x250 and 500x400, and `w` destroys it. A window that the compositor
+and takes keys: `n` opens another window, `d` opens a modal dialog of
+the window (`dialog N`, 300x200), `e` a dialog without a parent, `m`
+maximizes or restores the window, `f` makes it fullscreen or restores it
+(not dialogs), `t` renames it to `<title> renamed`, `s` asks for the size
+400x300, `c` limits its size to between 300x250 and 500x400, and `w`
+destroys it. A dialog prints only its size and whether it is activated. A
+tap in any window prints `<title>: tap`. A window that the compositor
 asks to close is destroyed, with `<title>: destroyed`. When the main
 window is, the app exits, after `main: destroyed, exiting`.
 
@@ -296,6 +299,7 @@ For the windowing app, with the framebuffer target only:
 |---|---|
 | `windowing` | Windows opened with Flutter's windowing API: one closed of several, one destroyed from Dart, and the app exits from the main window's delegate |
 | `windowing-state` | A window's title, size, size limits and fullscreen state, changed from Dart and read back |
+| `windowing-dialog` | A modal dialog keeps taps and keys from its parent until it is closed, and goes with its parent; a dialog without a parent keeps nothing from input |
 
 For the template app (`flust-app-template`, built with `cargo build`
 there), with `window_fill.py` only: `idle`, `resize-drag`, `resize-steps`.

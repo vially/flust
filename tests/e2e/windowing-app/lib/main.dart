@@ -8,18 +8,22 @@
 //
 //     <title>: size <width>x<height> activated <bool> maximized <bool> fullscreen <bool>
 //
-// and takes keys, while it has the keyboard focus:
+// (a dialog prints only its size and whether it is activated), and takes
+// keys, while it has the keyboard focus:
 //
 // - `n`: open a new window, `window <n>`, 320x240;
-// - `m`: maximize the window, or restore it;
-// - `f`: make the window fullscreen, or restore it;
+// - `d`: open a modal dialog of the window, `dialog <n>`, 300x200;
+// - `e`: open a dialog without a parent, `dialog <n>`, 300x200;
+// - `m`: maximize the window, or restore it (not dialogs);
+// - `f`: make the window fullscreen, or restore it (not dialogs);
 // - `t`: rename the window to `<title> renamed`;
 // - `s`: ask for the size 400x300;
 // - `c`: limit the size to 300x250 at least and 500x400 at most;
 // - `w`: destroy the window.
 //
-// A tap in the main window also opens a new window. A window that is asked
-// to close is destroyed (the default of the delegate).
+// A tap in a window prints `<title>: tap`, and a tap in the main window
+// opens a new window. A window that is asked to close is destroyed (the
+// default of the delegates).
 
 // The windowing API is internal until it is stable.
 // ignore_for_file: invalid_use_of_internal_member, implementation_imports
@@ -43,6 +47,19 @@ class MainWindowDelegate with WindowControllerDelegate {
 /// Unregisters a window that is destroyed, so that it is no longer built.
 class ProbeWindowDelegate with WindowControllerDelegate {
   ProbeWindowDelegate(this.onDestroyed);
+
+  final VoidCallback onDestroyed;
+
+  @override
+  void onWindowDestroyed() {
+    super.onWindowDestroyed();
+    onDestroyed();
+  }
+}
+
+/// Unregisters a dialog that is destroyed, so that it is no longer built.
+class ProbeDialogDelegate with DialogWindowControllerDelegate {
+  ProbeDialogDelegate(this.onDestroyed);
 
   final VoidCallback onDestroyed;
 
@@ -95,6 +112,13 @@ class _WindowingProbeState extends State<WindowingProbe> {
 }
 
 int _windowCount = 0;
+int _dialogCount = 0;
+
+String _title(BaseWindowController controller) => switch (controller) {
+  final WindowController window => window.title,
+  final DialogWindowController dialog => dialog.title,
+  _ => '?',
+};
 
 /// Opens a new window, registered with the `WindowManager` above `context`.
 void openWindow(BuildContext context) {
@@ -121,10 +145,33 @@ void openWindow(BuildContext context) {
   registry.register(entry);
 }
 
+/// Opens a new dialog, modal to `parent` if there is one.
+void openDialog(BuildContext context, BaseWindowController? parent) {
+  final WindowRegistry registry = WindowRegistry.of(context);
+  _dialogCount += 1;
+  late final DialogWindowController controller;
+  late final WindowEntry entry;
+  controller = DialogWindowController(
+    size: const Size(300, 200),
+    title: 'dialog $_dialogCount',
+    parent: parent,
+    delegate: ProbeDialogDelegate(() {
+      print('${controller.title}: destroyed');
+      registry.unregister(entry);
+    }),
+  );
+  entry = WindowEntry(
+    controller: controller,
+    builder: (BuildContext context) =>
+        ProbeWindow(controller: controller, color: const Color(0xffe0c020)),
+  );
+  registry.register(entry);
+}
+
 class ProbeWindow extends StatefulWidget {
   const ProbeWindow({super.key, required this.controller, required this.color});
 
-  final WindowController controller;
+  final BaseWindowController controller;
   final Color color;
 
   @override
@@ -134,7 +181,7 @@ class ProbeWindow extends StatefulWidget {
 class _ProbeWindowState extends State<ProbeWindow> {
   String? _printed;
 
-  WindowController get controller => widget.controller;
+  BaseWindowController get controller => widget.controller;
 
   @override
   void initState() {
@@ -154,10 +201,15 @@ class _ProbeWindowState extends State<ProbeWindow> {
       return;
     }
     final Size size = controller.contentSize;
-    final state =
-        '${controller.title}: size ${size.width.round()}x${size.height.round()} '
-        'activated ${controller.isActivated} maximized ${controller.isMaximized} '
-        'fullscreen ${controller.isFullscreen}';
+    final sizeText = '${size.width.round()}x${size.height.round()}';
+    final String state = switch (controller) {
+      final WindowController window =>
+        '${window.title}: size $sizeText activated ${window.isActivated} '
+            'maximized ${window.isMaximized} fullscreen ${window.isFullscreen}',
+      final DialogWindowController dialog =>
+        '${dialog.title}: size $sizeText activated ${dialog.isActivated}',
+      _ => '?',
+    };
     if (state != _printed) {
       _printed = state;
       print(state);
@@ -169,25 +221,49 @@ class _ProbeWindowState extends State<ProbeWindow> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    final BaseWindowController controller = this.controller;
+    const constraints = BoxConstraints(
+      minWidth: 300,
+      minHeight: 250,
+      maxWidth: 500,
+      maxHeight: 400,
+    );
     if (key == LogicalKeyboardKey.keyN) {
       openWindow(context);
-    } else if (key == LogicalKeyboardKey.keyM) {
+    } else if (key == LogicalKeyboardKey.keyD) {
+      openDialog(context, controller);
+    } else if (key == LogicalKeyboardKey.keyE) {
+      openDialog(context, null);
+    } else if (key == LogicalKeyboardKey.keyM &&
+        controller is WindowController) {
       controller.setMaximized(!controller.isMaximized);
-    } else if (key == LogicalKeyboardKey.keyF) {
+    } else if (key == LogicalKeyboardKey.keyF &&
+        controller is WindowController) {
       controller.setFullscreen(!controller.isFullscreen);
     } else if (key == LogicalKeyboardKey.keyT) {
-      controller.setTitle('${controller.title} renamed');
+      switch (controller) {
+        case final WindowController window:
+          window.setTitle('${window.title} renamed');
+        case final DialogWindowController dialog:
+          dialog.setTitle('${dialog.title} renamed');
+        default:
+      }
     } else if (key == LogicalKeyboardKey.keyS) {
-      controller.setSize(const Size(400, 300));
+      switch (controller) {
+        case final WindowController window:
+          window.setSize(const Size(400, 300));
+        case final DialogWindowController dialog:
+          dialog.setSize(const Size(400, 300));
+        default:
+      }
     } else if (key == LogicalKeyboardKey.keyC) {
-      controller.setConstraints(
-        const BoxConstraints(
-          minWidth: 300,
-          minHeight: 250,
-          maxWidth: 500,
-          maxHeight: 400,
-        ),
-      );
+      switch (controller) {
+        case final WindowController window:
+          window.setConstraints(constraints);
+        case final DialogWindowController dialog:
+          dialog.setConstraints(constraints);
+        default:
+      }
     } else if (key == LogicalKeyboardKey.keyW) {
       controller.destroy();
     } else {
@@ -204,8 +280,8 @@ class _ProbeWindowState extends State<ProbeWindow> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          print('${controller.title}: tap');
-          if (controller.title == 'main') {
+          print('${_title(controller)}: tap');
+          if (_title(controller) == 'main') {
             openWindow(context);
           }
         },

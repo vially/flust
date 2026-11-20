@@ -1,0 +1,85 @@
+# Dialogs of Flutter's windowing API on Flust. A modal dialog has a parent,
+# which takes no input until the dialog is gone, and is destroyed with its
+# parent. A dialog without a parent keeps no window from input.
+# The app is the windowing app, built by `../build-app.sh windowing`: see
+# windowing.yaml.
+app:
+  command: ./flust-e2e-windowing
+  cwd: ../windowing-app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # For the parent the dialog is given.
+    WAYLAND_DEBUG: "1"
+
+session:
+  output:
+    size: 1280x800
+    background: "#ff00ff"
+  window:
+    position: [40, 40]
+    border: { width: 8, color: "#00ff00" }
+
+steps:
+  - wait: { for: windows, count: 1 }
+  - wait: { for: log, match: "main: size 480x360 activated true" }
+
+  - mark: modal
+  - key: d
+  - wait: { for: windows, count: 2 }
+  - wait: { for: log, match: "dialog 1: size 300x200 activated true" }
+  - assert_log: { match: "xdg_toplevel#\\d+\\.set_parent\\(xdg_toplevel#\\d+\\)" }
+  - move_window: { to: [600, 40], window: { title: "^dialog 1$" } }
+  - wait: stable
+  - screenshot: modal
+  # The main window takes neither taps nor keys while the dialog is open.
+  - click: { at: [20, 20], window: { title: "^main$" } }
+  - sleep: 300ms
+  - key: n
+  - sleep: 500ms
+  - assert_log: { absent: "main: tap" }
+  - assert_window: { window: { title: "^window 1$" }, open: false }
+
+  - mark: closed
+  - close: { window: { title: "^dialog 1$" } }
+  - wait: { for: log, match: "dialog 1: destroyed" }
+  - wait: { for: windows, count: 1 }
+  # The main window takes input again.
+  - click: { at: [20, 20], window: { title: "^main$" } }
+  - wait: { for: log, match: "main: tap" }
+  - wait: { for: windows, count: 2 }
+  - wait: { for: log, match: "window 1: size 320x240 activated true" }
+
+  - mark: with parent
+  # A dialog of a dialog, of window 1: both go when window 1 does.
+  - key: d
+  - wait: { for: log, match: "dialog 2: size 300x200 activated true" }
+  - key: d
+  - wait: { for: log, match: "dialog 3: size 300x200 activated true" }
+  - wait: { for: windows, count: 4 }
+  - close: { window: { title: "^window 1$" } }
+  - wait: { for: log, match: "dialog 3: destroyed" }
+  - wait: { for: log, match: "dialog 2: destroyed" }
+  - wait: { for: log, match: "window 1: destroyed" }
+  - wait: { for: windows, count: 1 }
+
+  - mark: modeless
+  - click: { at: [20, 20], window: { title: "^main$" } }
+  - wait: { for: log, match: "window 2: size 320x240 activated true" }
+  - key: e
+  - wait: { for: log, match: "dialog 4: size 300x200 activated true" }
+  - wait: { for: windows, count: 3 }
+  - move_window: { to: [600, 400], window: { title: "^dialog 4$" } }
+  # It keeps no window from input, not even the one it was opened from.
+  - click: { at: [20, 20], window: { title: "^window 2$" } }
+  - wait: { for: log, match: "window 2: tap" }
+  - assert_running
+
+  - mark: exit
+  - close: { window: { title: "^main$" } }
+  - wait: { for: log, match: "main: destroyed, exiting" }
+  - wait: { for: exit }
+  - assert_exit: 0
+
+analyze:
+  - run: python3 ../analyzers/app_log.py
