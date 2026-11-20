@@ -1,0 +1,7 @@
+analyzer:
+  errors:
+    # Flutter's windowing API is internal until it is stable.
+    invalid_use_of_internal_member: ignore
+    implementation_imports: ignore
+  exclude:
+    - build/**
