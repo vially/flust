@@ -50,6 +50,22 @@ With Skia, nothing of this changes.
 
 The end-to-end tests run with either renderer: `tests/e2e/run.py` for Impeller, `tests/e2e/run.py --skia` for Skia. The `shapes` scenario checks that paths, clips and antialiasing come out right. See [`tests/e2e/README.md`](../tests/e2e/README.md).
 
+## Scale
+
+A window is drawn at the scale of the outputs it is on, as the compositor
+says.
+- **Fractional scales:** where the compositor has `wp_fractional_scale_manager_v1` and `wp_viewporter`, a window takes its scale from `wp_fractional_scale_v1.preferred_scale`, in 120ths.
+  - **Buffer:** at a fractional scale such as 1.25 or 1.5, the buffer is the window's logical size times the scale, rounded half away from zero, with buffer scale 1.
+  - **Viewport:** its destination is the logical size.
+  - **Engine:** gets the fractional scale as the device pixel ratio.
+- **Integer scales:** a whole scale (1, 2) is drawn with `wl_surface.set_buffer_scale`, as without those globals, where the scale is always a whole number.
+
+A new scale reaches the compositor in the same commit as the first buffer drawn for it, like a new size: see `SurfaceGeometry` in `src/sync.rs`.
+
+### Testing
+
+The `scale-fractional` scenario runs on an output at scale 1.5. The `scale-change-fractional` scenario changes the scale from 1 to 1.25, then 2, then back to 1 while the app runs. See [`tests/e2e/README.md`](../tests/e2e/README.md).
+
 ## Windows
 
 By default, Flust creates one window when the app starts, for Flutter's implicit view. An app that wants more windows creates all of them itself, from Dart, with Flutter's windowing API (`WindowController`, the `Window` widget, `WindowManager`), and is started without a window of its own:

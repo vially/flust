@@ -32,7 +32,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dpi::PhysicalSize;
+use dpi::{LogicalSize, PhysicalSize};
 
 /// How long the frame for a request is waited for before a newer size may
 /// replace it. The engine drops frames without telling anyone, so a request
@@ -49,8 +49,77 @@ const MAX_UNACKNOWLEDGED: usize = 64;
 pub(crate) struct SurfaceGeometry {
     /// The size of the buffer.
     pub(crate) size: PhysicalSize<u32>,
-    /// The buffer scale: `size` is the surface's size times this.
-    pub(crate) scale: u32,
+    /// How the buffer maps onto the surface.
+    pub(crate) scale: BufferScale,
+}
+
+/// The scale a window is drawn at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Scale {
+    /// A whole number, set with `wl_surface.set_buffer_scale`.
+    Integer(u32),
+    /// In 120ths (`wp_fractional_scale_v1`), through a viewport.
+    Fractional(u32),
+}
+
+impl Scale {
+    /// From a scale in 120ths: a whole number goes the integer way.
+    pub(crate) fn from_120ths(scale: u32) -> Self {
+        match scale % 120 {
+            0 => Self::Integer((scale / 120).max(1)),
+            _ => Self::Fractional(scale),
+        }
+    }
+
+    pub(crate) fn factor(self) -> f64 {
+        match self {
+            Self::Integer(scale) => scale.into(),
+            Self::Fractional(scale) => f64::from(scale) / 120.0,
+        }
+    }
+
+    /// The buffer scale for a surface of `logical` size.
+    pub(crate) fn for_surface(self, logical: LogicalSize<u32>) -> BufferScale {
+        match self {
+            Self::Integer(scale) => BufferScale::Integer(scale),
+            Self::Fractional(scale) => BufferScale::Fractional { scale, logical },
+        }
+    }
+
+    /// The buffer scale for a buffer of `size`: its surface has that size
+    /// at this scale, rounded.
+    pub(crate) fn for_buffer(self, size: PhysicalSize<u32>) -> BufferScale {
+        let logical = |side: u32| ((f64::from(side) / self.factor()).round() as u32).max(1);
+        self.for_surface(LogicalSize::new(logical(size.width), logical(size.height)))
+    }
+}
+
+/// How a buffer maps onto its surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BufferScale {
+    /// `wl_surface.set_buffer_scale`: the buffer is the surface's size times
+    /// this.
+    Integer(u32),
+    /// A viewport: buffer scale 1, and the surface has the `logical` size,
+    /// which the buffer is that times the scale (in 120ths) of.
+    Fractional {
+        scale: u32,
+        logical: LogicalSize<u32>,
+    },
+}
+
+impl BufferScale {
+    pub(crate) fn scale(self) -> Scale {
+        match self {
+            Self::Integer(scale) => Scale::Integer(scale),
+            Self::Fractional { scale, .. } => Scale::Fractional(scale),
+        }
+    }
+
+    /// What the engine is told the device pixel ratio is.
+    pub(crate) fn factor(self) -> f64 {
+        self.scale().factor()
+    }
 }
 
 /// What the platform thread has to do, from `SurfaceSync::poll`.
@@ -279,8 +348,8 @@ impl SurfaceSync {
 /// acknowledged without a new frame.
 #[derive(Debug)]
 pub(crate) struct ContentSync {
-    /// The buffer scale frames are drawn at.
-    scale: u32,
+    /// The scale frames are drawn at.
+    scale: Scale,
     /// The size the window was last given, in buffer pixels.
     placed: PhysicalSize<u32>,
     /// The size of the engine's last frame.
@@ -301,7 +370,7 @@ pub(crate) struct ContentSync {
 impl ContentSync {
     /// A window that has been given `size` (in buffer pixels) to start
     /// with: the engine's first frame decides the size it gets next.
-    pub(crate) fn new(size: PhysicalSize<u32>, scale: u32) -> Self {
+    pub(crate) fn new(size: PhysicalSize<u32>, scale: Scale) -> Self {
         Self {
             scale,
             placed: size,
@@ -316,7 +385,7 @@ impl ContentSync {
     fn geometry(&self, size: PhysicalSize<u32>) -> SurfaceGeometry {
         SurfaceGeometry {
             size,
-            scale: self.scale,
+            scale: self.scale.for_buffer(size),
         }
     }
 
@@ -326,7 +395,7 @@ impl ContentSync {
     }
 
     /// The buffer scale changed. Called on the platform thread.
-    pub(crate) fn set_scale(&mut self, scale: u32) {
+    pub(crate) fn set_scale(&mut self, scale: Scale) {
         if self.scale != scale {
             self.scale = scale;
             self.needs_frame = true;
@@ -489,7 +558,7 @@ mod tests {
     fn geometry(width: u32, height: u32) -> SurfaceGeometry {
         SurfaceGeometry {
             size: PhysicalSize::new(width, height),
-            scale: 1,
+            scale: BufferScale::Integer(1),
         }
     }
 
@@ -835,7 +904,7 @@ mod tests {
 
         let scaled = SurfaceGeometry {
             size: PhysicalSize::new(1280, 960),
-            scale: 2,
+            scale: BufferScale::Integer(2),
         };
         sync.set_geometry(scaled);
         assert_eq!(sync.poll(now, true).0, PlatformAction::Request(scaled));
@@ -866,11 +935,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn whole_scales_go_the_integer_way() {
+        assert_eq!(Scale::from_120ths(120), Scale::Integer(1));
+        assert_eq!(Scale::from_120ths(240), Scale::Integer(2));
+        assert_eq!(Scale::from_120ths(180), Scale::Fractional(180));
+        assert_eq!(Scale::from_120ths(150).factor(), 1.25);
+        // Nothing below 1.
+        assert_eq!(Scale::from_120ths(0), Scale::Integer(1));
+    }
+
+    #[test]
+    fn a_buffer_at_a_fractional_scale_shows_its_logical_size() {
+        // 1.5: 161 buffer pixels are 107.33 logical ones.
+        assert_eq!(
+            Scale::Fractional(180).for_buffer(PhysicalSize::new(240, 161)),
+            BufferScale::Fractional {
+                scale: 180,
+                logical: LogicalSize::new(160, 107),
+            }
+        );
+        assert_eq!(
+            Scale::Integer(2).for_buffer(PhysicalSize::new(240, 160)),
+            BufferScale::Integer(2)
+        );
+    }
+
     mod content {
         use super::*;
 
         fn content_sync() -> ContentSync {
-            ContentSync::new(PhysicalSize::new(1, 1), 1)
+            ContentSync::new(PhysicalSize::new(1, 1), Scale::Integer(1))
         }
 
         /// A window that shows its content, of size A, for configure 2.
@@ -986,10 +1081,10 @@ mod tests {
         fn a_new_scale_is_drawn_for() {
             let now = Instant::now();
             let mut sync = shown(now);
-            sync.set_scale(2);
+            sync.set_scale(Scale::Integer(2));
             let scaled = |size: (u32, u32)| SurfaceGeometry {
                 size: PhysicalSize::new(size.0, size.1),
-                scale: 2,
+                scale: BufferScale::Integer(2),
             };
             assert_eq!(sync.poll(now, true).0, PlatformAction::Request(scaled(A)));
             // The content at the new scale is twice as large.

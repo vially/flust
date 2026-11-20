@@ -76,6 +76,7 @@ use wayland_client::{
 
 use crate::{
     egl::new_wayland_render_context,
+    fractional::FractionalScaleGlobals,
     frame_clock::FrameClock,
     handler::{
         SctkAccessibilityHandler, SctkAsyncResult, SctkExitHandler, SctkKeyboardHandler,
@@ -160,6 +161,8 @@ impl SctkApplication {
         let xdg_shell_state = XdgShell::bind(&globals, &qh)?;
         // Optional: dialogs are only hinted to the compositor with it.
         let xdg_wm_dialog = globals.bind(&qh, 1..=1, GlobalData).ok();
+        // Optional: windows are drawn at integer scales without them.
+        let fractional_scale = FractionalScaleGlobals::bind(&globals, &qh);
         let shm_state = Shm::bind(&globals, &qh)?;
 
         let platform_task_handler = Arc::new(SctkPlatformTaskHandler::new(event_loop.get_signal()));
@@ -199,6 +202,7 @@ impl SctkApplication {
             compositor_state,
             xdg_shell_state,
             xdg_wm_dialog,
+            fractional_scale,
             frame_clock: frame_clock.clone(),
         };
         let rendering = SctkRendering {
@@ -1179,6 +1183,15 @@ impl SctkApplicationState {
         let direction = FlutterViewFocusDirection::Undefined;
         if let Err(err) = self.engine.send_view_focus_event(view_id, state, direction) {
             error!("[view {view_id}] failed to send focus {state:?}: {err}");
+        }
+    }
+
+    /// The compositor would like the window of `surface_id` drawn at this
+    /// scale, in 120ths.
+    pub(crate) fn preferred_scale_changed(&mut self, surface_id: &ObjectId, scale: u32) {
+        trace!("[{surface_id}] preferred scale: {scale}/120");
+        if let Some(window) = self.find_window_by_surface_id(surface_id.clone()) {
+            window.preferred_scale_changed(scale);
         }
     }
 

@@ -38,11 +38,15 @@ use wayland_client::{
 use crate::{
     application::SctkApplicationState,
     egl::CreateWaylandContextError,
+    fractional::{FractionalScaleGlobals, FractionalScaling},
     frame_clock::FrameClock,
     handler::{SctkCompositorHandler, SctkOpenGLCompositorHandlerFramebuffer},
     pointer::SctkPointerEvent,
     popup::{Popup, PopupInput, PopupKind, PopupPlacement},
-    sync::{ContentSync, FrameAction, PlatformAction, SurfaceGeometry, SurfaceSync, WindowSync},
+    sync::{
+        BufferScale, ContentSync, FrameAction, PlatformAction, Scale, SurfaceGeometry,
+        SurfaceSync, WindowSync,
+    },
     toplevel::{Toplevel, ToplevelConfigure},
 };
 use crate::{
@@ -59,7 +63,9 @@ pub(crate) struct SctkFlutterWindowInner {
     engine: FlutterEngineWeakRef,
     qh: QueueHandle<SctkApplicationState>,
     current_size: RwLock<Option<Size>>,
-    current_scale_factor: RwLock<f64>,
+    current_scale: RwLock<Scale>,
+    /// For drawing at fractional scales, when the compositor can.
+    fractional_scaling: Option<FractionalScaling>,
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
     compositor_handler: SctkCompositorHandler,
@@ -156,13 +162,12 @@ impl SizeConstraints {
 }
 
 impl SctkFlutterWindowInner {
-    fn store_current_scale_factor(&self, new_scale_factor: f64) {
-        let mut current_scale_factor = self.current_scale_factor.write().unwrap();
-        *current_scale_factor = new_scale_factor;
+    fn load_current_scale(&self) -> Scale {
+        *self.current_scale.read().unwrap()
     }
 
     fn load_current_scale_factor(&self) -> f64 {
-        *self.current_scale_factor.read().unwrap()
+        self.load_current_scale().factor()
     }
 
     fn store_current_size(&self, new_size: Size) {
@@ -174,15 +179,26 @@ impl SctkFlutterWindowInner {
         *self.current_size.read().unwrap()
     }
 
-    /// The geometry of a buffer for the window's current size and scale.
+    /// The geometry of a buffer for the window's current size and scale:
+    /// the logical size times the scale, rounded half away from zero.
     fn current_geometry(&self) -> Option<SurfaceGeometry> {
-        let scale_factor = self.load_current_scale_factor();
-        let size = self.load_current_size()?.to_physical::<u32>(scale_factor);
+        let scale = self.load_current_scale();
+        let logical = self
+            .load_current_size()?
+            .to_logical::<f64>(scale.factor());
+        let round = |value: f64| value.round() as u32;
+        let size = PhysicalSize::new(
+            round(logical.width * scale.factor()),
+            round(logical.height * scale.factor()),
+        );
         size.non_zero()?;
 
         Some(SurfaceGeometry {
             size,
-            scale: scale_factor as u32,
+            scale: scale.for_surface(LogicalSize::new(
+                round(logical.width),
+                round(logical.height),
+            )),
         })
     }
 
@@ -276,7 +292,20 @@ impl SctkFlutterWindowInner {
             acknowledge,
         } = action
         {
-            surface.set_buffer_scale(geometry.scale as i32);
+            match geometry.scale {
+                BufferScale::Integer(scale) => {
+                    surface.set_buffer_scale(scale as i32);
+                    if let Some(fractional) = &self.fractional_scaling {
+                        fractional.set_destination(None);
+                    }
+                }
+                BufferScale::Fractional { logical, .. } => {
+                    surface.set_buffer_scale(1);
+                    if let Some(fractional) = &self.fractional_scaling {
+                        fractional.set_destination(Some((logical.width, logical.height)));
+                    }
+                }
+            }
 
             if let Some(serial) = acknowledge {
                 self.window.xdg_surface().ack_configure(serial);
@@ -345,7 +374,7 @@ impl SctkFlutterWindowInner {
         };
 
         trace!(
-            "sending window metrics event: {}x{} (scale: {})",
+            "sending window metrics event: {}x{} (scale: {:?})",
             geometry.size.width,
             geometry.size.height,
             geometry.scale
@@ -355,7 +384,7 @@ impl SctkFlutterWindowInner {
             .content_constraints
             .lock()
             .unwrap()
-            .map(|constraints| constraints.to_physical(geometry.scale.into()));
+            .map(|constraints| constraints.to_physical(geometry.scale.factor()));
         // The engine wants a size within the constraints.
         let (width, height) = match constraints {
             Some(constraints) => (
@@ -371,7 +400,7 @@ impl SctkFlutterWindowInner {
             FlutterWindowMetrics {
                 width,
                 height,
-                pixel_ratio: geometry.scale.into(),
+                pixel_ratio: geometry.scale.factor(),
                 display_id: self.get_display_id().unwrap_or_default(),
                 constraints,
             },
@@ -404,6 +433,8 @@ pub(crate) struct SctkShell {
     /// For telling the compositor that a window is a modal dialog, if it
     /// offers xdg-dialog.
     pub(crate) xdg_wm_dialog: Option<XdgWmDialogV1>,
+    /// For drawing at fractional scales, if the compositor can.
+    pub(crate) fractional_scale: Option<FractionalScaleGlobals>,
     pub(crate) frame_clock: FrameClock,
 }
 
@@ -479,6 +510,7 @@ impl SctkFlutterWindow {
             compositor_state,
             xdg_shell_state,
             xdg_wm_dialog,
+            fractional_scale,
             frame_clock,
         } = shell;
         let renderer = rendering.renderer;
@@ -496,6 +528,11 @@ impl SctkFlutterWindow {
         }
 
         let surface = compositor_state.create_surface(qh);
+        // Before the initial commit: the compositor can then send the scale
+        // along with the first configure.
+        let fractional_scaling = fractional_scale
+            .as_ref()
+            .map(|globals| globals.for_surface(&surface, qh));
         let popup_parent = attributes
             .popup
             .as_ref()
@@ -526,7 +563,7 @@ impl SctkFlutterWindow {
                 (
                     Role::Popup(window),
                     Size::Logical(size.cast()),
-                    WindowSync::Content(ContentSync::new(physical, 1)),
+                    WindowSync::Content(ContentSync::new(physical, Scale::Integer(1))),
                     Some(constraints),
                 )
             }
@@ -591,7 +628,8 @@ impl SctkFlutterWindow {
             surface_frame: Default::default(),
             pointers: Default::default(),
             current_size: Default::default(),
-            current_scale_factor: RwLock::new(1.0),
+            current_scale: RwLock::new(Scale::Integer(1)),
+            fractional_scaling,
             default_size,
             toplevel_state: Default::default(),
             modal_parent: attributes.modal_parent.map(|parent| parent.view_id),
@@ -725,7 +763,12 @@ impl SctkFlutterWindow {
                 }
                 (PlatformAction::Resize(geometry), _) => {
                     drop(sync);
-                    let size = geometry.size.to_logical::<f64>(geometry.scale.into());
+                    let size = match geometry.scale {
+                        BufferScale::Integer(scale) => {
+                            geometry.size.to_logical::<f64>(scale.into())
+                        }
+                        BufferScale::Fractional { logical, .. } => logical.cast(),
+                    };
                     self.inner.store_current_size(size.into());
                     if let Some(popup) = self.inner.window.popup() {
                         popup.reposition(
@@ -738,15 +781,30 @@ impl SctkFlutterWindow {
         }
     }
 
+    /// The compositor's integer scale for the window. Not used for a
+    /// window that gets fractional ones: they say the same.
     pub(crate) fn scale_factor_changed(&self, new_scale_factor: i32) {
+        if self.inner.fractional_scaling.is_none() {
+            self.set_scale(Scale::Integer(new_scale_factor.max(1) as u32));
+        }
+    }
+
+    /// The compositor's scale for the window, in 120ths.
+    pub(crate) fn preferred_scale_changed(&self, scale: u32) {
+        self.set_scale(Scale::from_120ths(scale));
+    }
+
+    fn set_scale(&self, scale: Scale) {
+        if self.inner.load_current_scale() == scale {
+            return;
+        }
         // Keep the size the same in surface coordinates.
         let scale_factor = self.inner.load_current_scale_factor();
         if let Some(size) = self.inner.load_current_size() {
             self.inner
                 .store_current_size(size.to_logical::<f64>(scale_factor).into());
         }
-        self.inner
-            .store_current_scale_factor(new_scale_factor.into());
+        *self.inner.current_scale.write().unwrap() = scale;
 
         // The buffer scale is set by the raster thread, in the commit of the
         // first frame that was drawn for it.
@@ -756,7 +814,7 @@ impl SctkFlutterWindow {
                     sync.set_geometry(geometry);
                 }
             }
-            WindowSync::Content(sync) => sync.set_scale(new_scale_factor.max(1) as u32),
+            WindowSync::Content(sync) => sync.set_scale(scale),
             WindowSync::Closed => {}
         }
     }
