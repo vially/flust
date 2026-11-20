@@ -784,7 +784,9 @@ impl SctkVsyncHandler {
 }
 
 impl FlutterVsyncHandler for SctkVsyncHandler {
-    // Note: This callback is executed on an internal engine-managed thread.
+    // Note: This callback is executed on the UI thread, which is the platform
+    // thread. It can be called from within a call into the engine, while Dart
+    // runs.
     fn request_frame_callback(&self, baton: isize) {
         trace!("[baton: {}] vsync requested", baton);
         self.frame_clock.request_vsync(baton);

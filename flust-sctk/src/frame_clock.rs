@@ -106,8 +106,8 @@ impl FrameClockState {
     }
 }
 
-/// The frame clock of a window, shared by the platform thread, the raster
-/// thread and the engine thread that asks for vsyncs.
+/// The frame clock of a window, shared by the platform thread (which also
+/// runs Dart, and asks for vsyncs) and the raster thread.
 #[derive(Clone)]
 pub(crate) struct FrameClock {
     state: Arc<Mutex<FrameClockState>>,
@@ -122,7 +122,9 @@ impl FrameClock {
         }
     }
 
-    /// Called on an engine thread.
+    /// Called on the UI thread, which is the platform thread, possibly from
+    /// within a call into the engine: the lock is not held anywhere else
+    /// on this thread while calling into the engine.
     pub(crate) fn request_vsync(&self, baton: isize) {
         self.state.lock().request_vsync(baton);
         self.wake_platform_thread();

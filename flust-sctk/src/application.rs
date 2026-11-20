@@ -159,6 +159,8 @@ impl SctkApplication {
             .with_args(attributes.args.clone())
             .with_renderer(attributes.renderer())
             .with_compositor_enabled(true)
+            // Dart runs on this thread, as with Flutter's own embedders.
+            .with_merged_platform_ui_thread(true)
             .build()?;
 
         let implicit_window = SctkFlutterWindow::new(
