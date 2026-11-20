@@ -70,9 +70,9 @@ use wayland_client::{
 use crate::{
     frame_clock::FrameClock,
     handler::{
-        SctkAccessibilityHandler, SctkAsyncResult, SctkKeyboardHandler, SctkMouseCursorHandler,
-        SctkPlatformHandler, SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
-        FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkAccessibilityHandler, SctkAsyncResult, SctkExitHandler, SctkKeyboardHandler,
+        SctkMouseCursorHandler, SctkPlatformHandler, SctkPlatformTaskHandler, SctkTextInputHandler,
+        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
@@ -88,8 +88,9 @@ pub struct SctkApplication {
 
 pub struct SctkApplicationState {
     loop_handle: LoopHandle<'static, SctkApplicationState>,
-    /// Cleared to leave the event loop.
-    running: bool,
+    /// Set, by the exit handler of the platform plugin, to leave the event
+    /// loop and exit with this code.
+    exit_code: Arc<Mutex<Option<i32>>>,
     /// Window metrics can not be sent before the engine is running: that
     /// results in a `Viewport metrics were invalid` embedder error. Until it
     /// is, the windows are not polled, so the first configure waits.
@@ -197,7 +198,13 @@ impl SctkApplication {
         plugins.add_plugin(&engine, LifecyclePlugin::default());
         plugins.add_plugin(&engine, LocalizationPlugin::default());
         plugins.add_plugin(&engine, NavigationPlugin::default());
-        plugins.add_plugin(&engine, PlatformPlugin::new(platform_handler));
+        let exit_code = Arc::new(Mutex::new(None));
+        let exit_handler = SctkExitHandler::new(exit_code.clone(), event_loop.get_signal());
+        plugins.add_plugin(
+            &engine,
+            PlatformPlugin::new(platform_handler)
+                .with_exit_handler(Arc::new(Mutex::new(exit_handler))),
+        );
         plugins.add_plugin(&engine, SettingsPlugin::default());
         plugins.add_plugin(&engine, SystemPlugin::default());
         plugins.add_plugin(
@@ -207,7 +214,7 @@ impl SctkApplication {
 
         let state = SctkApplicationState {
             loop_handle: event_loop.handle(),
-            running: true,
+            exit_code,
             is_engine_running: false,
             windows: HashMap::from([(implicit_window.xdg_toplevel_id(), implicit_window)]),
             pointers: HashMap::new(),
@@ -252,7 +259,7 @@ impl SctkApplication {
                 TimeoutAction::Drop
             })?;
 
-        while self.state.running {
+        while self.state.exit_code.lock().is_none() {
             // Everything that waits for a point in time (engine tasks, the
             // frame clock, a window's frame) is polled here, and the event
             // loop sleeps until the earliest of them. Other threads wake it
@@ -923,8 +930,9 @@ impl OutputHandler for SctkApplicationState {
 }
 
 impl SctkApplicationState {
+    /// Dart decides whether the application exits: it can cancel.
     pub(crate) fn toplevel_close_requested(&mut self, _xdg_toplevel: &XdgToplevel) {
-        self.running = false;
+        self.with_plugin(|platform: &PlatformPlugin| platform.request_app_exit());
     }
 
     pub(crate) fn toplevel_configured(

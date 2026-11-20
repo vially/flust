@@ -34,7 +34,7 @@ use flust_plugins::{
     accessibility::{AccessibilityHandler, Announcement, Assertiveness},
     keyboard::{KeyboardStateError, KeyboardStateHandler},
     mousecursor::{MouseCursorError, MouseCursorHandler, SystemMouseCursor},
-    platform::{AppSwitcherDescription, MimeError, PlatformHandler},
+    platform::{AppSwitcherDescription, ExitHandler, MimeError, PlatformHandler},
     textinput::TextInputHandler,
 };
 use smithay_client_toolkit::{
@@ -805,6 +805,27 @@ impl SctkPlatformTaskHandler {
 
 impl TaskRunnerHandler for SctkPlatformTaskHandler {
     fn wake(&self) {
+        self.signal.wakeup();
+    }
+}
+
+/// Ends the event loop when Dart decides that the application exits.
+pub struct SctkExitHandler {
+    exit_code: Arc<parking_lot::Mutex<Option<i32>>>,
+    signal: LoopSignal,
+}
+
+impl SctkExitHandler {
+    /// `exit_code` is set once the application is to exit.
+    pub fn new(exit_code: Arc<parking_lot::Mutex<Option<i32>>>, signal: LoopSignal) -> Self {
+        Self { exit_code, signal }
+    }
+}
+
+impl ExitHandler for SctkExitHandler {
+    fn exit_application(&mut self, exit_code: i32) {
+        // The first exit stands.
+        self.exit_code.lock().get_or_insert(exit_code);
         self.signal.wakeup();
     }
 }
