@@ -25,7 +25,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use ffi::{
     FlutterEngineAOTData, FlutterEngineDisplay, FlutterEngineDisplaysUpdateType,
     FlutterEngineResult, FlutterEngineResultExt, FlutterKeyEvent, FlutterPointerEvent,
-    FlutterViewId,
+    FlutterViewId, FlutterWindowMetrics,
 };
 use flust_engine_api::FlutterOpenGLHandler;
 use flust_engine_sys::{
@@ -535,32 +535,26 @@ impl FlutterEngine {
         pixel_ratio: f64,
         display_id: FlutterEngineDisplayId,
     ) {
-        trace!("send_window_metrics_event");
+        self.send_window_metrics(
+            view_id,
+            FlutterWindowMetrics {
+                width,
+                height,
+                pixel_ratio,
+                display_id,
+                constraints: None,
+            },
+        );
+    }
+
+    /// Tells the engine the size of a view, and the display it is on.
+    pub fn send_window_metrics(&self, view_id: FlutterViewId, metrics: FlutterWindowMetrics) {
+        trace!("send_window_metrics: view {view_id}: {metrics:?}");
         if !self.is_platform_thread() {
             panic!("Not on platform thread");
         }
 
-        let event = flust_engine_sys::FlutterWindowMetricsEvent {
-            struct_size: std::mem::size_of::<flust_engine_sys::FlutterWindowMetricsEvent>(),
-            width,
-            height,
-            pixel_ratio,
-            left: 0,
-            top: 0,
-            physical_view_inset_top: 0.0,
-            physical_view_inset_right: 0.0,
-            physical_view_inset_bottom: 0.0,
-            physical_view_inset_left: 0.0,
-            display_id,
-            view_id,
-            has_constraints: false,
-            min_width_constraint: 0,
-            min_height_constraint: 0,
-            max_width_constraint: 0,
-            max_height_constraint: 0,
-            #[cfg(all(target_arch = "arm", target_os = "android"))]
-            __bindgen_padding_0: 0,
-        };
+        let event = metrics.to_ffi(view_id);
         unsafe {
             flust_engine_sys::FlutterEngineSendWindowMetricsEvent(self.engine_ptr(), &event);
         }

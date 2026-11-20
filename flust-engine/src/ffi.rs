@@ -21,6 +21,63 @@ use crate::{path_to_cstring, FlutterEngine, FlutterEngineError};
 // https://github.com/flutter/engine/blob/9a8a5b6ac7ebb30b4c8d37939f7e397a77067820/shell/platform/embedder/embedder.cc#L107
 pub const IMPLICIT_VIEW_ID: FlutterViewId = 0;
 
+/// The size of a view, and the display it is on, as the engine is told.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlutterWindowMetrics {
+    /// In physical pixels.
+    pub width: usize,
+    /// In physical pixels.
+    pub height: usize,
+    pub pixel_ratio: f64,
+    pub display_id: FlutterEngineDisplayId,
+    /// For a view that is sized to its content: the sizes it may take.
+    pub constraints: Option<FlutterViewConstraints>,
+}
+
+/// The sizes that a view sized to its content may take, in physical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlutterViewConstraints {
+    pub min_width: usize,
+    pub min_height: usize,
+    pub max_width: usize,
+    pub max_height: usize,
+}
+
+impl FlutterWindowMetrics {
+    pub(crate) fn to_ffi(
+        self,
+        view_id: FlutterViewId,
+    ) -> flust_engine_sys::FlutterWindowMetricsEvent {
+        let constraints = self.constraints.unwrap_or(FlutterViewConstraints {
+            min_width: 0,
+            min_height: 0,
+            max_width: 0,
+            max_height: 0,
+        });
+        flust_engine_sys::FlutterWindowMetricsEvent {
+            struct_size: mem::size_of::<flust_engine_sys::FlutterWindowMetricsEvent>(),
+            width: self.width,
+            height: self.height,
+            pixel_ratio: self.pixel_ratio,
+            left: 0,
+            top: 0,
+            physical_view_inset_top: 0.0,
+            physical_view_inset_right: 0.0,
+            physical_view_inset_bottom: 0.0,
+            physical_view_inset_left: 0.0,
+            display_id: self.display_id,
+            view_id,
+            has_constraints: self.constraints.is_some(),
+            min_width_constraint: constraints.min_width,
+            min_height_constraint: constraints.min_height,
+            max_width_constraint: constraints.max_width,
+            max_height_constraint: constraints.max_height,
+            #[cfg(all(target_arch = "arm", target_os = "android"))]
+            __bindgen_padding_0: 0,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FlutterPointerPhase {
     Cancel,
