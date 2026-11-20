@@ -41,11 +41,18 @@ steps:
   - assert_window: { window: { title: "^probe 1$" }, size: 500x400 }
   - assert_window: { window: { title: "^probe 2$" }, size: 300x200 }
 
-  - mark: taps
+  - mark: taps and keys
+  # A click also gives the window the keyboard focus. Keys name no window:
+  # they reach the one with focus only if the engine is told which it is.
   - click: { at: [20, 30], window: { title: "^probe 2$" } }
   - wait: { for: log, match: "probe 2: tap 1 at 20,30" }
+  - key: b
+  - wait: { for: log, match: "probe 2: key B" }
   - click: { at: [40, 50], window: { title: "^probe 1$" } }
   - wait: { for: log, match: "probe 1: tap 1 at 40,50" }
+  - key: a
+  - wait: { for: log, match: "probe 1: key A" }
+  - assert_log: { absent: "probe 1: key B|probe 2: key A" }
 
   - mark: close one
   - close: { window: { title: "^probe 1$" } }

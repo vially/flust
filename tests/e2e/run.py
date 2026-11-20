@@ -41,21 +41,22 @@ SCENARIOS = [
     "exit",
     "windows",
     "windows-startup",
+    "windows-semantics",
     "semantics",
     "shapes",
 ]
 # These read the app through the accessibility API of the desktop, which has
 # to be switched on for that. They get a session of their own, so that
 # nothing of the desktop of whoever runs this is touched.
-PRIVATE_BUS = {"semantics"}
+PRIVATE_BUS = {"semantics", "windows-semantics"}
 # They say nothing about the reference: `semantics` waits for what Flust
 # logs, Flutter's own Linux embedder exits with code 0 whatever exit code
 # the app asks for, which `exit` checks, and the `windows` ones use Flust's
 # test hook for windows.
-FLUST_ONLY = {"semantics", "exit", "windows", "windows-startup"}
+FLUST_ONLY = {"semantics", "exit", "windows", "windows-startup", "windows-semantics"}
 # Windows that the app creates can not be drawn into straight: these only
 # run with the framebuffer target.
-FRAMEBUFFER_ONLY = {"windows"}
+FRAMEBUFFER_ONLY = {"windows", "windows-semantics"}
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 

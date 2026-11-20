@@ -497,7 +497,7 @@ class ShapesPainter extends CustomPainter {
 
 /// Opens two windows, `probe 1` and `probe 2`, each a [Probe] that prints
 /// with its name, and closes them when they are asked to. Exits when no
-/// window is left.
+/// window is left. Each prints the keys it receives (`probe 1: key A`).
 class WindowsProbe extends StatefulWidget {
   const WindowsProbe({super.key});
 
@@ -557,7 +557,17 @@ class _WindowsProbeState extends State<WindowsProbe> {
             View(
               key: ValueKey<int>(window.key),
               view: view,
-              child: Probe(log: window.value),
+              // Keys name no window: they go to the one that has focus.
+              child: Focus(
+                autofocus: true,
+                onKeyEvent: (FocusNode node, KeyEvent event) {
+                  if (event is KeyDownEvent) {
+                    print('${window.value}: key ${event.logicalKey.keyLabel}');
+                  }
+                  return KeyEventResult.handled;
+                },
+                child: Probe(log: window.value),
+              ),
             ),
       ],
     );
