@@ -72,6 +72,7 @@ struct FlutterEngineInner {
     vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     view_focus_handler: Option<Arc<dyn FlutterViewFocusHandler + Send + Sync>>,
+    opengl_handler: Option<Arc<dyn FlutterOpenGLHandler + Send + Sync>>,
     engine_ptr: flust_engine_sys::FlutterEngine,
     channel_registry: RwLock<ChannelRegistry>,
     platform_runner: TaskRunner,
@@ -93,8 +94,13 @@ impl Drop for FlutterEngineInner {
 }
 
 impl FlutterEngineInner {
-    fn implicit_view_opengl_handler(&self) -> Option<Arc<dyn FlutterOpenGLHandler>> {
-        self.view_registry.read().implicit_view_opengl_handler()
+    /// Where the OpenGL callbacks go: the engine's handler, or the implicit
+    /// view's if it has none.
+    fn opengl_handler(&self) -> Option<Arc<dyn FlutterOpenGLHandler>> {
+        match &self.opengl_handler {
+            Some(handler) => Some(handler.clone()),
+            None => self.view_registry.read().implicit_view_opengl_handler(),
+        }
     }
 
     fn compositor_handler_for_view(
@@ -208,6 +214,7 @@ impl FlutterEngine {
                 vsync_handler: builder.vsync_handler,
                 semantics_handler: builder.semantics_handler,
                 view_focus_handler: builder.view_focus_handler,
+                opengl_handler: builder.opengl_handler,
                 engine_ptr: ptr::null_mut(),
                 channel_registry: RwLock::new(ChannelRegistry::new()),
                 platform_runner: TaskRunner::new(

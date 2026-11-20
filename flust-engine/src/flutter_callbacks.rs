@@ -15,7 +15,7 @@ pub extern "C" fn present(user_data: *mut c_void) -> bool {
     trace!("present");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine.implicit_view_opengl_handler().unwrap().present()
+        engine.opengl_handler().unwrap().present()
     }
 }
 
@@ -23,10 +23,7 @@ pub extern "C" fn make_current(user_data: *mut c_void) -> bool {
     trace!("make_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine
-            .implicit_view_opengl_handler()
-            .unwrap()
-            .make_current()
+        engine.opengl_handler().unwrap().make_current()
     }
 }
 
@@ -34,10 +31,7 @@ pub extern "C" fn clear_current(user_data: *mut c_void) -> bool {
     trace!("clear_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine
-            .implicit_view_opengl_handler()
-            .unwrap()
-            .clear_current()
+        engine.opengl_handler().unwrap().clear_current()
     }
 }
 
@@ -50,7 +44,7 @@ pub extern "C" fn fbo_with_frame_info_callback(
         let engine = &*(user_data as *const FlutterEngineInner);
         let frame_info = FlutterFrameInfo::from(*frame_info);
         engine
-            .implicit_view_opengl_handler()
+            .opengl_handler()
             .unwrap()
             .fbo_with_frame_info_callback(frame_info.size)
     }
@@ -60,10 +54,7 @@ pub extern "C" fn make_resource_current(user_data: *mut c_void) -> bool {
     trace!("make_resource_current");
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
-        engine
-            .implicit_view_opengl_handler()
-            .unwrap()
-            .make_resource_current()
+        engine.opengl_handler().unwrap().make_resource_current()
     }
 }
 
@@ -72,10 +63,7 @@ pub extern "C" fn gl_proc_resolver(user_data: *mut c_void, proc: *const c_char) 
     unsafe {
         let engine = &*(user_data as *const FlutterEngineInner);
         let proc = CStr::from_ptr(proc);
-        engine
-            .implicit_view_opengl_handler()
-            .unwrap()
-            .gl_proc_resolver(proc)
+        engine.opengl_handler().unwrap().gl_proc_resolver(proc)
     }
 }
 

@@ -80,7 +80,9 @@ impl From<flust_engine_sys::FlutterViewFocusDirection> for FlutterViewFocusDirec
 /// The view capable of acting as a rendering target and input source for the Flutter engine.
 pub struct FlutterView {
     id: FlutterViewId,
-    opengl_handler: Arc<dyn FlutterOpenGLHandler>,
+    /// For an engine without an OpenGL handler of its own: see
+    /// `FlutterEngineBuilder::with_opengl_handler`.
+    opengl_handler: Option<Arc<dyn FlutterOpenGLHandler>>,
     compositor_handler: Option<Arc<dyn FlutterCompositorHandler>>,
 }
 
@@ -95,8 +97,21 @@ impl FlutterView {
     ) -> Self {
         Self {
             id,
-            opengl_handler: Arc::new(opengl_handler),
+            opengl_handler: Some(Arc::new(opengl_handler)),
             compositor_handler: None,
+        }
+    }
+
+    /// A view whose frames go to a compositor, for an engine with an OpenGL
+    /// handler of its own.
+    pub fn new(
+        id: FlutterViewId,
+        compositor_handler: impl FlutterCompositorHandler + 'static,
+    ) -> Self {
+        Self {
+            id,
+            opengl_handler: None,
+            compositor_handler: Some(Arc::new(compositor_handler)),
         }
     }
 
@@ -107,7 +122,7 @@ impl FlutterView {
     ) -> Self {
         Self {
             id,
-            opengl_handler: Arc::new(opengl_handler),
+            opengl_handler: Some(Arc::new(opengl_handler)),
             compositor_handler: Some(Arc::new(compositor_handler)),
         }
     }
@@ -146,7 +161,7 @@ impl ViewRegistry {
     pub fn implicit_view_opengl_handler(&self) -> Option<Arc<dyn FlutterOpenGLHandler>> {
         self.views
             .get(&IMPLICIT_VIEW_ID)
-            .map(|view| view.opengl_handler.clone())
+            .and_then(|view| view.opengl_handler.clone())
     }
 
     pub fn compositor_handler_for_view(

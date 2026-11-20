@@ -8,12 +8,14 @@ use crate::semantics::FlutterSemanticsHandler;
 use crate::tasks::TaskRunnerHandler;
 use crate::view::FlutterViewFocusHandler;
 use crate::{CreateError, FlutterEngine, FlutterVsyncHandler};
+use flust_engine_api::FlutterOpenGLHandler;
 
 pub struct FlutterEngineBuilder {
     pub(crate) platform_handler: Option<Arc<dyn TaskRunnerHandler + Send + Sync>>,
     pub(crate) vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     pub(crate) semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     pub(crate) view_focus_handler: Option<Arc<dyn FlutterViewFocusHandler + Send + Sync>>,
+    pub(crate) opengl_handler: Option<Arc<dyn FlutterOpenGLHandler + Send + Sync>>,
     pub(crate) compositor_enabled: bool,
     pub(crate) merged_platform_ui_thread: bool,
     pub(crate) aot_library: PathBuf,
@@ -32,6 +34,7 @@ impl FlutterEngineBuilder {
             vsync_handler: None,
             semantics_handler: None,
             view_focus_handler: None,
+            opengl_handler: None,
             compositor_enabled: false,
             merged_platform_ui_thread: false,
             aot_library: Default::default(),
@@ -65,6 +68,20 @@ impl FlutterEngineBuilder {
         handler: Arc<dyn FlutterSemanticsHandler + Send + Sync>,
     ) -> Self {
         self.semantics_handler = Some(handler);
+        self
+    }
+
+    /// The OpenGL callbacks of the engine (`make_current` and the others),
+    /// for all views. Without it, they go to the implicit view's handler.
+    ///
+    /// With a compositor, the engine draws every view in the one context
+    /// that `make_current` makes current, and does not say which view it
+    /// is drawing: a handler of the implicit view can only serve one.
+    pub fn with_opengl_handler(
+        mut self,
+        handler: Arc<dyn FlutterOpenGLHandler + Send + Sync>,
+    ) -> Self {
+        self.opengl_handler = Some(handler);
         self
     }
 
