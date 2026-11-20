@@ -1032,10 +1032,10 @@ pub(crate) struct FlutterEngineAOTData {
 
 impl FlutterEngineAOTData {
     pub(crate) fn new(aot_library_path: &Path) -> Result<Self, FlutterEngineError> {
-        let data: flust_engine_sys::FlutterEngineAOTData = ptr::null_mut();
+        let mut data: flust_engine_sys::FlutterEngineAOTData = ptr::null_mut();
 
         if FlutterEngine::runs_aot_compiled_dart_code() {
-            Self::create_aot_data(aot_library_path, &data)?;
+            Self::create_aot_data(aot_library_path, &mut data)?;
         }
 
         Ok(Self { data })
@@ -1043,7 +1043,7 @@ impl FlutterEngineAOTData {
 
     fn create_aot_data(
         aot_library_path: &Path,
-        data_out: &flust_engine_sys::FlutterEngineAOTData,
+        data_out: &mut flust_engine_sys::FlutterEngineAOTData,
     ) -> Result<(), FlutterEngineError> {
         let elf_path = path_to_cstring(aot_library_path).into_raw();
         let source = &flust_engine_sys::FlutterEngineAOTDataSource {
@@ -1054,8 +1054,7 @@ impl FlutterEngineAOTData {
         let result = unsafe {
             flust_engine_sys::FlutterEngineCreateAOTData(
                 source,
-                data_out as *const flust_engine_sys::FlutterEngineAOTData
-                    as *mut flust_engine_sys::FlutterEngineAOTData,
+                data_out,
             )
         };
         FlutterEngineResult::from_ffi(result)
