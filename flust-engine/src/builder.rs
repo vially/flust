@@ -13,6 +13,7 @@ pub struct FlutterEngineBuilder {
     pub(crate) vsync_handler: Option<Arc<Mutex<dyn FlutterVsyncHandler + Send>>>,
     pub(crate) semantics_handler: Option<Arc<dyn FlutterSemanticsHandler + Send + Sync>>,
     pub(crate) compositor_enabled: bool,
+    pub(crate) merged_platform_ui_thread: bool,
     pub(crate) aot_library: PathBuf,
     pub(crate) assets: PathBuf,
     pub(crate) icu_data: PathBuf,
@@ -29,6 +30,7 @@ impl FlutterEngineBuilder {
             vsync_handler: None,
             semantics_handler: None,
             compositor_enabled: false,
+            merged_platform_ui_thread: false,
             aot_library: Default::default(),
             assets: Default::default(),
             icu_data: Default::default(),
@@ -72,6 +74,26 @@ impl FlutterEngineBuilder {
 
     pub fn with_compositor_enabled(mut self, enabled: bool) -> Self {
         self.compositor_enabled = enabled;
+        self
+    }
+
+    /// Runs Dart on the platform thread, instead of on a UI thread of the
+    /// engine's own.
+    ///
+    /// The engine then runs Dart from within some of the calls made to it
+    /// on the platform thread (window metrics, pointer events, platform
+    /// messages, among others), before they return. Callbacks that Dart
+    /// triggers synchronously, such as the vsync callback, are then called
+    /// on the platform thread too, from within those calls: no lock that
+    /// such a callback takes may be held while making them. Messages from
+    /// Dart, and the responses to messages sent to it, are still delivered
+    /// as platform tasks.
+    ///
+    /// Flutter's own desktop embedders do this by default, and its
+    /// windowing API depends on it: a window is created synchronously, from
+    /// Dart.
+    pub fn with_merged_platform_ui_thread(mut self, merged: bool) -> Self {
+        self.merged_platform_ui_thread = merged;
         self
     }
 

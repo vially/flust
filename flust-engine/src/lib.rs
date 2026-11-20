@@ -237,13 +237,19 @@ impl FlutterEngine {
             identifier: 0,
             destruction_callback: None,
         };
+        // The engine merges the UI thread into the platform thread when both
+        // are given task runners with the same identifier.
+        let ui_task_runner = match builder.merged_platform_ui_thread {
+            true => &platform_task_runner as *const flust_engine_sys::FlutterTaskRunnerDescription,
+            false => std::ptr::null(),
+        };
         let custom_task_runners = flust_engine_sys::FlutterCustomTaskRunners {
             struct_size: std::mem::size_of::<flust_engine_sys::FlutterCustomTaskRunners>(),
             platform_task_runner: &platform_task_runner
                 as *const flust_engine_sys::FlutterTaskRunnerDescription,
             render_task_runner: std::ptr::null(),
             thread_priority_setter: None,
-            ui_task_runner: std::ptr::null(),
+            ui_task_runner,
         };
 
         let vsync_callback: VsyncCallback = match inner.vsync_handler {
