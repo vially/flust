@@ -165,8 +165,17 @@ def _read_row(pixels, origin, row, fields):
     return values
 
 
-def read_frame(pixels, frame, border_width):
-    """Fill in what `pixels` shows into `frame`, problems included."""
+def read_frame(pixels, frame, border_width, slack=0):
+    """Fill in what `pixels` shows into `frame`, problems included.
+
+    `slack` is how many pixels the picture may be off by. At a fractional
+    scale, the compositor rounds the window's edges to pixels on its own, so
+    the picture and the window it shows in can differ by one.
+    """
+
+    def near(a, b):
+        return all(abs(x - y) <= slack for x, y in zip(a, b))
+
     frame.window = find_window(pixels, border_width)
 
     corners = {
@@ -198,10 +207,10 @@ def read_frame(pixels, frame, border_width):
     frame.encoded = tuple(sizes)
     frame.content = (*origin, *frame.encoded)
 
-    if frame.content != frame.window:
+    if not near(frame.content, frame.window):
         dx = frame.content[0] - frame.window[0]
         dy = frame.content[1] - frame.window[1]
-        if frame.encoded == frame.window[2:]:
+        if near(frame.encoded, frame.window[2:]):
             frame.problems.append(f"offset({dx:+d},{dy:+d})")
         else:
             # A picture larger than the window is cut off at the window's
@@ -211,13 +220,14 @@ def read_frame(pixels, frame, border_width):
             )
         return
 
-    # The right size in the right place: then all of it has to be there.
-    left, top, width, height = frame.content
+    # The right size in the right place: then all of it has to be there,
+    # where the window shows it.
+    left, top, width, height = frame.window if slack else frame.content
     damaged = []
     for name, (_, right_side, bottom_side) in corners.items():
         x = left + right_side * (width - CORNER)
         y = top + bottom_side * (height - CORNER)
-        if boxes[name] != (x, y, x + CORNER, y + CORNER):
+        if boxes[name] is None or not near(boxes[name], (x, y, x + CORNER, y + CORNER)):
             damaged.append("corner " + name)
     if damaged:
         frame.problems.append("damaged(" + ", ".join(damaged) + ")")
@@ -268,7 +278,9 @@ def load_run(run_dir, scale=1.0, only_steps=True, scale_from=None):
             frame = Frame(int(row["index"]), time_ms / 1000, step, section)
             pixels = np.asarray(Image.open(frames_dir / f"{frame.index:06}.png").convert("RGBA"))
             pixels = np.ascontiguousarray(pixels)
-            read_frame(pixels, frame, border_width)
+            # Whole scales put the picture on whole pixels.
+            slack = 0 if float(frame_scale).is_integer() else 1
+            read_frame(pixels, frame, border_width, slack)
             frames.append(frame)
     cache.write_text(json.dumps([asdict(frame) for frame in frames]))
     return [frame for frame in frames if frame.in_steps or not only_steps]
