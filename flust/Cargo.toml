@@ -19,7 +19,6 @@ flust-engine = { path = "../flust-engine" }
 flust-plugins = { path = "../flust-plugins" }
 flust-runner-api = { path = "../flust-runner-api" }
 flust-sctk = { path = "../flust-sctk", optional = true }
-flust-winit = { path = "../flust-winit", optional = true }
 thiserror = "1.0.50"
 tracing = "0.1"
 

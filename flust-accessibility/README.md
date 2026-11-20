@@ -2,9 +2,7 @@
 
 Exposes the semantics of the views of a Flutter engine to assistive technologies.
 
-A Flust app can be used with assistive technologies, such as the Orca screen reader, on Linux with the `flust-sctk` backend. There is nothing to switch on in the app: what a Flutter app describes with its widgets and with `Semantics` is what a screen reader gets.
-
-Flust has no accessibility support with the `flust-winit` backend.
+A Flust app can be used with assistive technologies, such as the Orca screen reader, on Linux. There is nothing to switch on in the app: what a Flutter app describes with its widgets and with `Semantics` is what a screen reader gets.
 
 The work is tracked in https://forge.lab.vially.dev/vially/flust/issues/6.
 

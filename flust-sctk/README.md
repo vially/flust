@@ -43,7 +43,6 @@ With Skia, nothing of this changes.
 - **External textures** have to be `GL_RGBA8` with Impeller. Give a `TextureFrame` its size with `with_size`; without one, the size the texture is drawn at is used.
 - **Vulkan** is not supported, with either renderer.
 - **Partial repaint** is not supported: every frame is drawn and presented whole (https://forge.lab.vially.dev/vially/flust/issues/18).
-- The `flust-winit` backend always draws with Skia, unless `--enable-impeller` is passed.
 - Upstream rates Impeller through the embedder API with OpenGL as experimental. Flutter's own Linux embedder renders with Impeller through the same path by default, but Flust has only been tried with Mesa's `radeonsi` driver so far.
 
 ### Testing

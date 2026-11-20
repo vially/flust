@@ -13,8 +13,8 @@ that could use some help.
 ## Structure
 This project is cargo workspace with multiple targets.
 
-- `flust-winit` creates an event loop and a window and interfaces with the
-  `flust-engine` crate.
+- `flust-sctk` creates the Wayland windows and runs the event loop, using
+  Smithay's client toolkit, and interfaces with the `flust-engine` crate.
 
 - `flust-engine` is the library that make flutter run. It provides a
   `MethodChannel` struct to iterop with flutter and dart.

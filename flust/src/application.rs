@@ -11,15 +11,9 @@ use flust_sctk::application::{
     SctkApplication, SctkApplicationCreateError, SctkApplicationRunError,
 };
 
-#[cfg(feature = "flust-winit")]
-use flust_winit::{WinitApplication, WinitApplicationBuildError, WinitApplicationRunError};
-
 pub enum Application {
     #[cfg(feature = "flust-sctk")]
     Sctk(SctkApplication),
-
-    #[cfg(feature = "flust-winit")]
-    Winit(WinitApplication),
 }
 
 impl Application {
@@ -36,30 +30,15 @@ impl Application {
                 #[cfg(not(feature = "flust-sctk"))]
                 panic!("Failed to initialize sctk application. The 'flust-sctk' feature is not enabled");
             }
-
-            Backend::Winit => {
-                #[cfg(feature = "flust-winit")]
-                return Ok(Application::Winit(WinitApplication::new(attributes)?));
-
-                #[cfg(not(feature = "flust-winit"))]
-                panic!("Failed to initialize winit application. The 'flust-winit' feature is not enabled");
-            }
         }
     }
 
     /// Runs the application until it exits, and returns the exit code for
-    /// the process: the one Dart asked for (`ServicesBinding.exitApplication`)
-    /// with the sctk backend, success with the winit one.
+    /// the process: the one Dart asked for (`ServicesBinding.exitApplication`).
     pub fn run(self) -> Result<ExitCode, ApplicationRunError> {
         match self {
             #[cfg(feature = "flust-sctk")]
             Self::Sctk(app) => Ok(app.run()?),
-
-            #[cfg(feature = "flust-winit")]
-            Self::Winit(app) => {
-                app.run()?;
-                Ok(ExitCode::SUCCESS)
-            }
         }
     }
 
@@ -70,9 +49,6 @@ impl Application {
         match self {
             #[cfg(feature = "flust-sctk")]
             Self::Sctk(app) => app.add_plugin(plugin),
-
-            #[cfg(feature = "flust-winit")]
-            Self::Winit(app) => app.add_plugin(plugin),
         }
     }
 }
@@ -201,10 +177,6 @@ pub enum ApplicationBuildError {
     #[cfg(feature = "flust-sctk")]
     #[error(transparent)]
     SctkApplicationCreateError(#[from] SctkApplicationCreateError),
-
-    #[cfg(feature = "flust-winit")]
-    #[error(transparent)]
-    WinitApplicationBuildError(#[from] WinitApplicationBuildError),
 }
 
 #[derive(Error, Debug)]
@@ -212,10 +184,6 @@ pub enum ApplicationRunError {
     #[cfg(feature = "flust-sctk")]
     #[error(transparent)]
     SctkApplicationRunError(#[from] SctkApplicationRunError),
-
-    #[cfg(feature = "flust-winit")]
-    #[error(transparent)]
-    WinitApplicationRunError(#[from] WinitApplicationRunError),
 }
 
 #[cfg(target_os = "linux")]

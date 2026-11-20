@@ -7,7 +7,6 @@ pub use flust_engine::renderer::Renderer;
 #[derive(Debug, Clone)]
 pub enum Backend {
     Sctk(BackendConfigSctk),
-    Winit,
 }
 
 impl Default for Backend {
