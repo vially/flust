@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod context;
 pub mod handler;
+pub mod render;
 
 pub mod gl {
     #![allow(clippy::all)]
