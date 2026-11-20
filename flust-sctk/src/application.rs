@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     process::ExitCode,
     rc::Rc,
@@ -124,6 +124,11 @@ pub struct SctkApplicationState {
     frame_clock: FrameClock,
     async_scheduler: Scheduler<SctkAsyncResult>,
     modifiers: Modifiers,
+    /// The surface that has the keyboard focus.
+    keyboard_focus: Option<ObjectId>,
+    /// The keys pressed while the window with the keyboard focus took no
+    /// input: their release is not sent either.
+    blocked_keys: HashSet<u32>,
 }
 
 impl SctkApplication {
@@ -152,6 +157,8 @@ impl SctkApplication {
         let seat_state = SeatState::new(&globals, &qh);
         let compositor_state = CompositorState::bind(&globals, &qh)?;
         let xdg_shell_state = XdgShell::bind(&globals, &qh)?;
+        // Optional: dialogs are only hinted to the compositor with it.
+        let xdg_wm_dialog = globals.bind(&qh, 1..=1, GlobalData).ok();
         let shm_state = Shm::bind(&globals, &qh)?;
 
         let platform_task_handler = Arc::new(SctkPlatformTaskHandler::new(event_loop.get_signal()));
@@ -190,6 +197,7 @@ impl SctkApplication {
         let shell = SctkShell {
             compositor_state,
             xdg_shell_state,
+            xdg_wm_dialog,
             frame_clock: frame_clock.clone(),
         };
         let rendering = SctkRendering {
@@ -206,6 +214,7 @@ impl SctkApplication {
             // limits they are given.
             min_size: Some(LogicalSize::new(256, 256)),
             max_size: None,
+            modal_parent: None,
         };
 
         // Without a startup window, the implicit view exists in the engine
@@ -311,6 +320,8 @@ impl SctkApplication {
             frame_clock,
             async_scheduler,
             modifiers: Modifiers::default(),
+            keyboard_focus: None,
+            blocked_keys: HashSet::new(),
         };
 
         Ok(Self { event_loop, state })
@@ -405,6 +416,15 @@ impl SctkApplicationState {
 
     fn is_engine_running(&self) -> bool {
         self.windows.is_engine_running()
+    }
+
+    /// Whether the window with the keyboard focus has a modal dialog open,
+    /// and so takes no keys.
+    fn is_keyboard_focus_blocked(&self) -> bool {
+        self.keyboard_focus
+            .clone()
+            .and_then(|surface_id| self.find_window_by_surface_id(surface_id))
+            .is_some_and(|window| self.windows.is_blocked(window.view_id()))
     }
 
     #[cfg(feature = "testing")]
@@ -802,7 +822,8 @@ impl PointerHandler for SctkApplicationState {
             if window.view_state() != SctkViewState::Added {
                 continue;
             }
-            window.pointer_event(pointer, event);
+            let blocked = self.windows.is_blocked(window.view_id());
+            window.pointer_event(pointer, event, blocked);
         }
     }
 }
@@ -819,6 +840,7 @@ impl KeyboardHandler for SctkApplicationState {
         keysyms: &[Keysym],
     ) {
         // Key events name no view: they go to the view that has focus.
+        self.keyboard_focus = Some(surface.id());
         self.send_view_focus_event(surface, FlutterViewFocusState::Focused);
 
         let synthesized_events = self
@@ -839,6 +861,12 @@ impl KeyboardHandler for SctkApplicationState {
         surface: &WlSurface,
         _serial: u32,
     ) {
+        if self.keyboard_focus == Some(surface.id()) {
+            self.keyboard_focus = None;
+        }
+        // Keys still held when another window gets the focus are pressed
+        // in that one, as the keyboard's state is synchronized then.
+        self.blocked_keys.clear();
         self.send_view_focus_event(surface, FlutterViewFocusState::Unfocused);
     }
 
@@ -854,6 +882,14 @@ impl KeyboardHandler for SctkApplicationState {
             "key pressed: {}",
             event.keysym.name().unwrap_or("[unknown]"),
         );
+
+        // A window with a modal dialog open takes no input. The key is not
+        // kept in the keyboard's state either: the engine does not know
+        // about it.
+        if self.is_keyboard_focus_blocked() {
+            self.blocked_keys.insert(event.raw_code);
+            return;
+        }
 
         if self
             .keyboard_handler
@@ -890,6 +926,11 @@ impl KeyboardHandler for SctkApplicationState {
             "key released: {}",
             event.keysym.name().unwrap_or("[unknown]"),
         );
+
+        // The engine did not get the key's press.
+        if self.blocked_keys.remove(&event.raw_code) {
+            return;
+        }
 
         let Ok(latched_keydown) = self.keyboard_handler.lock().release_key(&event) else {
             error!(
@@ -982,6 +1023,9 @@ impl SeatHandler for SctkApplicationState {
                         "key repeated: {}",
                         event.keysym.name().unwrap_or("[unknown]"),
                     );
+                    if state.blocked_keys.contains(&event.raw_code) {
+                        return;
+                    }
 
                     state.press_key_or_repeat(SctkKeyEvent::new(
                         FlutterKeyEventDeviceType::Keyboard,

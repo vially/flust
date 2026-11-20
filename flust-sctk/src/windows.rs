@@ -16,8 +16,8 @@ use wayland_client::QueueHandle;
 use crate::{
     application::SctkApplicationState,
     window::{
-        SctkFlutterWindow, SctkFlutterWindowCreateError, SctkRendering, SctkShell, SctkViewState,
-        SctkWindowAttributes,
+        SctkFlutterWindow, SctkFlutterWindowCreateError, SctkModalParent, SctkRendering, SctkShell,
+        SctkViewState, SctkWindowAttributes,
     },
 };
 
@@ -107,6 +107,18 @@ impl SctkWindows {
         self.windows.borrow().values().cloned().collect()
     }
 
+    /// Whether the window of `view_id` has a modal dialog open, and so
+    /// takes no input.
+    pub(crate) fn is_blocked(&self, view_id: FlutterViewId) -> bool {
+        self.windows.borrow().values().any(|window| {
+            window.modal_parent() == Some(view_id)
+                && matches!(
+                    window.view_state(),
+                    SctkViewState::Adding | SctkViewState::Added
+                )
+        })
+    }
+
     /// Takes out the windows whose view the engine is done with, or never
     /// added. Dropping them destroys them.
     pub(crate) fn take_finished(&self) -> Vec<SctkFlutterWindow> {
@@ -131,11 +143,15 @@ impl SctkWindows {
     /// Creates a window, with a view of its own, while the engine runs. It
     /// is shown once the engine has drawn its first frame.
     ///
+    /// With a `modal_parent`, the window is a modal dialog of that window,
+    /// which takes no input until the dialog is destroyed.
+    ///
     /// The engine has the view when this returns, as Dart expects: the
     /// engine adds it right away when called on the thread that runs Dart.
     pub(crate) fn create_window(
         &self,
         attributes: SctkWindowAttributes,
+        modal_parent: Option<FlutterViewId>,
     ) -> Result<SctkFlutterWindow, SctkCreateWindowError> {
         if self.has_startup_window {
             return Err(SctkCreateWindowError::StartupWindow);
@@ -154,8 +170,22 @@ impl SctkWindows {
             _ => return Err(SctkCreateWindowError::EngineNotRunning),
         };
 
+        let modal_parent = match modal_parent {
+            Some(view_id) => match self.get(view_id) {
+                Some(parent) if parent.view_state() == SctkViewState::Added => {
+                    Some(SctkModalParent {
+                        view_id,
+                        xdg_toplevel: parent.xdg_toplevel(),
+                    })
+                }
+                _ => return Err(SctkCreateWindowError::UnknownParent(view_id)),
+            },
+            None => None,
+        };
+
         let attributes = SctkWindowAttributes {
             title: attributes.title.or(self.window_attributes.title.clone()),
+            modal_parent,
             app_id: attributes.app_id.or(self.window_attributes.app_id.clone()),
             inner_size: attributes.inner_size.or(self.window_attributes.inner_size),
             ..attributes
@@ -245,6 +275,9 @@ pub enum SctkCreateWindowError {
 
     #[error("Windows can only be created while the engine runs")]
     EngineNotRunning,
+
+    #[error("There is no window with view id {0} to be the parent")]
+    UnknownParent(FlutterViewId),
 
     #[error(transparent)]
     Window(#[from] SctkFlutterWindowCreateError),

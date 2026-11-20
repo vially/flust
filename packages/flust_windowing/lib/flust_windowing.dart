@@ -209,6 +209,7 @@ class WindowControllerFlust extends WindowController {
         constraints?.maxWidth ?? double.infinity,
         constraints?.maxHeight ?? double.infinity,
         title,
+        -1,
       ),
     );
     if (viewId < 0) {
@@ -389,7 +390,8 @@ T _withString<T>(String? string, T Function(ffi.Pointer<Utf8>) f) {
 /// The functions of Flust that Dart calls, from their addresses. Their
 /// signatures are those of `flust-sctk/src/windowing.rs`. Every function
 /// takes the id of the engine first, and all but `createWindow` the id of
-/// the window's view next.
+/// the window's view next. `createWindow` takes the view id of the window
+/// that the new one is a modal dialog of last, or -1.
 class _Native {
   _Native(Map<String, int> functions)
     : createWindow =
@@ -471,6 +473,7 @@ typedef _CreateWindowNative = ffi.Int64 Function(
   ffi.Double maxWidth,
   ffi.Double maxHeight,
   ffi.Pointer<Utf8> title,
+  ffi.Int64 modalParent,
 );
 typedef _CreateWindow = int Function(
   int engineId,
@@ -481,6 +484,7 @@ typedef _CreateWindow = int Function(
   double maxWidth,
   double maxHeight,
   ffi.Pointer<Utf8> title,
+  int modalParent,
 );
 typedef _ViewNative = ffi.Void Function(ffi.Int64 engineId, ffi.Int64 viewId);
 typedef _View = void Function(int engineId, int viewId);

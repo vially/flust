@@ -20,7 +20,10 @@ use flust_engine_sys::{FlutterEngineDisplayId, FlutterEngineGetCurrentTime};
 use flust_glutin::render::{RenderContext, WindowSurface};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
-    reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel,
+    reexports::protocols::xdg::{
+        dialog::v1::client::xdg_wm_dialog_v1::XdgWmDialogV1,
+        shell::client::xdg_toplevel::XdgToplevel,
+    },
     seat::pointer::{PointerEvent, PointerEventKind},
     shell::xdg::XdgShell,
 };
@@ -74,6 +77,8 @@ pub(crate) struct SctkFlutterWindowInner {
     surface_frame: Mutex<Option<PhysicalSize<u32>>>,
     /// The window's state in the last configure.
     toplevel_state: Mutex<ToplevelConfigure>,
+    /// The window this one is a modal dialog of.
+    modal_parent: Option<FlutterViewId>,
 }
 
 impl SctkFlutterWindowInner {
@@ -297,7 +302,17 @@ pub(crate) struct SctkRendering {
 pub(crate) struct SctkShell {
     pub(crate) compositor_state: CompositorState,
     pub(crate) xdg_shell_state: XdgShell,
+    /// For telling the compositor that a window is a modal dialog, if it
+    /// offers xdg-dialog.
+    pub(crate) xdg_wm_dialog: Option<XdgWmDialogV1>,
     pub(crate) frame_clock: FrameClock,
+}
+
+/// The window that a dialog is modal to.
+#[derive(Clone, Debug)]
+pub(crate) struct SctkModalParent {
+    pub(crate) view_id: FlutterViewId,
+    pub(crate) xdg_toplevel: XdgToplevel,
 }
 
 /// What one window is created with.
@@ -310,6 +325,8 @@ pub(crate) struct SctkWindowAttributes {
     /// logical pixels. Unlimited if not set.
     pub(crate) min_size: Option<LogicalSize<u32>>,
     pub(crate) max_size: Option<LogicalSize<u32>>,
+    /// Makes the window a modal dialog of another one.
+    pub(crate) modal_parent: Option<SctkModalParent>,
 }
 
 /// Where a window's view is in its life in the engine.
@@ -350,6 +367,7 @@ impl SctkFlutterWindow {
         let SctkShell {
             compositor_state,
             xdg_shell_state,
+            xdg_wm_dialog,
             frame_clock,
         } = shell;
         let renderer = rendering.renderer;
@@ -367,7 +385,7 @@ impl SctkFlutterWindow {
         }
 
         let surface = compositor_state.create_surface(qh);
-        let window = Toplevel::new(xdg_shell_state, surface, qh);
+        let mut window = Toplevel::new(xdg_shell_state, surface, qh);
 
         if let Some(title) = attributes.title {
             window.xdg_toplevel().set_title(title);
@@ -382,6 +400,11 @@ impl SctkFlutterWindow {
             attributes.min_size,
             attributes.max_size,
         );
+
+        if let Some(parent) = &attributes.modal_parent {
+            window.set_modal_parent(&parent.xdg_toplevel, xdg_wm_dialog.as_ref(), qh);
+        }
+
         // The initial commit, without a buffer: the compositor answers it
         // with the first configure.
         window.wl_surface().commit();
@@ -417,6 +440,7 @@ impl SctkFlutterWindow {
             current_scale_factor: RwLock::new(1.0),
             default_size,
             toplevel_state: Default::default(),
+            modal_parent: attributes.modal_parent.map(|parent| parent.view_id),
         });
 
         // The startup window is the implicit view, which the engine always
@@ -460,6 +484,11 @@ impl SctkFlutterWindow {
 
     pub fn view_id(&self) -> FlutterViewId {
         self.inner.id
+    }
+
+    /// The window this one is a modal dialog of, if it is one.
+    pub(crate) fn modal_parent(&self) -> Option<FlutterViewId> {
+        self.inner.modal_parent
     }
 
     pub fn xdg_toplevel_id(&self) -> ObjectId {
@@ -632,7 +661,13 @@ impl SctkFlutterWindow {
         self.inner.window.wl_surface().commit();
     }
 
-    pub(crate) fn pointer_event(&self, pointer: &WlPointer, event: &PointerEvent) {
+    /// Sends a pointer event on the window to the engine.
+    ///
+    /// While the window is `blocked` (it has a modal dialog open), presses
+    /// and scrolling are dropped. Moving the pointer is not, and neither is
+    /// the release of a press that started before: Flutter expects it. A
+    /// release whose press was dropped is dropped too.
+    pub(crate) fn pointer_event(&self, pointer: &WlPointer, event: &PointerEvent, blocked: bool) {
         let sctk_pointer_event = {
             let mut pointers = self.inner.pointers.write().unwrap();
             let pointer = pointers
@@ -640,6 +675,10 @@ impl SctkFlutterWindow {
                 .or_insert_with(|| Pointer::new(pointer.id().protocol_id() as i32));
 
             match event.kind {
+                PointerEventKind::Press { .. } | PointerEventKind::Axis { .. } if blocked => {
+                    return;
+                }
+                PointerEventKind::Release { .. } if pointer.pressed == 0 => return,
                 PointerEventKind::Press { .. } => pointer.increment_pressed(),
                 PointerEventKind::Release { .. } => pointer.decrement_pressed(),
                 _ => {}

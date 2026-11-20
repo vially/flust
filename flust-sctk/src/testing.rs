@@ -42,7 +42,7 @@ impl WindowRequest {
     pub(crate) fn handle(self, state: &mut SctkApplicationState) {
         match self {
             WindowRequest::Create(call, attributes) => {
-                match state.windows().create_window(attributes) {
+                match state.windows().create_window(attributes, None) {
                     Ok(window) => call.success(window.view_id()),
                     Err(err) => call.error("create-failed", err.to_string(), Value::Null),
                 }

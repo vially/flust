@@ -20,6 +20,7 @@ use smithay_client_toolkit::{
             zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
             zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
         },
+        dialog::v1::client::{xdg_dialog_v1::XdgDialogV1, xdg_wm_dialog_v1::XdgWmDialogV1},
         shell::client::{
             xdg_surface::{self, XdgSurface},
             xdg_toplevel::{self, XdgToplevel},
@@ -48,9 +49,10 @@ pub(crate) struct ToplevelConfigure {
 pub(crate) struct ToplevelData(Arc<Mutex<ToplevelConfigure>>);
 
 pub(crate) struct Toplevel {
-    // Field order is destruction order: the decoration goes before the
-    // toplevel, and the toplevel before its `xdg_surface` (xdg-decoration and
-    // xdg-shell both require it).
+    // Field order is destruction order: the dialog and the decoration go
+    // before the toplevel, and the toplevel before its `xdg_surface`
+    // (xdg-decoration and xdg-shell both require it).
+    dialog: Option<Dialog>,
     _decoration: Option<Decoration>,
     xdg_toplevel: OwnedXdgToplevel,
     xdg_surface: XdgShellSurface,
@@ -81,6 +83,7 @@ impl Toplevel {
             .map(|manager| Decoration(manager.get_toplevel_decoration(&xdg_toplevel, qh, data)));
 
         Self {
+            dialog: None,
             _decoration: decoration,
             xdg_toplevel: OwnedXdgToplevel(xdg_toplevel),
             xdg_surface,
@@ -98,11 +101,40 @@ impl Toplevel {
     pub(crate) fn xdg_toplevel(&self) -> &XdgToplevel {
         &self.xdg_toplevel.0
     }
+
+    /// Makes the window a modal dialog of `parent`: the compositor keeps it
+    /// above its parent, and is told that it is modal if it offers
+    /// xdg-dialog (`dialogs`). Keeping input from the parent is up to the
+    /// client.
+    pub(crate) fn set_modal_parent(
+        &mut self,
+        parent: &XdgToplevel,
+        dialogs: Option<&XdgWmDialogV1>,
+        qh: &QueueHandle<SctkApplicationState>,
+    ) {
+        self.xdg_toplevel().set_parent(Some(parent));
+        // A toplevel can only have one dialog object.
+        if self.dialog.is_none() {
+            self.dialog = dialogs.map(|dialogs| {
+                let dialog = dialogs.get_xdg_dialog(self.xdg_toplevel(), qh, ());
+                dialog.set_modal();
+                Dialog(dialog)
+            });
+        }
+    }
 }
 
 struct OwnedXdgToplevel(XdgToplevel);
 
 impl Drop for OwnedXdgToplevel {
+    fn drop(&mut self) {
+        self.0.destroy();
+    }
+}
+
+struct Dialog(XdgDialogV1);
+
+impl Drop for Dialog {
     fn drop(&mut self) {
         self.0.destroy();
     }
@@ -198,5 +230,31 @@ impl Dispatch<ZxdgDecorationManagerV1, GlobalData> for SctkApplicationState {
         _qh: &QueueHandle<Self>,
     ) {
         unreachable!("zxdg_decoration_manager_v1 has no events")
+    }
+}
+
+impl Dispatch<XdgWmDialogV1, GlobalData> for SctkApplicationState {
+    fn event(
+        _state: &mut Self,
+        _dialogs: &XdgWmDialogV1,
+        _event: <XdgWmDialogV1 as wayland_client::Proxy>::Event,
+        _data: &GlobalData,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        unreachable!("xdg_wm_dialog_v1 has no events")
+    }
+}
+
+impl Dispatch<XdgDialogV1, ()> for SctkApplicationState {
+    fn event(
+        _state: &mut Self,
+        _dialog: &XdgDialogV1,
+        _event: <XdgDialogV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        unreachable!("xdg_dialog_v1 has no events")
     }
 }

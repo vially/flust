@@ -97,6 +97,8 @@ enum CreateWindowFailure {
     EngineNotRunning = -3,
     /// Anything else: the log says what.
     Other = -4,
+    /// The parent asked for is not a window, or is being destroyed.
+    UnknownParent = -5,
 }
 
 impl From<&SctkCreateWindowError> for CreateWindowFailure {
@@ -105,16 +107,19 @@ impl From<&SctkCreateWindowError> for CreateWindowFailure {
             SctkCreateWindowError::StartupWindow => Self::StartupWindow,
             SctkCreateWindowError::UnsupportedTargetType(_) => Self::UnsupportedTargetType,
             SctkCreateWindowError::EngineNotRunning => Self::EngineNotRunning,
+            SctkCreateWindowError::UnknownParent(_) => Self::UnknownParent,
             SctkCreateWindowError::Window(_) | SctkCreateWindowError::View(_) => Self::Other,
         }
     }
 }
 
-/// Creates a regular window and returns the id of its view, which the
-/// engine has by then, or a negative `CreateWindowFailure`.
+/// Creates a window and returns the id of its view, which the engine has by
+/// then, or a negative `CreateWindowFailure`.
 ///
 /// Sizes are in logical pixels. A size or a limit that is not finite is not
-/// set. `title` is a UTF-8 string, or null.
+/// set. `title` is a UTF-8 string, or null. With a `modal_parent` that is
+/// not negative, the window is a modal dialog of the window with that view
+/// id; a dialog without a parent is a regular window on Wayland.
 #[allow(clippy::too_many_arguments)]
 unsafe extern "C" fn create_window(
     engine_id: i64,
@@ -125,6 +130,7 @@ unsafe extern "C" fn create_window(
     max_width: f64,
     max_height: f64,
     title: *const c_char,
+    modal_parent: FlutterViewId,
 ) -> i64 {
     let Some(windows) = windows(engine_id) else {
         return CreateWindowFailure::Other as i64;
@@ -144,7 +150,8 @@ unsafe extern "C" fn create_window(
         max_size: size_limit(max_width, max_height),
         ..Default::default()
     };
-    match windows.create_window(attributes) {
+    let modal_parent = (modal_parent >= 0).then_some(modal_parent);
+    match windows.create_window(attributes, modal_parent) {
         Ok(window) => window.view_id(),
         Err(err) => {
             error!("windowing: failed to create a window: {err}");
@@ -267,8 +274,17 @@ fn functions() -> HashMap<String, Value> {
         (
             "createWindow",
             create_window
-                as unsafe extern "C" fn(Engine, f64, f64, f64, f64, f64, f64, *const c_char) -> i64
-                as usize,
+                as unsafe extern "C" fn(
+                    Engine,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    f64,
+                    *const c_char,
+                    View,
+                ) -> i64 as usize,
         ),
         (
             "destroyWindow",
