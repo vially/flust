@@ -2,7 +2,7 @@ use dpi::PhysicalSize;
 use glutin::{
     config::{Api, Config, ConfigSurfaceTypes, ConfigTemplateBuilder},
     context::{ContextAttributesBuilder, NotCurrentContext, PossiblyCurrentGlContext},
-    display::{Display, DisplayApiPreference, GetGlDisplay},
+    display::{Display, DisplayApiPreference},
     prelude::{GlDisplay, NotCurrentGlContext},
     surface::{GlSurface, SurfaceAttributesBuilder, SwapInterval, WindowSurface},
 };
@@ -18,7 +18,6 @@ pub type FlutterEGLContext = (Context, ResourceContext);
 pub struct ContextBuilderAttributes {
     pub raw_window_handle: Option<RawWindowHandle>,
     pub raw_display_handle: Option<RawDisplayHandle>,
-    pub config: Option<Config>,
     pub size: Option<PhysicalSize<NonZeroU32>>,
     pub swap_interval: Option<SwapInterval>,
     pub api_preference: ApiPreference,
@@ -57,30 +56,17 @@ impl ContextBuilder {
             .raw_window_handle
             .ok_or(ContextBuildError::InvalidWindowHandle)?;
 
-        // Get display from `raw_display_handle` if present (`sctk`), or from `config` otherwise (`winit`).
         let display = self
             .attributes
             .raw_display_handle
-            .map_or_else(
-                || {
-                    self.attributes
-                        .config
-                        .as_ref()
-                        .map(|config| config.display())
-                },
-                |raw_display_handle| unsafe {
-                    Display::new(raw_display_handle, DisplayApiPreference::Egl).ok()
-                },
-            )
+            .and_then(|raw_display_handle| unsafe {
+                Display::new(raw_display_handle, DisplayApiPreference::Egl).ok()
+            })
             .ok_or(ContextBuildError::InvalidDisplayHandle)?;
 
         let size = self.attributes.size.ok_or(ContextBuildError::InvalidSize)?;
 
-        // Use config from attributes if present (`winit`), or build a default one otherwise (`sctk`).
-        let config = self
-            .attributes
-            .config
-            .map_or_else(|| new_default_config(&display, raw_window_handle), Ok)?;
+        let config = new_default_config(&display, raw_window_handle)?;
 
         let render_attributes_gl = ContextAttributesBuilder::new()
             .with_context_api(glutin::context::ContextApi::OpenGl(None))
@@ -140,11 +126,6 @@ impl ContextBuilder {
 
     pub fn with_raw_window_handle(mut self, raw_window_handle: RawWindowHandle) -> Self {
         self.attributes.raw_window_handle = Some(raw_window_handle);
-        self
-    }
-
-    pub fn with_config(mut self, config: Config) -> Self {
-        self.attributes.config = Some(config);
         self
     }
 
