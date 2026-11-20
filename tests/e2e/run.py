@@ -41,6 +41,8 @@ SCENARIOS = [
     "hidden",
     "scale",
     "scale-change",
+    "scale-fractional",
+    "scale-change-fractional",
     "close",
     "exit",
     "windows",

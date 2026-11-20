@@ -1,0 +1,61 @@
+# An output with scale 1.5: the app has to draw one and a half times the pixels, and resizes
+# have to stay right in them. Sizes and points are still in logical pixels.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    # In pixels: 1280x800 for the windows on it, as in the other scenarios.
+    size: 1920x1200
+    scale: 1.5
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+steps:
+  - wait: stable
+  - mark: idle
+  - sleep: 1s
+  - screenshot: idle
+  - mark: tap
+  - click: [100, 200]
+  - wait: { for: log, match: "probe: tap 1 at 100,200" }
+  - mark: drag bottom-right shrink
+  - drag_resize: { edge: bottom-right, by: [-150, -100] }
+  - wait: stable
+  - mark: drag top-left shrink
+  - drag_resize: { edge: top-left, by: [60, 60] }
+  - wait: stable
+  - mark: to 501x303
+  - resize: 501x303
+  - wait: stable
+  - screenshot: 501x303
+  - mark: to 400x300
+  - resize: 400x300
+  - wait: stable
+  - screenshot: end
+
+analyze:
+  - run: python3 ../analyzers/probe_frames.py --scale 1.5
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

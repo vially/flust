@@ -1,0 +1,80 @@
+# The output's scale changes while the app runs, between integer and
+# fractional scales: to 1.25, to 2, and back to 1. The window keeps its size
+# in logical pixels, so the app has to draw it again with as many more (or
+# fewer) pixels, and tell the compositor in the same commit as the first
+# buffer drawn for it: with a viewport for a fractional scale, with the
+# buffer scale for an integer one.
+# The app is the probe app, built by ../build-app.sh, run from its build
+# directory, where the Flutter bundle (data/) and the engine library (lib/)
+# sit next to it.
+app:
+  command: ./flust-e2e-probe
+  cwd: ../app/target/debug
+  env:
+    RUST_LOG: info
+    LD_LIBRARY_PATH: lib
+    # analyzers/protocol.py reads the protocol trace.
+    WAYLAND_DEBUG: "1"
+
+# What the analyzers rely on: a magenta background, and a green border that
+# sway draws around the window at the size it has given it.
+session:
+  output:
+    # Large enough for the window at scale 1, where it takes up a quarter of
+    # the pixels it does at scale 2.
+    size: 2560x1600
+    background: "#ff00ff"
+  window:
+    # The surface, without the border: 640x480 at 100,100 with it.
+    size: 624x464
+    position: [108, 108]
+    border: { width: 8, color: "#00ff00" }
+
+# The analyzers read the frames as images. The pointer would cover the
+# corner it drags.
+capture:
+  frames: true
+  cursor: false
+
+# No pointer steps: waytape places the pointer by the scale the session
+# started with. Taps and drags at scale 2 are in scale.yaml.
+steps:
+  - wait: stable
+  - mark: scale 1
+  - sleep: 500ms
+  - screenshot: scale-1
+  - mark: to scale 1.25
+  - exec: swaymsg output '*' scale 1.25
+  - wait: stable
+  - mark: scale 1.25
+  - screenshot: scale-1.25
+  - resize: 501x303
+  - wait: stable
+  - resize: 624x464
+  - wait: stable
+  - mark: to scale 2
+  - exec: swaymsg output '*' scale 2
+  - wait: stable
+  - mark: scale 2
+  - screenshot: scale-2
+  - resize: 501x303
+  - wait: stable
+  - resize: 700x500
+  - wait: stable
+  - mark: to scale 1
+  - exec: swaymsg output '*' scale 1
+  - wait: stable
+  - mark: scale 1 again
+  - screenshot: scale-1-again
+  - resize: 624x464
+  - wait: stable
+  - assert_window: { size: 624x464 }
+  - screenshot: end
+
+analyze:
+  # The compositor draws the window at the new scale at once, and the app
+  # can only follow: until its first frame for the new scale is there, its
+  # picture has the wrong size. That takes a frame or two.
+  - run: python3 ../analyzers/probe_frames.py --scale-from "to scale 1.25=1.25" --scale-from "to scale 2=2" --scale-from "to scale 1=1" --max-flagged 6
+  - run: python3 ../analyzers/protocol.py
+  - run: python3 ../analyzers/app_log.py

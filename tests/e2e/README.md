@@ -291,6 +291,8 @@ For the probe app:
 | `hidden` | The window is hidden, resized while hidden, and shown again |
 | `scale` | Startup, taps and resizes on an output with scale 2 |
 | `scale-change` | The output's scale changes while the app runs, to 2 and back |
+| `scale-fractional` | Startup, taps and resizes on an output with scale 1.5: the app draws with a viewport |
+| `scale-change-fractional` | The output's scale changes while the app runs, to 1.25, to 2 and back to 1: between a viewport and the buffer scale |
 | `close` | Closing the window in the middle of a resize |
 | `exit` | The app cancels the close of its window, then exits by itself with an exit code |
 | `windows` | Two windows opened by the app: resized on their own, taps and keys reach the right one, one closed while the other draws on |
@@ -355,9 +357,13 @@ reference as well.
   (it holds the new window size back until the client commits for it, or a
   timeout passes). Other compositors may behave differently, so a clean
   run here does not prove a resize is clean everywhere.
-- The output is 60Hz. Fractional scales are not covered.
+- The output is 60Hz.
+- At a fractional scale, sway rounds a window's edges to pixels on its
+  own, so `probe_frames.py` lets the picture be one pixel off its window
+  there. At integer scales it has to match exactly.
 - waytape places the pointer by the scale the session started with, so
-  `scale-change` has no taps or drags after the change.
+  `scale-change` and `scale-change-fractional` have no taps or drags
+  after the change.
 - Times are when waytape received a frame. They are good for spotting
   stalls of several frames, not for measuring latency.
 - `window_fill.py` does not detect content that is offset, stretched or
