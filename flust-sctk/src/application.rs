@@ -69,11 +69,13 @@ use wayland_client::{
 };
 
 use crate::{
+    egl::new_wayland_render_context,
     frame_clock::FrameClock,
     handler::{
         SctkAccessibilityHandler, SctkAsyncResult, SctkExitHandler, SctkKeyboardHandler,
-        SctkMouseCursorHandler, SctkPlatformHandler, SctkPlatformTaskHandler, SctkTextInputHandler,
-        SctkVsyncHandler, FRAME_INTERVAL_60_HZ_IN_NANOS,
+        SctkMouseCursorHandler, SctkOpenGLCompositorHandlerFramebuffer, SctkOpenGLHandler,
+        SctkPlatformHandler, SctkPlatformTaskHandler, SctkTextInputHandler, SctkVsyncHandler,
+        FRAME_INTERVAL_60_HZ_IN_NANOS,
     },
     keyboard::{SctkFlutterStringExt, SctkKeyEvent},
     output::SctkOutput,
@@ -150,8 +152,19 @@ impl SctkApplication {
         let accessibility = Accessibility::new();
         let window_title = attributes.title.clone().unwrap_or_default();
 
+        // One context for all windows: the engine draws every view in it.
+        let renderer = attributes.renderer();
+        let (render_context, resource_context) = new_wayland_render_context(&conn, renderer)
+            .map_err(SctkFlutterWindowCreateError::from)?;
+        let render_context = Arc::new(std::sync::Mutex::new(render_context));
+        // Before the engine runs: the render context is then not current
+        // on any other thread.
+        let framebuffer = SctkOpenGLCompositorHandlerFramebuffer::new(&render_context, renderer);
+        let opengl_handler = SctkOpenGLHandler::new(render_context.clone(), resource_context);
+
         let engine = FlutterEngineBuilder::new()
             .with_platform_handler(platform_task_handler)
+            .with_opengl_handler(Arc::new(opengl_handler))
             .with_vsync_handler(vsync_handler)
             .with_semantics_handler(Arc::new(accessibility.clone()))
             .with_aot_library_path(attributes.aot_library_path.clone())
@@ -171,6 +184,8 @@ impl SctkApplication {
             &compositor_state,
             &xdg_shell_state,
             frame_clock.clone(),
+            render_context,
+            &framebuffer,
             attributes,
             config,
         )?;

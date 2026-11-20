@@ -4,7 +4,9 @@ The Wayland backend of Flust, built on [Smithay's client toolkit](https://github
 
 ## Rendering
 
-The engine draws with OpenGL, through an EGL context on the window's surface, into a framebuffer (a backing store) that Flust then copies to the window. It can draw with either of Flutter's renderers: Impeller, the default, or Skia.
+The engine draws with OpenGL into a framebuffer (a backing store) that Flust then copies to the window. It can draw with either of Flutter's renderers: Impeller, the default, or Skia.
+
+There is one EGL context for the whole application, which the engine draws in, current without a surface. Each window has only an EGL surface: the context is made current on it to copy a frame to the window and present it, and current without a surface again right after. This is how the engine can draw several windows: it draws every view in the one context it is given, and does not say which view it is drawing. With `FlutterOpenGLTargetType::Surface`, the engine draws straight into the window's surface instead, which the context is made current on for that.
 
 The work on Impeller is tracked in https://forge.lab.vially.dev/vially/flust/issues/8.
 

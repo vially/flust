@@ -2,63 +2,63 @@ use std::{num::NonZeroU32, ptr::NonNull};
 
 use dpi::PhysicalSize;
 use flust_engine::renderer::Renderer;
-use flust_glutin::builder::{ApiPreference, ContextBuildError, ContextBuilder, FlutterEGLContext};
+use flust_glutin::{
+    builder::ApiPreference,
+    context::ResourceContext,
+    render::{RenderContext, RenderContextError, WindowSurface},
+};
 use glutin::surface::SwapInterval;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
 use thiserror::Error;
-use wayland_client::{protocol::wl_surface, Proxy};
+use wayland_client::{protocol::wl_surface, Connection, Proxy};
 
-pub(crate) trait FlutterEGLContextWaylandExt {
-    fn new_wayland_context(
-        surface: &wl_surface::WlSurface,
-        size: PhysicalSize<u32>,
-        renderer: Renderer,
-    ) -> Result<FlutterEGLContext, CreateWaylandContextError>;
+/// Creates the context the engine draws every window in, and its resource
+/// context, for the display of this connection.
+pub(crate) fn new_wayland_render_context(
+    conn: &Connection,
+    renderer: Renderer,
+) -> Result<(RenderContext, ResourceContext), CreateWaylandContextError> {
+    let display = NonNull::new(conn.backend().display_ptr().cast())
+        .ok_or(CreateWaylandContextError::ConnectionClosed)?;
+    let raw_display_handle = RawDisplayHandle::Wayland(WaylandDisplayHandle::new(display));
+
+    // Impeller draws with its OpenGL ES backend. It works on a desktop
+    // OpenGL context as well, but only multisamples what it draws
+    // offscreen (layers, backdrop filters) on OpenGL ES 3.
+    let api_preference = match renderer {
+        Renderer::Skia => ApiPreference::OpenGl,
+        Renderer::Impeller => ApiPreference::OpenGlEs,
+    };
+
+    // The connection, and with it the display, outlives the contexts: the
+    // application owns both, and drops the engine first.
+    Ok(unsafe { RenderContext::new(raw_display_handle, api_preference)? })
 }
 
-impl FlutterEGLContextWaylandExt for FlutterEGLContext {
-    fn new_wayland_context(
-        surface: &wl_surface::WlSurface,
-        size: PhysicalSize<u32>,
-        renderer: Renderer,
-    ) -> Result<FlutterEGLContext, CreateWaylandContextError> {
-        let display = NonNull::new(
-            surface
-                .backend()
-                .upgrade()
-                .ok_or(CreateWaylandContextError::ConnectionClosed)?
-                .display_ptr()
-                .cast(),
-        )
+/// Creates the EGL surface of a window, which frames are presented to with
+/// the render context.
+pub(crate) fn new_wayland_window_surface(
+    render_context: &RenderContext,
+    surface: &wl_surface::WlSurface,
+    size: PhysicalSize<u32>,
+) -> Result<WindowSurface, CreateWaylandContextError> {
+    let surface = NonNull::new(surface.id().as_ptr().cast())
         .ok_or(CreateWaylandContextError::ConnectionClosed)?;
-        let wl_display_handle = WaylandDisplayHandle::new(display);
-        let raw_display_handle = RawDisplayHandle::Wayland(wl_display_handle);
+    let raw_window_handle = RawWindowHandle::Wayland(WaylandWindowHandle::new(surface));
+    let size = size
+        .non_zero()
+        .ok_or(CreateWaylandContextError::InvalidSize)?;
 
-        let surface = NonNull::new(surface.id().as_ptr().cast())
-            .ok_or(CreateWaylandContextError::ConnectionClosed)?;
-        let wl_window_handle = WaylandWindowHandle::new(surface);
-        let raw_window_handle = RawWindowHandle::Wayland(wl_window_handle);
-
-        // Impeller draws with its OpenGL ES backend. It works on a desktop
-        // OpenGL context as well, but only multisamples what it draws
-        // offscreen (layers, backdrop filters) on OpenGL ES 3.
-        let api_preference = match renderer {
-            Renderer::Skia => ApiPreference::OpenGl,
-            Renderer::Impeller => ApiPreference::OpenGlEs,
-        };
-
-        let (context, resource_context) = ContextBuilder::new()
-            .with_raw_display_handle(raw_display_handle)
-            .with_raw_window_handle(raw_window_handle)
-            .with_swap_interval(SwapInterval::DontWait)
-            .with_api_preference(api_preference)
-            .with_size(size.non_zero())
-            .build()?;
-
-        Ok((context, resource_context))
-    }
+    // The window outlives its EGL surface: see `SctkFlutterWindowInner`.
+    Ok(unsafe {
+        render_context.create_window_surface(
+            raw_window_handle,
+            size,
+            Some(SwapInterval::DontWait),
+        )?
+    })
 }
 
 #[derive(Error, Debug)]
@@ -66,8 +66,11 @@ pub enum CreateWaylandContextError {
     #[error("Connection has been closed")]
     ConnectionClosed,
 
-    #[error("Failed to build context")]
-    ContextBuildError(#[from] ContextBuildError),
+    #[error("A window surface can not be empty")]
+    InvalidSize,
+
+    #[error("Failed to create the render context or a window surface")]
+    RenderContextError(#[from] RenderContextError),
 }
 
 pub trait NonZeroU32PhysicalSize {

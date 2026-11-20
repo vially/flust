@@ -14,7 +14,7 @@ use flust_engine::{
     FlutterEngineWeakRef,
 };
 use flust_engine_sys::{FlutterEngineDisplayId, FlutterEngineGetCurrentTime};
-use flust_glutin::{builder::FlutterEGLContext, context::Context};
+use flust_glutin::render::{RenderContext, WindowSurface};
 use flust_runner_api::{ApplicationAttributes, BackendConfigSctk};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
@@ -34,18 +34,21 @@ use crate::{
     application::SctkApplicationState,
     egl::CreateWaylandContextError,
     frame_clock::FrameClock,
-    handler::{SctkCompositorHandler, SctkOpenGLHandler},
+    handler::{SctkCompositorHandler, SctkOpenGLCompositorHandlerFramebuffer},
     pointer::SctkPointerEvent,
     sync::{FrameAction, PlatformAction, SurfaceGeometry, SurfaceSync},
     toplevel::{Toplevel, ToplevelConfigure},
 };
 use crate::{
-    egl::{FlutterEGLContextWaylandExt, NonZeroU32PhysicalSize},
+    egl::{new_wayland_window_surface, NonZeroU32PhysicalSize},
     pointer::Pointer,
 };
 
 pub(crate) struct SctkFlutterWindowInner {
     id: FlutterViewId,
+    /// The window's EGL surface. Declared before `window`, so that it is
+    /// dropped first: it is backed by the window's `wl_surface`.
+    surface: Mutex<WindowSurface>,
     window: Toplevel,
     engine: FlutterEngineWeakRef,
     qh: QueueHandle<SctkApplicationState>,
@@ -53,9 +56,10 @@ pub(crate) struct SctkFlutterWindowInner {
     current_scale_factor: RwLock<f64>,
     default_size: Size,
     pointers: RwLock<HashMap<ObjectId, Pointer>>,
-    opengl_handler: SctkOpenGLHandler,
     compositor_handler: SctkCompositorHandler,
-    context: Arc<Mutex<Context>>,
+    /// The context the engine draws every window in. Made current on the
+    /// window's surface only while a frame is put into it and presented.
+    render_context: Arc<Mutex<RenderContext>>,
     frame_clock: FrameClock,
     /// What the surface shows and what it was asked to show. The raster
     /// thread holds this lock for the whole of a present, so that a frame,
@@ -124,7 +128,8 @@ impl SctkFlutterWindowInner {
             return Ok(());
         }
 
-        let mut context = self.context.lock().unwrap();
+        let render_context = self.render_context.lock().unwrap();
+        let mut window_surface = self.surface.lock().unwrap();
 
         if let FrameAction::Commit { geometry, .. } = action {
             // The window's framebuffer gets the size of the frame. Nothing
@@ -132,18 +137,46 @@ impl SctkFlutterWindowInner {
             // effect for the frame that is about to be drawn.
             //
             // Mesa picks the buffer for a frame, at the size the window has
-            // by then, when the frame is first drawn to or when the context
-            // is made current while it was not: so this comes first, and
-            // the context is left current after a present.
+            // by then, when the frame is first drawn to or when the surface
+            // is made current while it was not: so this comes first.
             if let Some(size) = geometry.size.non_zero() {
-                context.resize(size);
+                render_context.resize(&window_surface, size);
             }
         }
 
-        if !context.make_current() {
+        if !render_context.make_current_with(&mut window_surface) {
             return Err(present_failed("Unable to make context current"));
         }
 
+        let presented = self.present_current_frame(&render_context, &window_surface, action, draw);
+
+        // The engine draws the next view's frame in the render context, as
+        // it was before: current, without a surface.
+        render_context.make_current();
+
+        drop(window_surface);
+        drop(render_context);
+        drop(sync);
+        presented?;
+
+        if matches!(action, FrameAction::Commit { .. }) {
+            // The platform thread may have a newer size to ask for.
+            self.frame_clock.wake_platform_thread();
+        }
+
+        Ok(())
+    }
+
+    /// Puts the frame into the window's surface, with what the surface
+    /// state needs along with it, and presents it. The render context is
+    /// current on the surface.
+    fn present_current_frame(
+        &self,
+        render_context: &RenderContext,
+        window_surface: &WindowSurface,
+        action: FrameAction,
+        draw: impl FnOnce() -> Result<(), CompositorPresentError>,
+    ) -> Result<(), CompositorPresentError> {
         let surface = self.window.wl_surface();
 
         // Everything below is pending surface state until `eglSwapBuffers`
@@ -167,18 +200,11 @@ impl SctkFlutterWindowInner {
         self.frame_clock
             .frame_callback_requested(unsafe { FlutterEngineGetCurrentTime() });
 
-        if !context.present() {
-            return Err(present_failed("Present failed"));
+        if !render_context.swap_buffers(window_surface) {
+            return Err(CompositorPresentError::PresentFailed(
+                "Present failed".into(),
+            ));
         }
-
-        drop(context);
-        drop(sync);
-
-        if matches!(action, FrameAction::Commit { .. }) {
-            // The platform thread may have a newer size to ask for.
-            self.frame_clock.wake_platform_thread();
-        }
-
         Ok(())
     }
 
@@ -207,10 +233,11 @@ impl SctkFlutterWindowInner {
             return false;
         }
 
-        let mut context = self.context.lock().unwrap();
-        // Before the context is made current: see `present_frame`.
-        context.resize(size);
-        context.make_current()
+        let render_context = self.render_context.lock().unwrap();
+        let mut window_surface = self.surface.lock().unwrap();
+        // Before the surface is made current: see `present_frame`.
+        render_context.resize(&window_surface, size);
+        render_context.make_current_with(&mut window_surface)
     }
 
     /// The size of the frame that was drawn into the window's framebuffer
@@ -259,12 +286,15 @@ pub struct SctkFlutterWindow {
 }
 
 impl SctkFlutterWindow {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         engine: FlutterEngineWeakRef,
         qh: &QueueHandle<SctkApplicationState>,
         compositor_state: &CompositorState,
         xdg_shell_state: &XdgShell,
         frame_clock: FrameClock,
+        render_context: Arc<Mutex<RenderContext>>,
+        framebuffer: &SctkOpenGLCompositorHandlerFramebuffer,
         attributes: ApplicationAttributes,
         config: BackendConfigSctk,
     ) -> Result<Self, SctkFlutterWindowCreateError> {
@@ -301,32 +331,24 @@ impl SctkFlutterWindow {
             .inner_size
             .unwrap_or(Size::Logical(LogicalSize::<f64>::new(1280.0, 720.0)));
 
-        let (context, resource_context) = FlutterEGLContext::new_wayland_context(
+        let surface = new_wayland_window_surface(
+            &render_context.lock().unwrap(),
             window.wl_surface(),
             default_size.to_physical::<u32>(1.0),
-            renderer,
         )?;
-
-        let context = Arc::new(Mutex::new(context));
-        let resource_context = Arc::new(Mutex::new(resource_context));
 
         let inner = Arc::new_cyclic(|inner| SctkFlutterWindowInner {
             id: IMPLICIT_VIEW_ID,
+            surface: Mutex::new(surface),
             window,
             engine,
             qh: qh.clone(),
-            opengl_handler: SctkOpenGLHandler::new(
-                inner.clone(),
-                context.clone(),
-                resource_context,
-            ),
             compositor_handler: SctkCompositorHandler::new(
                 inner.clone(),
-                context.clone(),
+                framebuffer,
                 config.opengl_target_type,
-                renderer,
             ),
-            context,
+            render_context,
             frame_clock,
             sync: Default::default(),
             surface_frame: Default::default(),
@@ -364,11 +386,7 @@ impl SctkFlutterWindow {
     }
 
     pub(crate) fn create_flutter_view(&self) -> FlutterView {
-        FlutterView::new_with_compositor(
-            self.inner.id,
-            self.inner.opengl_handler.clone(),
-            self.inner.compositor_handler.clone(),
-        )
+        FlutterView::new(self.inner.id, self.inner.compositor_handler.clone())
     }
 
     /// Does what the surface's state asks of the platform thread: sends the

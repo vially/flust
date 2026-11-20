@@ -3,7 +3,7 @@ use std::{
     ffi::{c_void, CStr, CString},
     iter::zip,
     num::NonZeroU32,
-    sync::{Arc, Mutex, RwLock, Weak},
+    sync::{Arc, Mutex, Weak},
     time::Duration,
 };
 
@@ -29,6 +29,7 @@ use flust_engine_sys::FlutterEngineGetCurrentTime;
 use flust_glutin::{
     context::{Context, ResourceContext},
     gl,
+    render::RenderContext,
 };
 use flust_plugins::{
     accessibility::{AccessibilityHandler, Announcement, Assertiveness},
@@ -58,58 +59,47 @@ const WINDOW_FRAMEBUFFER_ID: u32 = 0;
 
 pub(crate) const FRAME_INTERVAL_60_HZ_IN_NANOS: u64 = 1_000_000_000 / 60; // 60Hz per second in nanos
 
-#[derive(Clone)]
+/// The engine's OpenGL callbacks, for all windows. The engine draws every
+/// view in the render context, current without a surface: a window's
+/// surface is only made current to present a frame to it (see
+/// `SctkFlutterWindowInner::present_frame`).
 pub(crate) struct SctkOpenGLHandler {
-    window: Weak<SctkFlutterWindowInner>,
-    context: Arc<Mutex<Context>>,
-    resource_context: Arc<Mutex<ResourceContext>>,
-    current_frame_size: Arc<RwLock<PhysicalSize<u32>>>,
+    render_context: Arc<Mutex<RenderContext>>,
+    resource_context: Mutex<ResourceContext>,
 }
 
 impl SctkOpenGLHandler {
     pub(crate) fn new(
-        window: Weak<SctkFlutterWindowInner>,
-        context: Arc<Mutex<Context>>,
-        resource_context: Arc<Mutex<ResourceContext>>,
+        render_context: Arc<Mutex<RenderContext>>,
+        resource_context: ResourceContext,
     ) -> Self {
         Self {
-            window,
-            context,
-            resource_context,
-            current_frame_size: Default::default(),
+            render_context,
+            resource_context: Mutex::new(resource_context),
         }
-    }
-
-    fn load_current_frame_size(&self) -> PhysicalSize<u32> {
-        *self.current_frame_size.read().unwrap()
     }
 }
 
-// Note: These callbacks are executed on the *render* thread.
+// Note: These callbacks are executed on the *render* thread, except for
+// `make_resource_current`, which is executed on the IO thread.
 impl FlutterOpenGLHandler for SctkOpenGLHandler {
     fn present(&self) -> bool {
-        // The engine has drawn the frame into the window's framebuffer.
-        let frame_size = self.load_current_frame_size();
-        self.window
-            .upgrade()
-            .unwrap()
-            .present_frame(Some(frame_size), || Ok(()))
-            .is_ok()
+        // Not called: with a compositor, frames are presented with
+        // `present_view`.
+        false
     }
 
     fn make_current(&self) -> bool {
-        self.context.lock().unwrap().make_current()
+        self.render_context.lock().unwrap().make_current()
     }
 
     fn clear_current(&self) -> bool {
-        self.context.lock().unwrap().make_not_current()
+        self.render_context.lock().unwrap().make_not_current()
     }
 
-    fn fbo_with_frame_info_callback(&self, size: PhysicalSize<u32>) -> u32 {
-        let mut current_frame_size = self.current_frame_size.write().unwrap();
-        *current_frame_size = size;
-
-        0
+    fn fbo_with_frame_info_callback(&self, _size: PhysicalSize<u32>) -> u32 {
+        // Not called: with a compositor, frames are drawn to backing stores.
+        WINDOW_FRAMEBUFFER_ID
     }
 
     fn make_resource_current(&self) -> bool {
@@ -117,7 +107,7 @@ impl FlutterOpenGLHandler for SctkOpenGLHandler {
     }
 
     fn gl_proc_resolver(&self, proc: &CStr) -> *mut c_void {
-        self.context.lock().unwrap().get_proc_address(proc) as _
+        self.render_context.lock().unwrap().get_proc_address(proc) as _
     }
 }
 
@@ -128,14 +118,13 @@ pub struct SctkCompositorHandler {
 }
 
 impl SctkCompositorHandler {
-    pub fn new(
+    pub(crate) fn new(
         window: Weak<SctkFlutterWindowInner>,
-        context: Arc<Mutex<Context>>,
+        framebuffer: &SctkOpenGLCompositorHandlerFramebuffer,
         opengl_target_type: FlutterOpenGLTargetType,
-        renderer: Renderer,
     ) -> Self {
         let opengl_compositor =
-            SctkOpenGLCompositor::new(window.clone(), context, opengl_target_type, renderer);
+            SctkOpenGLCompositor::new(window.clone(), framebuffer, opengl_target_type);
 
         Self {
             window,
@@ -206,8 +195,9 @@ impl FlutterCompositorHandler for SctkCompositorHandler {
 }
 
 /// The `draw_opengl_view` and `clear` callbacks are run by
-/// `SctkFlutterWindowInner::present_frame`, with the window's context
-/// current and its lock held. The window swaps the buffers afterwards.
+/// `SctkFlutterWindowInner::present_frame`, with the render context current
+/// on the window's surface, and the locks of both held. The window swaps
+/// the buffers afterwards.
 trait SctkOpenGLCompositorHandler {
     /// Whether there is a frame of this size (`None`: without content) to
     /// present.
@@ -298,24 +288,30 @@ fn supports_multisampled_renderbuffers(gl: &gl::Gl) -> bool {
     major_version >= 3 && max_samples >= FramebufferLayout::SAMPLES
 }
 
+/// Puts frames into windows from backing stores that are framebuffers of
+/// the render context. The same for every window: created once, before the
+/// engine runs, and cloned for each.
 #[derive(Clone)]
-struct SctkOpenGLCompositorHandlerFramebuffer {
+pub(crate) struct SctkOpenGLCompositorHandlerFramebuffer {
     gl: gl::Gl,
     format: u32,
     layout: FramebufferLayout,
 }
 
 impl SctkOpenGLCompositorHandlerFramebuffer {
-    pub fn new(context: Arc<Mutex<Context>>, renderer: Renderer) -> Self {
-        context.lock().unwrap().make_current();
+    /// Makes the render context current on this thread for a moment: it can
+    /// not be current on another one.
+    pub(crate) fn new(render_context: &Mutex<RenderContext>, renderer: Renderer) -> Self {
+        let mut render_context = render_context.lock().unwrap();
+        render_context.make_current();
 
         let gl = gl::Gl::load_with(|symbol| {
             let proc = CString::new(symbol).unwrap();
-            context.lock().unwrap().get_proc_address(proc.as_c_str())
+            render_context.get_proc_address(proc.as_c_str())
         });
         let layout = FramebufferLayout::for_renderer(&gl, renderer);
 
-        context.lock().unwrap().make_not_current();
+        render_context.make_not_current();
 
         info!("backing store framebuffers: {layout:?}");
 
@@ -687,16 +683,15 @@ enum SctkOpenGLCompositor {
 }
 
 impl SctkOpenGLCompositor {
-    pub fn new(
+    fn new(
         window: Weak<SctkFlutterWindowInner>,
-        context: Arc<Mutex<Context>>,
+        framebuffer: &SctkOpenGLCompositorHandlerFramebuffer,
         opengl_target_type: FlutterOpenGLTargetType,
-        renderer: Renderer,
     ) -> Self {
         match opengl_target_type {
-            FlutterOpenGLTargetType::Framebuffer => Self::Framebuffer(Box::new(
-                SctkOpenGLCompositorHandlerFramebuffer::new(context, renderer),
-            )),
+            FlutterOpenGLTargetType::Framebuffer => {
+                Self::Framebuffer(Box::new(framebuffer.clone()))
+            }
             FlutterOpenGLTargetType::Texture => unimplemented!(
                 "`FlutterOpenGLTargetType::Texture` is not currently implemented for SCTK backend"
             ),
