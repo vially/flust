@@ -20,7 +20,9 @@ impl PlatformMessageResponseHandle {
         F: FnOnce(&[u8]) + 'static + Send,
     {
         unsafe {
-            let callback = Box::new(callback);
+            // Boxed as the trait object that `response_handle_callback`
+            // takes it back as.
+            let callback: ResponseType = Box::new(callback);
             let mut handle: *mut FlutterPlatformMessageResponseHandle = ptr::null_mut();
             flust_engine_sys::FlutterPlatformMessageCreateResponseHandle(
                 engine.engine_ptr(),
