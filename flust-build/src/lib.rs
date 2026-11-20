@@ -158,11 +158,24 @@ impl FlutterSDK {
         self.root_path.join("bin").join("flutter")
     }
 
+    /// The file that has the engine version of the SDK: `engine.version`
+    /// for a release. On the master channel, which has none, the engine
+    /// version is a hash of the engine's sources, which the `flutter` tool
+    /// computes and writes to its cache the first time it runs.
     pub fn engine_version_path(&self) -> PathBuf {
-        self.root_path
+        let release_path = self
+            .root_path
             .join("bin")
             .join("internal")
-            .join("engine.version")
+            .join("engine.version");
+        match release_path.exists() {
+            true => release_path,
+            false => self
+                .root_path
+                .join("bin")
+                .join("cache")
+                .join("engine.stamp"),
+        }
     }
 
     // This method returns the equivalent of `flutter --version | head -1 | awk '{ print $2 }'`
@@ -205,7 +218,13 @@ impl FlutterSDK {
     }
 
     pub fn engine_version(&self) -> Result<FlutterEngineVersion, Error> {
-        Ok(read_trimmed_string(self.engine_version_path())?.into())
+        let path = self.engine_version_path();
+        if !path.exists() {
+            // The `flutter` tool writes the stamp of a master SDK when it
+            // runs.
+            self.read_sdk_version_from_flutter_output()?;
+        }
+        Ok(read_trimmed_string(path)?.into())
     }
 
     pub fn sdk_version(&self) -> Result<FlutterSDKVersion, Error> {
@@ -739,9 +758,7 @@ fn read_flutter_engine_version_from_github_tag(
 fn read_flutter_framework_version_from_github_tag(
     sdk_version: &FlutterSDKVersion,
 ) -> Result<FlutterFrameworkVersion, Error> {
-    let url = format!(
-        "https://api.github.com/repos/flutter/flutter/git/refs/tags/{sdk_version}"
-    );
+    let url = format!("https://api.github.com/repos/flutter/flutter/git/refs/tags/{sdk_version}");
 
     let sha = reqwest::blocking::get(url)?
         .json::<serde_json::Value>()?

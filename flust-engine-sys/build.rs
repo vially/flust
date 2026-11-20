@@ -19,6 +19,7 @@ fn main() -> Result<(), BuildError> {
     CargoInstruction::rerun_if_changed("embedder.h");
     CargoInstruction::rerun_if_changed("src/lib.rs");
     CargoInstruction::rerun_if_env_changed("FLUST_BUILD_MODE");
+    CargoInstruction::rerun_if_env_changed("FLUTTER_ROOT");
 
     let engine_build_context = EngineLibraryBuildContext::from_cargo_build_env();
     engine_build_context.print_extra_cargo_instructions();
