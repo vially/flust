@@ -17,6 +17,7 @@ use flust_engine::{
 };
 use flust_engine::{
     ffi::{FlutterOpenGLTargetType, FlutterViewId, IMPLICIT_VIEW_ID},
+    view::{FlutterViewFocusDirection, FlutterViewFocusState},
     ViewError,
 };
 use flust_engine_sys::FlutterEngineGetCurrentTime;
@@ -923,11 +924,14 @@ impl KeyboardHandler for SctkApplicationState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         _keyboard: &WlKeyboard,
-        _surface: &WlSurface,
+        surface: &WlSurface,
         _serial: u32,
         raw: &[u32],
         keysyms: &[Keysym],
     ) {
+        // Key events name no view: they go to the view that has focus.
+        self.send_view_focus_event(surface, FlutterViewFocusState::Focused);
+
         let synthesized_events = self
             .keyboard_handler
             .lock()
@@ -943,10 +947,10 @@ impl KeyboardHandler for SctkApplicationState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         _keyboard: &WlKeyboard,
-        _surface: &WlSurface,
+        surface: &WlSurface,
         _serial: u32,
     ) {
-        // not implemented
+        self.send_view_focus_event(surface, FlutterViewFocusState::Unfocused);
     }
 
     fn press_key(
@@ -1179,6 +1183,22 @@ impl SctkApplicationState {
         });
         #[cfg(not(feature = "testing"))]
         debug!("[view {view_id}] ignoring close request: nothing in Dart to ask");
+    }
+
+    /// Tells the engine that the window of `surface` got or lost the
+    /// keyboard focus.
+    fn send_view_focus_event(&self, surface: &WlSurface, state: FlutterViewFocusState) {
+        let Some(view_id) = self.find_view_id(|window| window.wl_surface_id() == surface.id())
+        else {
+            return;
+        };
+        if !self.is_engine_running || self.windows[&view_id].view_state() != SctkViewState::Added {
+            return;
+        }
+        let direction = FlutterViewFocusDirection::Undefined;
+        if let Err(err) = self.engine.send_view_focus_event(view_id, state, direction) {
+            error!("[view {view_id}] failed to send focus {state:?}: {err}");
+        }
     }
 
     /// The id of the first window that `matches`.
