@@ -8,6 +8,7 @@ use std::{
 };
 
 use calloop::futures::{Executor, Scheduler};
+use dpi::LogicalSize;
 use flust_accessibility::Accessibility;
 use flust_engine::{
     builder::FlutterEngineBuilder,
@@ -89,6 +90,7 @@ use crate::{
         SctkFlutterWindow, SctkFlutterWindowCreateError, SctkRendering, SctkShell, SctkViewState,
         SctkWindowAttributes,
     },
+    windowing::{register_application, WindowingPlugin},
     windows::SctkWindows,
 };
 
@@ -200,6 +202,10 @@ impl SctkApplication {
             title: attributes.title.clone(),
             app_id: attributes.app_id.clone(),
             inner_size: attributes.inner_size,
+            // The startup window's: windows that the app creates have the
+            // limits they are given.
+            min_size: Some(LogicalSize::new(256, 256)),
+            max_size: None,
         };
 
         // Without a startup window, the implicit view exists in the engine
@@ -254,6 +260,7 @@ impl SctkApplication {
                 .with_exit_handler(Arc::new(Mutex::new(exit_handler))),
         );
         plugins.add_plugin(&engine, SettingsPlugin::default());
+        plugins.add_plugin(&engine, WindowingPlugin::new());
         #[cfg(feature = "testing")]
         {
             let (requests, request_source) = calloop::channel::channel();
@@ -283,6 +290,7 @@ impl SctkApplication {
             accessibility.clone(),
             event_loop.get_signal(),
         ));
+        register_application(engine.engine_id(), &windows);
 
         let state = SctkApplicationState {
             loop_handle: event_loop.handle(),
@@ -459,6 +467,7 @@ impl SctkApplicationState {
                 self.maybe_update_lifecycle_state(view_id, false);
                 self.active_state.remove(&view_id);
             }
+            self.with_plugin(|windowing: &WindowingPlugin| windowing.window_destroyed(view_id));
             #[cfg(feature = "testing")]
             self.with_plugin(|testing: &crate::testing::WindowsTestingPlugin| {
                 testing.window_destroyed(view_id)
@@ -1059,12 +1068,11 @@ impl SctkApplicationState {
         }
 
         // Dart decides about other windows too: it destroys them, or not.
+        self.with_plugin(|windowing: &WindowingPlugin| windowing.window_close_requested(view_id));
         #[cfg(feature = "testing")]
         self.with_plugin(|testing: &crate::testing::WindowsTestingPlugin| {
             testing.window_close_requested(view_id)
         });
-        #[cfg(not(feature = "testing"))]
-        debug!("[view {view_id}] ignoring close request: nothing in Dart to ask");
     }
 
     /// Tells the engine that the window of `surface` got or lost the
@@ -1115,6 +1123,9 @@ impl SctkApplicationState {
         self.accessibility
             .set_view_focused(view_id, configure.activated);
         window.configure(configure, serial);
+
+        // What Dart reads of the window may have changed with it.
+        self.with_plugin(|windowing: &WindowingPlugin| windowing.window_changed(view_id));
     }
 }
 

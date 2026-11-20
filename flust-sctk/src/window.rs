@@ -72,6 +72,8 @@ pub(crate) struct SctkFlutterWindowInner {
     /// framebuffer and not presented yet. Only used with
     /// `FlutterOpenGLTargetType::Surface`.
     surface_frame: Mutex<Option<PhysicalSize<u32>>>,
+    /// The window's state in the last configure.
+    toplevel_state: Mutex<ToplevelConfigure>,
 }
 
 impl SctkFlutterWindowInner {
@@ -304,11 +306,14 @@ pub(crate) struct SctkWindowAttributes {
     pub(crate) title: Option<String>,
     pub(crate) app_id: Option<String>,
     pub(crate) inner_size: Option<Size>,
+    /// The smallest and largest size the window can be resized to, in
+    /// logical pixels. Unlimited if not set.
+    pub(crate) min_size: Option<LogicalSize<u32>>,
+    pub(crate) max_size: Option<LogicalSize<u32>>,
 }
 
 /// Where a window's view is in its life in the engine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 pub(crate) enum SctkViewState {
     /// The engine was asked to add the view, and has not said whether it
     /// did. The view can not be sent anything yet.
@@ -372,7 +377,11 @@ impl SctkFlutterWindow {
             window.xdg_toplevel().set_app_id(app_id);
         }
 
-        window.xdg_toplevel().set_min_size(256, 256);
+        set_size_limits(
+            window.xdg_toplevel(),
+            attributes.min_size,
+            attributes.max_size,
+        );
         // The initial commit, without a buffer: the compositor answers it
         // with the first configure.
         window.wl_surface().commit();
@@ -407,6 +416,7 @@ impl SctkFlutterWindow {
             current_size: Default::default(),
             current_scale_factor: RwLock::new(1.0),
             default_size,
+            toplevel_state: Default::default(),
         });
 
         // The startup window is the implicit view, which the engine always
@@ -426,18 +436,15 @@ impl SctkFlutterWindow {
         *self.view_state.lock()
     }
 
-    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
     pub(crate) fn set_view_state(&self, view_state: SctkViewState) {
         *self.view_state.lock() = view_state;
     }
 
-    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
     /// For the engine's callbacks, which report back on the view.
     pub(crate) fn shared_view_state(&self) -> Arc<parking_lot::Mutex<SctkViewState>> {
         self.view_state.clone()
     }
 
-    #[cfg_attr(not(feature = "testing"), allow(dead_code))]
     /// What the engine is told about the window's view before the
     /// compositor has said how large it is: the size it asks for.
     pub(crate) fn initial_metrics(&self) -> FlutterWindowMetrics {
@@ -530,6 +537,8 @@ impl SctkFlutterWindow {
     }
 
     pub(crate) fn configure(&self, configure: ToplevelConfigure, serial: u32) {
+        *self.inner.toplevel_state.lock().unwrap() = configure;
+
         // A configure without a size leaves it to the window.
         let new_logical_size = configure
             .size
@@ -555,6 +564,72 @@ impl SctkFlutterWindow {
         if let Some(geometry) = geometry {
             self.inner.send_window_metrics(geometry);
         }
+    }
+
+    /// The size of the window's content, in logical pixels.
+    pub(crate) fn content_size(&self) -> LogicalSize<f64> {
+        let scale_factor = self.inner.load_current_scale_factor();
+        self.inner
+            .load_current_size()
+            .unwrap_or(self.inner.default_size)
+            .to_logical(scale_factor)
+    }
+
+    /// The window's state in the last configure.
+    pub(crate) fn toplevel_state(&self) -> ToplevelConfigure {
+        *self.inner.toplevel_state.lock().unwrap()
+    }
+
+    pub(crate) fn set_title(&self, title: String) {
+        self.inner.window.xdg_toplevel().set_title(title);
+    }
+
+    /// Asks for another size. The compositor has the last word: a
+    /// maximized, fullscreen or tiled window keeps the size it was given.
+    pub(crate) fn set_size(&self, size: LogicalSize<f64>) {
+        self.inner.store_current_size(size.into());
+        // The engine is asked for frames of this size, and the window takes
+        // it with the first of them: see `poll`.
+        if let Some(geometry) = self.inner.current_geometry() {
+            self.inner.sync.lock().unwrap().set_geometry(geometry);
+        }
+    }
+
+    pub(crate) fn set_size_limits(
+        &self,
+        min_size: Option<LogicalSize<u32>>,
+        max_size: Option<LogicalSize<u32>>,
+    ) {
+        set_size_limits(self.inner.window.xdg_toplevel(), min_size, max_size);
+        self.commit_state();
+    }
+
+    pub(crate) fn set_maximized(&self, maximized: bool) {
+        match maximized {
+            true => self.inner.window.xdg_toplevel().set_maximized(),
+            false => self.inner.window.xdg_toplevel().unset_maximized(),
+        }
+    }
+
+    /// Wayland has no way to bring a minimized window back, and compositors
+    /// do not say whether a window is minimized.
+    pub(crate) fn set_minimized(&self) {
+        self.inner.window.xdg_toplevel().set_minimized();
+    }
+
+    pub(crate) fn set_fullscreen(&self, fullscreen: bool) {
+        match fullscreen {
+            true => self.inner.window.xdg_toplevel().set_fullscreen(None),
+            false => self.inner.window.xdg_toplevel().unset_fullscreen(),
+        }
+    }
+
+    /// Commits state of the window that waits for a commit without a new
+    /// frame, such as its size limits. The raster thread is kept from
+    /// committing in between by the lock.
+    fn commit_state(&self) {
+        let _sync = self.inner.sync.lock().unwrap();
+        self.inner.window.wl_surface().commit();
     }
 
     pub(crate) fn pointer_event(&self, pointer: &WlPointer, event: &PointerEvent) {
@@ -586,6 +661,20 @@ impl SctkFlutterWindow {
 
         engine.send_pointer_event(event);
     }
+}
+
+/// The limits are in the window's geometry, which is its surface's size: in
+/// logical pixels. Zero is no limit.
+fn set_size_limits(
+    xdg_toplevel: &XdgToplevel,
+    min_size: Option<LogicalSize<u32>>,
+    max_size: Option<LogicalSize<u32>>,
+) {
+    let (min_width, min_height) = min_size.map_or((0, 0), |size| (size.width, size.height));
+    let (max_width, max_height) = max_size.map_or((0, 0), |size| (size.width, size.height));
+    let clamp = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
+    xdg_toplevel.set_min_size(clamp(min_width), clamp(min_height));
+    xdg_toplevel.set_max_size(clamp(max_width), clamp(max_height));
 }
 
 #[derive(Error, Debug)]

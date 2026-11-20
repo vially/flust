@@ -130,6 +130,7 @@ impl MethodCallHandler for Handler {
                     title,
                     app_id: None,
                     inner_size,
+                    ..Default::default()
                 };
                 WindowRequest::Create(call, attributes)
             }

@@ -27,9 +27,6 @@ use crate::{
 /// while the event loop holds the application's state: Dart runs in calls
 /// into the engine, on the platform thread. So no borrow of the windows is
 /// held across a call into the engine: they are cloned out first.
-// Windows are only created at runtime by the test hook, until Flutter's
-// windowing API can create them.
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 pub(crate) struct SctkWindows {
     windows: RefCell<HashMap<FlutterViewId, SctkFlutterWindow>>,
     engine: FlutterEngineWeakRef,
@@ -50,7 +47,6 @@ pub(crate) struct SctkWindows {
     loop_signal: LoopSignal,
 }
 
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 impl SctkWindows {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -162,6 +158,7 @@ impl SctkWindows {
             title: attributes.title.or(self.window_attributes.title.clone()),
             app_id: attributes.app_id.or(self.window_attributes.app_id.clone()),
             inner_size: attributes.inner_size.or(self.window_attributes.inner_size),
+            ..attributes
         };
         let title = attributes.title.clone().unwrap_or_default();
 
@@ -239,7 +236,6 @@ impl SctkWindows {
 }
 
 #[derive(Error, Debug)]
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 pub enum SctkCreateWindowError {
     #[error("Windows can only be created by an application that starts without a window")]
     StartupWindow,
@@ -258,7 +254,6 @@ pub enum SctkCreateWindowError {
 }
 
 #[derive(Error, Debug)]
-#[cfg_attr(not(feature = "testing"), allow(dead_code))]
 pub enum SctkDestroyWindowError {
     #[error("The startup window can not be destroyed")]
     StartupWindow,

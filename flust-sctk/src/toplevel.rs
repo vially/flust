@@ -38,6 +38,8 @@ pub(crate) struct ToplevelConfigure {
     /// the client.
     pub(crate) size: Option<(NonZeroU32, NonZeroU32)>,
     pub(crate) activated: bool,
+    pub(crate) maximized: bool,
+    pub(crate) fullscreen: bool,
 }
 
 /// User data of the window's `xdg_surface`, `xdg_toplevel` and decoration
@@ -135,16 +137,19 @@ impl Dispatch<XdgToplevel, ToplevelData> for SctkApplicationState {
                 let height = u32::try_from(height).ok().and_then(NonZeroU32::new);
 
                 // The states are an array of native-endian `u32`.
-                let activated = states
+                let states: Vec<u32> = states
                     .as_chunks::<4>()
                     .0
                     .iter()
                     .map(|state| u32::from_ne_bytes(*state))
-                    .any(|state| state == u32::from(xdg_toplevel::State::Activated));
+                    .collect();
+                let has = |state: xdg_toplevel::State| states.contains(&u32::from(state));
 
                 let mut configure = data.0.lock().unwrap();
                 configure.size = width.zip(height);
-                configure.activated = activated;
+                configure.activated = has(xdg_toplevel::State::Activated);
+                configure.maximized = has(xdg_toplevel::State::Maximized);
+                configure.fullscreen = has(xdg_toplevel::State::Fullscreen);
             }
             xdg_toplevel::Event::Close => state.toplevel_close_requested(xdg_toplevel),
             // The bounds and the window manager's capabilities are not used.
