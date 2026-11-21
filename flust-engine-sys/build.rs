@@ -22,8 +22,9 @@ fn main() -> Result<(), BuildError> {
     CargoInstruction::rerun_if_env_changed("FLUTTER_ROOT");
 
     let engine_build_context = EngineLibraryBuildContext::from_cargo_build_env();
-    engine_build_context.print_extra_cargo_instructions();
-    engine_build_context.symlink_to_target_dir()?;
+    let library_path = engine_build_context.ensure_library_is_installed()?;
+    engine_build_context.print_extra_cargo_instructions(&library_path);
+    engine_build_context.symlink_to_target_dir(&library_path)?;
 
     Ok(())
 }
@@ -76,17 +77,15 @@ impl EngineLibraryBuildContext {
         }
     }
 
-    fn library_path(&self) -> PathBuf {
+    /// Returns the path of the engine library, downloading it first if it is
+    /// not in the cache yet.
+    fn ensure_library_is_installed(&self) -> Result<PathBuf, BuildError> {
         match &self.engine_library {
-            EngineLibraryLocation::Path(library_path) => library_path.join(self.library_name),
-            EngineLibraryLocation::Build(engine_build) => {
-                engine_build.library_path_by_sdk_version()
-            }
+            EngineLibraryLocation::Path(library_path) => Ok(library_path.join(self.library_name)),
+            EngineLibraryLocation::Build(engine_build) => Ok(
+                EngineVersionManager::ensure_library_version_is_installed(engine_build)?,
+            ),
         }
-    }
-
-    fn library_path_dir(&self) -> PathBuf {
-        self.library_path().parent().unwrap().to_path_buf()
     }
 
     fn target_build_dir(&self) -> PathBuf {
@@ -104,8 +103,9 @@ impl EngineLibraryBuildContext {
             .into()
     }
 
-    fn print_extra_cargo_instructions(&self) {
-        CargoInstruction::rustc_link_search(&self.library_path_dir().display().to_string());
+    fn print_extra_cargo_instructions(&self, library_path: &Path) {
+        let library_dir = library_path.parent().unwrap();
+        CargoInstruction::rustc_link_search(&library_dir.display().to_string());
 
         let Some(flutter) = self.flutter.as_ref() else {
             CargoInstruction::warning(FLUTTER_SDK_MISSING_NO_REBUILD_WARNING);
@@ -116,15 +116,10 @@ impl EngineLibraryBuildContext {
         CargoInstruction::rerun_if_changed(&engine_version_path);
     }
 
-    fn symlink_to_target_dir(&self) -> Result<(), BuildError> {
-        if let EngineLibraryLocation::Build(engine_build) = &self.engine_library {
-            EngineVersionManager::ensure_library_version_is_installed(engine_build)?;
-        }
-
+    fn symlink_to_target_dir(&self, library_path: &Path) -> Result<(), BuildError> {
         let target_lib_dir = self.target_build_dir().join("lib");
         std::fs::create_dir_all(&target_lib_dir)?;
 
-        let source_engine_library_path = self.library_path();
         let target_engine_library_path = target_lib_dir.join(self.library_name);
 
         // `target_engine_library_path.exists()` should *not* be used here
@@ -139,7 +134,7 @@ impl EngineLibraryBuildContext {
         // without having to set the `LD_LIBRARY_PATH` environment variable.
         //
         // Docs: https://doc.rust-lang.org/cargo/reference/environment-variables.html#dynamic-library-paths
-        std::os::unix::fs::symlink(&source_engine_library_path, target_engine_library_path)?;
+        std::os::unix::fs::symlink(library_path, target_engine_library_path)?;
 
         Ok(())
     }

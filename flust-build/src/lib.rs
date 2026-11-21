@@ -574,18 +574,28 @@ impl EngineVersionManager {
         Ok(())
     }
 
+    /// Makes sure the engine library for `engine_build` is in the cache, and
+    /// returns its path.
+    ///
+    /// A library installed for another SDK version with the same engine is
+    /// reused (see [`EngineLibraryBuild::installed_library_path`]). Otherwise
+    /// the library is downloaded into the SDK version's cache directory.
     pub fn ensure_library_version_is_installed(
         engine_build: &EngineLibraryBuild,
-    ) -> Result<(), Error> {
-        let library_path_by_sdk_version = engine_build.library_path_by_sdk_version();
-        if !library_path_by_sdk_version.exists() {
-            let target_build_dir = library_path_by_sdk_version.parent().unwrap().to_owned();
-            if !target_build_dir.exists() {
-                std::fs::create_dir_all(&target_build_dir)?;
-            }
+    ) -> Result<PathBuf, Error> {
+        let library_path = match engine_build.installed_library_path() {
+            Some(library_path) => library_path,
+            None => {
+                let library_path = engine_build.library_path_by_sdk_version();
+                let target_build_dir = library_path.parent().unwrap().to_owned();
+                if !target_build_dir.exists() {
+                    std::fs::create_dir_all(&target_build_dir)?;
+                }
 
-            engine_build.download_to(&library_path_by_sdk_version)?;
-        }
+                engine_build.download_to(&library_path)?;
+                library_path
+            }
+        };
 
         let by_engine_version_cache_dir = engine_build.release.engine_version.cache_path();
         if !by_engine_version_cache_dir.exists() {
@@ -602,7 +612,7 @@ impl EngineVersionManager {
             std::os::unix::fs::symlink(&by_sdk_version_cache_dir, by_engine_version_cache_dir)?;
         }
 
-        Ok(())
+        Ok(library_path)
     }
 
     pub fn uninstall_version(release: &FlutterRelease) -> Result<(), Error> {
@@ -673,9 +683,27 @@ impl EngineLibraryBuild {
             .join(self.library_name.clone())
     }
 
+    /// Returns the path of this library if it is already in the cache.
+    ///
+    /// The library is looked up by SDK version first, then by engine version.
+    /// On the master channel the SDK version changes with every framework
+    /// commit even when the engine doesn't, so the engine version finds a
+    /// library installed for an earlier SDK version with the same engine.
+    pub fn installed_library_path(&self) -> Option<PathBuf> {
+        first_existing_file([
+            self.library_path_by_sdk_version(),
+            self.library_path_by_engine_version(),
+        ])
+    }
+
     pub fn download_to<P: AsRef<Path>>(&self, target_library_path: P) -> Result<(), Error> {
         EngineDownloadSource::new_from_env().download_to(self, target_library_path)
     }
+}
+
+fn first_existing_file(paths: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    // `is_file` follows symlinks, so a dangling link doesn't count.
+    paths.into_iter().find(|path| path.is_file())
 }
 
 pub struct CustomDeviceCommands {}
@@ -894,4 +922,48 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_existing_file_prefers_earlier_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let by_sdk = dir.path().join("by-sdk");
+        let by_engine = dir.path().join("by-engine");
+        fs::write(&by_sdk, "").unwrap();
+        fs::write(&by_engine, "").unwrap();
+
+        assert_eq!(
+            first_existing_file([by_sdk.clone(), by_engine]),
+            Some(by_sdk)
+        );
+    }
+
+    #[test]
+    fn first_existing_file_falls_back_to_later_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let by_sdk = dir.path().join("by-sdk");
+        let by_engine = dir.path().join("by-engine");
+        fs::write(&by_engine, "").unwrap();
+
+        assert_eq!(
+            first_existing_file([by_sdk, by_engine.clone()]),
+            Some(by_engine)
+        );
+    }
+
+    #[test]
+    fn first_existing_file_skips_directories_and_dangling_links() {
+        let dir = tempfile::tempdir().unwrap();
+        // A failed download leaves an empty `<mode>/` directory behind.
+        let empty_dir = dir.path().join("profile");
+        fs::create_dir(&empty_dir).unwrap();
+        let dangling = dir.path().join("dangling");
+        std::os::unix::fs::symlink(dir.path().join("missing"), &dangling).unwrap();
+
+        assert_eq!(first_existing_file([empty_dir, dangling]), None);
+    }
 }
