@@ -10,7 +10,16 @@ use thiserror::Error;
 const FLUTTER_SDK_MISSING_NO_REBUILD_WARNING: &str = "Flutter SDK path could not be determined. \
 Linking to the Flutter engine library might not work as expected.";
 
-fn main() -> Result<(), BuildError> {
+fn main() {
+    // Print errors with `Display`: returning them from `main` would print
+    // their `Debug` form, which hides the explanation.
+    if let Err(error) = run() {
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), BuildError> {
     BindingsBuilder::generate("flust-engine-sys.rs")?;
 
     // TODO: Investigate if it is possible to set the `rpath` on the *app binary*

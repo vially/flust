@@ -32,6 +32,12 @@ pub enum Error {
     DownloadNotFound,
     DartNotFound,
     DownloadSourceUnsupported(String),
+    /// No engine library for a build: none in the cache, and the download
+    /// failed with `cause`.
+    EngineLibraryUnavailable {
+        build: Box<EngineLibraryBuild>,
+        cause: Box<Error>,
+    },
     Io(std::io::Error),
     Which(which::Error),
     Curl(curl::Error),
@@ -50,29 +56,26 @@ impl std::fmt::Display for Error {
             Error::CargoRunFailed => write!(f, "Cargo run failed"),
             Error::DownloadNotFound => write!(
                 f,
-                r#"We couldn't find the requested engine version 'missing'.
-This means that your flutter version is too old or to new.
-
-To update flutter run `flutter upgrade`. If the problem persists the engine
-build has not completed yet. This means you need to manually supply the flutter
-engine version through one of the following methods:
-
-```bash
-export FLUTTER_ENGINE_VERSION = "..."
-```
-
-`Cargo.toml`
-```toml
-[package.metadata.flutter]
-engine_version = "..."
-```
-
-You'll find the available builds on our github releases page [0].
-
-- [0] https://github.com/flutter-rs/engine-builds/releases"#,
+                "the download source has no engine library for this version \
+                 (set FLUTTER_ENGINE_DOWNLOAD_SOURCE to try another one)"
             ),
             Error::DartNotFound => write!(f, "Could't find dart"),
             Error::DownloadSourceUnsupported(reason) => write!(f, "{reason}"),
+            Error::EngineLibraryUnavailable { build, cause } => write!(
+                f,
+                "No {mode} engine library for Flutter {sdk} (engine {engine}).\n\
+                 Not in the cache ({by_sdk} or {by_engine}), and downloading it failed: {cause}\n\
+                 \n\
+                 Profile and release engines are only published for released engine versions. \
+                 For Flutter's master channel, build them from the engine sources \
+                 (`tools/flutter-fork build-engine` in the flust repository), or point \
+                 FLUTTER_ENGINE_LIB_PATH at a library built for this engine version.",
+                mode = build.build_mode,
+                sdk = build.release.sdk_version,
+                engine = build.release.engine_version,
+                by_sdk = build.library_path_by_sdk_version().display(),
+                by_engine = build.library_path_by_engine_version().display(),
+            ),
             Error::Which(error) => error.fmt(f),
             Error::Io(error) => error.fmt(f),
             Error::Curl(error) => error.fmt(f),
@@ -592,7 +595,18 @@ impl EngineVersionManager {
                     std::fs::create_dir_all(&target_build_dir)?;
                 }
 
-                engine_build.download_to(&library_path)?;
+                if let Err(cause) = engine_build.download_to(&library_path) {
+                    // Don't leave empty directories behind: they would look
+                    // like an installed version to `engine-library list`.
+                    let _ = std::fs::remove_dir(&target_build_dir);
+                    if let Some(version_dir) = target_build_dir.parent() {
+                        let _ = std::fs::remove_dir(version_dir);
+                    }
+                    return Err(Error::EngineLibraryUnavailable {
+                        build: Box::new(engine_build.clone()),
+                        cause: Box::new(cause),
+                    });
+                }
                 library_path
             }
         };
