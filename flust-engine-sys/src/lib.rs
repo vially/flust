@@ -5,6 +5,11 @@
 
 include!(concat!(env!("OUT_DIR"), "/flust-engine-sys.rs"));
 
+/// The build mode of the engine library this crate links: `debug`,
+/// `debug_unopt`, `profile` or `release`, from `FLUST_BUILD_MODE` at build
+/// time.
+pub const ENGINE_BUILD_MODE: &str = env!("FLUST_ENGINE_BUILD_MODE");
+
 #[cfg(test)]
 mod tests {
     #[allow(unused)]

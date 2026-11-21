@@ -64,7 +64,7 @@ pub struct ApplicationAttributes {
     pub title: Option<String>,
     pub app_id: Option<String>,
     pub args: Vec<String>,
-    /// The renderer to use, unless `args` select one with
+    /// The renderer to use, unless the engine switches select one with
     /// `--enable-impeller`: see [`ApplicationAttributes::renderer`].
     pub renderer: Renderer,
     pub aot_library_path: PathBuf,
@@ -74,9 +74,13 @@ pub struct ApplicationAttributes {
 }
 
 impl ApplicationAttributes {
-    /// The renderer the engine will draw with: the one `args` select with
-    /// `--enable-impeller`, or `renderer` if they don't.
+    /// The renderer the engine will draw with: the one its switches select
+    /// with `--enable-impeller` (`args`, or the `flutter` tool's from the
+    /// environment), or `renderer` if they don't.
     pub fn renderer(&self) -> Renderer {
-        Renderer::resolve(self.renderer, &self.args)
+        Renderer::resolve(
+            self.renderer,
+            &flust_engine::effective_engine_switches(&self.args),
+        )
     }
 }

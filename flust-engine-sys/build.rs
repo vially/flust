@@ -29,6 +29,11 @@ fn run() -> Result<(), BuildError> {
     CargoInstruction::rerun_if_changed("src/lib.rs");
     CargoInstruction::rerun_if_env_changed("FLUST_BUILD_MODE");
     CargoInstruction::rerun_if_env_changed("FLUTTER_ROOT");
+    // The build mode of the engine library, for `ENGINE_BUILD_MODE`.
+    println!(
+        "cargo::rustc-env=FLUST_ENGINE_BUILD_MODE={}",
+        FlutterBuildMode::from_env()
+    );
 
     let engine_build_context = EngineLibraryBuildContext::from_cargo_build_env();
     let library_path = engine_build_context.ensure_library_is_installed()?;

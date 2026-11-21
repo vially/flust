@@ -2,6 +2,7 @@ pub mod builder;
 pub mod channel;
 pub mod codec;
 pub mod compositor;
+mod engine_switches;
 pub mod error;
 pub mod ffi;
 mod flutter_callbacks;
@@ -177,6 +178,13 @@ pub trait FlutterVsyncHandler {
     fn request_frame_callback(&self, baton: isize);
 }
 
+/// The switches an engine started with the app's `args` gets: those from the
+/// environment (set by the `flutter` tool, see `FLUTTER_ENGINE_SWITCHES`),
+/// then the app's own, which win when both set the same switch.
+pub fn effective_engine_switches(args: &[String]) -> Vec<String> {
+    [FlutterEngine::args_from_env_vars(), args.to_vec()].concat()
+}
+
 impl FlutterEngine {
     pub(crate) fn new(builder: FlutterEngineBuilder) -> Result<Self, CreateError> {
         // Convert arguments into flutter compatible
@@ -185,17 +193,12 @@ impl FlutterEngine {
         // the first item is treated as the executable and ignored. Add a dummy value
         // so that all switches are used.
         let dummy_args: Vec<String> = vec!["flust".into()];
+        let switches = effective_engine_switches(&builder.args);
         // The renderer is passed explicitly, after everything else, so that
         // the engine does not fall back to a default of its own.
-        let renderer = Renderer::resolve(builder.renderer, &builder.args);
+        let renderer = Renderer::resolve(builder.renderer, &switches);
         info!("rendering with {renderer:?}");
-        let args = [
-            dummy_args,
-            FlutterEngine::args_from_env_vars(),
-            builder.args.clone(),
-            vec![renderer.engine_switch()],
-        ]
-        .concat();
+        let args = [dummy_args, switches, vec![renderer.engine_switch()]].concat();
 
         let mut args: Vec<_> = args
             .iter()
@@ -417,8 +420,8 @@ impl FlutterEngine {
         self.inner.engine_ptr
     }
 
-    fn args_from_env_vars() -> Vec<String> {
-        let mut args: Vec<String> = vec![];
+    pub(crate) fn args_from_env_vars() -> Vec<String> {
+        let mut args = engine_switches::from_env();
 
         // Allow enabling verbose engine logging though an environment variable.
         if let Ok(verbose) = std::env::var("FLUTTER_ENGINE_VERBOSE_LOGGING") {
