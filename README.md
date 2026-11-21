@@ -9,7 +9,10 @@ app in Rust instead of C++.
 [Examples](examples) | [`flutter` tool extension](packages/flust_flutter_tools/README.md) |
 [Contributing](CONTRIBUTING.md) | [Issues][issues]
 
-![The hello example, a counter app in a Wayland window](examples/hello/screenshot.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/screenshot-dark.webp">
+  <img alt="A Flutter task app running on Flust in three windows: a task list, an activity chart and a focus timer" src="assets/readme/screenshot-light.webp">
+</picture>
 
 ## Status
 
