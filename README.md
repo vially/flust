@@ -25,10 +25,6 @@
 Flust runs [Flutter] apps in native Wayland windows, and lets you write the
 native side of an app in Rust instead of C++.
 
-It works with Flutter's own tools: `flutter run -d flust` with hot reload,
-hot restart and DevTools, and `flutter build flust` for self-contained debug,
-profile and release bundles.
-
 ## Status
 
 Flust is **experimental**. Expect breaking changes, and don't use it for
@@ -46,16 +42,23 @@ anything that matters yet.
 
 ## Features
 
-- Native Wayland windows through [Smithay's client toolkit], with
-  fractional scaling and smooth interactive resizing.
-- The Impeller renderer by default, or Skia.
-- Several windows per app: regular windows, dialogs, popups and tooltips,
-  opened from Dart with Flutter's (still experimental) windowing API
-  through the [`flust_windowing`](packages/flust_windowing) package.
-- Accessibility: screen readers such as Orca read and drive the app
-  through Flutter's semantics.
-- Text input, keyboard and mouse cursors, localization, platform settings
-  and app lifecycle.
+- 🔥 **Flutter's own tools.** `flutter run -d flust` with hot reload, hot
+  restart and DevTools. Profile and release modes work too.
+- 🦀 **Platform code in Rust.** Write plugins as Rust types that talk to Dart
+  over Flutter's standard method channels, and add them to your app with
+  `add_plugin`.
+- 🎨 **Impeller and Skia.** Flutter's modern renderer, Impeller, is the
+  default; Skia is [one switch away](flust-sctk/README.md#choosing-the-renderer).
+- 🪟 **Native Wayland.** Windows are made straight on Wayland, through
+  [Smithay's client toolkit], with no GTK in between. Fractional scaling and
+  smooth interactive resizing included.
+- 🗂️ **Multiple windows.** Regular windows, dialogs, popups and tooltips,
+  opened from Dart with Flutter's experimental windowing API, through the
+  [`flust_windowing`](packages/flust_windowing) package.
+- ♿ **Accessibility.** Screen readers such as Orca read and drive the app,
+  from Flutter's semantics, over AT-SPI with [AccessKit].
+- ⌨️ **The desktop basics.** Text input, keyboard, mouse cursors,
+  localization, platform settings and the app lifecycle.
 
 ## Requirements
 
@@ -167,4 +170,5 @@ so a decision was made to fork the project and rename it to Flust.
 [flutter/flutter#194772]: https://github.com/flutter/flutter/pull/194772
 [flutter/flutter#195924]: https://github.com/flutter/flutter/pull/195924
 [Smithay's client toolkit]: https://github.com/Smithay/client-toolkit
+[AccessKit]: https://accesskit.dev
 [issues]: https://github.com/vially/flust/issues
