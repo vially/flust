@@ -23,6 +23,7 @@ pub struct FlutterEngineBuilder {
     pub(crate) icu_data: PathBuf,
     pub(crate) persistent_cache: PathBuf,
     pub(crate) args: Vec<String>,
+    pub(crate) dart_entrypoint_args: Vec<String>,
     pub(crate) renderer: Renderer,
 }
 
@@ -42,6 +43,7 @@ impl FlutterEngineBuilder {
             icu_data: Default::default(),
             persistent_cache: Default::default(),
             args: vec![],
+            dart_entrypoint_args: vec![],
             renderer: Renderer::default(),
         }
     }
@@ -156,6 +158,14 @@ impl FlutterEngineBuilder {
         for arg in args.into_iter() {
             self.args.push(arg);
         }
+        self
+    }
+
+    /// Arguments for the Dart entrypoint: the `args` of
+    /// `main(List<String> args)`. Engine switches go to [`Self::with_args`]
+    /// instead.
+    pub fn with_dart_entrypoint_args(mut self, args: Vec<String>) -> Self {
+        self.dart_entrypoint_args = args;
         self
     }
 

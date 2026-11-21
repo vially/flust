@@ -63,7 +63,11 @@ pub struct ApplicationAttributes {
     pub inner_size: Option<Size>,
     pub title: Option<String>,
     pub app_id: Option<String>,
+    /// Engine switches, such as `--verbose-logging`.
     pub args: Vec<String>,
+    /// Arguments for the Dart entrypoint: the `args` of
+    /// `main(List<String> args)`.
+    pub dart_entrypoint_args: Vec<String>,
     /// The renderer to use, unless the engine switches select one with
     /// `--enable-impeller`: see [`ApplicationAttributes::renderer`].
     pub renderer: Renderer,

@@ -326,6 +326,15 @@ impl FlutterEngine {
                 None => None,
             };
 
+        // The engine copies these when it is initialized, below.
+        let dart_entrypoint_args: Vec<CString> = builder
+            .dart_entrypoint_args
+            .iter()
+            .map(|arg| CString::new(arg.as_str()).unwrap())
+            .collect();
+        let dart_entrypoint_argv: Vec<*const std::ffi::c_char> =
+            dart_entrypoint_args.iter().map(|arg| arg.as_ptr()).collect();
+
         // Configure engine
         let project_args = flust_engine_sys::FlutterProjectArgs {
             struct_size: std::mem::size_of::<flust_engine_sys::FlutterProjectArgs>(),
@@ -358,8 +367,12 @@ impl FlutterEngine {
             dart_old_gen_heap_size: -1,
             aot_data: inner.aot_data.data,
             compute_platform_resolved_locale_callback: None,
-            dart_entrypoint_argc: 0,
-            dart_entrypoint_argv: std::ptr::null(),
+            dart_entrypoint_argc: dart_entrypoint_argv.len() as i32,
+            dart_entrypoint_argv: if dart_entrypoint_argv.is_empty() {
+                std::ptr::null()
+            } else {
+                dart_entrypoint_argv.as_ptr()
+            },
             log_message_callback: None,
             log_tag: std::ptr::null(),
             on_pre_engine_restart_callback: None,

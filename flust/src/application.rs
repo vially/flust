@@ -104,6 +104,17 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Arguments for the Dart entrypoint: the `args` of
+    /// `main(List<String> args)`. `flutter run --dart-entrypoint-args` passes
+    /// them to the app's process, so an app forwards its own arguments with
+    /// `.with_dart_entrypoint_args(std::env::args().skip(1).collect())`.
+    ///
+    /// Engine switches go to [`Self::with_args`] instead.
+    pub fn with_dart_entrypoint_args(mut self, args: Vec<String>) -> Self {
+        self.attributes.dart_entrypoint_args = args;
+        self
+    }
+
     /// The renderer to draw with. Impeller unless set.
     ///
     /// An `--enable-impeller` engine argument (see [`Self::with_arg`]) takes
