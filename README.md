@@ -1,4 +1,9 @@
-<h1 align="center">Flust</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/flust-wordmark-dark.svg">
+    <img alt="Flust" src="assets/logo/flust-wordmark-light.svg" width="320">
+  </picture>
+</h1>
 
 <p align="center">A Flutter embedder for Linux and Wayland, written in Rust.</p>
 
