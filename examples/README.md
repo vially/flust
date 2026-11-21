@@ -24,28 +24,13 @@ overwrite each other's bundle.
 
 ## Running
 
-You need the Flutter SDK, a Rust toolchain and a Wayland session. From an
-example's directory, build the Flutter bundle and the runner:
+You need a Rust toolchain, a Wayland session, and Flutter with
+[the flust tool extension](../packages/flust_flutter_tools/README.md#setup)
+set up. From an example's directory:
 
 ```sh
-flutter build bundle --debug
-cargo build
+flutter run -d flust              # or --profile, --release
 ```
 
-Then put the bundle, Flutter's ICU data and the engine library next to the
-binary, and run it:
-
-```sh
-flutter_root="$(dirname "$(dirname "$(readlink -f "$(command -v flutter)")")")"
-mkdir -p target/debug/data target/debug/lib
-rm -rf target/debug/data/flutter_assets
-cp -r build/flutter_assets target/debug/data/
-cp "$flutter_root/bin/cache/artifacts/engine/linux-x64/icudtl.dat" target/debug/data/
-engine="$(find target/debug -name libflutter_engine.so -not -path 'target/debug/lib/*' | head -n 1)"
-ln -sf "$(readlink -f "$engine")" target/debug/lib/libflutter_engine.so
-
-LD_LIBRARY_PATH=target/debug/lib target/debug/flust-example-<name>
-```
-
-These steps will be replaced by a single command, see
-https://forge.lab.vially.dev/vially/flust/issues/23.
+`flutter build flust` builds the same bundle without running it, in
+`build/flust/<mode>/bundle`.
