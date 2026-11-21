@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter_tools_core/flutter_tools_core.dart';
 import 'package:flutter_tools_extension/flutter_tools_extension.dart';
 
+import 'project.dart';
+
 // Flust apps are host builds for now: the Dart side is built exactly like a
 // Linux desktop app (same kernel, same AOT snapshot), only the runner differs.
-const String _kTargetPlatform = 'linux-x64';
+final String _kTargetPlatform = hostTargetPlatform;
 
 /// `flutter build flust`: the Dart bundle, the Cargo binary and the engine
 /// library, laid out the way Flust loads them:
@@ -19,7 +21,7 @@ const String _kTargetPlatform = 'linux-x64';
 /// bundle/lib/libflutter_engine.so
 /// ```
 final class FlustBuildTarget extends BuildTarget {
-  const FlustBuildTarget()
+  FlustBuildTarget()
     : super(
         description: 'Build a Flust (Rust, Wayland) application.',
         outputDir: '${BuiltInPlaceholders.outputDir}/flust/${BuiltInPlaceholders.buildMode}',
@@ -35,10 +37,11 @@ final class FlustBuildTarget extends BuildTarget {
   @override
   Future<ExtensionBuildResult> build(ExtensionBuildContext context) async {
     final projectDir = Directory.fromUri(context.projectRoot);
-    if (!File('${projectDir.path}/Cargo.toml').existsSync()) {
+    final Directory? runnerDir = findRunnerDirectory(projectDir);
+    if (runnerDir == null) {
       return ExtensionBuildResult(
         success: false,
-        errorMessage: 'Missing Cargo.toml in ${projectDir.path}.',
+        errorMessage: 'No Cargo.toml in ${projectDir.path}/flust or ${projectDir.path}.',
       );
     }
     final String flutterRoot = Directory.fromUri(context.flutterRoot).path;
@@ -97,7 +100,7 @@ final class FlustBuildTarget extends BuildTarget {
     final (int cargoExitCode, List<String> executables, List<String> engineLibraryDirs) =
         await _cargoBuild(
       release: context.buildMode != BuildMode.debug,
-      workingDirectory: projectDir.path,
+      workingDirectory: runnerDir.path,
       environment: environment,
     );
     if (cargoExitCode != 0) {
@@ -154,10 +157,10 @@ final class FlustBuildService extends BuildService {
   static const String buildTargetName = 'flust';
 
   @override
-  List<BuildTarget> get buildTargets => const <BuildTarget>[FlustBuildTarget()];
+  List<BuildTarget> get buildTargets => <BuildTarget>[FlustBuildTarget()];
 
   @override
-  List<AssembleTarget> get assembleTargets => const <AssembleTarget>[
+  List<AssembleTarget> get assembleTargets => <AssembleTarget>[
     FlustDartBundle(BuildMode.debug),
     FlustDartBundle(BuildMode.profile),
     FlustDartBundle(BuildMode.release),
@@ -182,7 +185,7 @@ const String _kLibApp = 'libapp.so';
 /// them for android-arm, so the cache hashes that `gen_snapshot`, but they run
 /// the one for `-dTargetPlatform`.
 final class FlustDartBundle extends AssembleTarget {
-  const FlustDartBundle(this.buildMode)
+  FlustDartBundle(this.buildMode)
     : super(
         description: 'The Dart side of a Flust bundle: assets, plus the kernel or AOT snapshot.',
         targetPlatform: _kTargetPlatform,

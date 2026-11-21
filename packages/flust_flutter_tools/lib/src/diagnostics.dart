@@ -6,7 +6,7 @@ import 'package:flutter_tools_extension/flutter_tools_extension.dart';
 /// `flutter doctor` section for Flust: the Rust toolchain and a Wayland session.
 final class FlustDiagnostics extends DiagnosticsExtension {
   @override
-  String get title => 'Flust (prototype)';
+  String get title => 'Flust';
 
   @override
   Future<List<ValidationResult>> runDiagnostics() async {

@@ -6,6 +6,7 @@ import 'package:flutter_tools_core/flutter_tools_core.dart';
 import 'package:flutter_tools_extension/flutter_tools_extension.dart';
 
 import 'build.dart';
+import 'project.dart';
 
 class _RunningApp {
   _RunningApp({required this.appId, required this.process, required this.vmServiceCompleter});
@@ -17,14 +18,19 @@ class _RunningApp {
 
 /// The local Wayland session as a Flust device.
 final class FlustDeviceService extends DeviceService {
-  static const String deviceId = 'flust-wayland';
+  static const String deviceId = 'flust';
 
   // Mirrors kVMServiceMessageRegExp in package:flutter_tools/src/vmservice.dart.
   static final _vmServicePattern = RegExp(
     r'The Dart VM service is listening on ((http|//)[a-zA-Z0-9:/=_\-\.\[\]]+)',
   );
 
+  /// Lines kept for a log reader that starts after the app printed them.
+  static const int _kMaxPendingLogLines = 1000;
+
   final _runningApps = <String, _RunningApp>{};
+  final _logStreams = <String>{};
+  final _pendingLogLines = <String>[];
 
   @override
   Future<List<TargetDevice>> getDevices() async {
@@ -32,15 +38,15 @@ final class FlustDeviceService extends DeviceService {
     if (wayland == null || wayland.isEmpty) {
       return const <TargetDevice>[];
     }
-    return const <TargetDevice>[
+    return <TargetDevice>[
       TargetDevice(
         category: Category.desktop,
         id: deviceId,
-        name: 'Flust (Wayland)',
+        name: 'Flust',
         buildTarget: FlustBuildService.buildTargetName,
         ephemeral: false,
-        sdkNameAndVersion: 'Flust prototype',
-        targetPlatform: 'linux-x64',
+        sdkNameAndVersion: 'Flust (Wayland: $wayland)',
+        targetPlatform: hostTargetPlatform,
       ),
     ];
   }
@@ -51,7 +57,7 @@ final class FlustDeviceService extends DeviceService {
     required ExtensionFlutterProject project,
   }) async {
     return deviceId == FlustDeviceService.deviceId &&
-        File.fromUri(project.directory.resolve('Cargo.toml')).existsSync();
+        findRunnerDirectory(Directory.fromUri(project.directory)) != null;
   }
 
   @override
@@ -70,10 +76,10 @@ final class FlustDeviceService extends DeviceService {
       throw ToolExtensionException('Application executable does not exist: ${executable.path}');
     }
     await stopApp(deviceId: deviceId);
+    _pendingLogLines.clear();
 
-    // Flust binaries have no rpath: the engine library is found through
-    // LD_LIBRARY_PATH. Engine switches use the same environment variables as
-    // Flutter's Linux embedder (Flust doesn't read them yet).
+    // The engine library is found through LD_LIBRARY_PATH. Engine switches use
+    // the environment variables of Flutter's Linux embedder.
     final environment = <String, String>{
       'LD_LIBRARY_PATH': '${executable.parent.path}/lib',
       for (var i = 0; i < debuggingOptions.engineSwitches.length; i++)
@@ -102,6 +108,7 @@ final class FlustDeviceService extends DeviceService {
         if (match != null && !uriCompleter.isCompleted) {
           uriCompleter.complete(Uri.tryParse(match.group(1)!));
         }
+        _log(deviceId, line);
       }
 
       for (final Stream<List<int>> stream in <Stream<List<int>>>[process.stdout, process.stderr]) {
@@ -126,6 +133,32 @@ final class FlustDeviceService extends DeviceService {
       }
       throw ToolExtensionException('Failed to start "${executable.path}": ${error.message}');
     }
+  }
+
+  /// Sends [line] to the host's log reader, or keeps it until one starts.
+  void _log(String deviceId, String line) {
+    if (_logStreams.contains(deviceId)) {
+      emitLogLine(deviceId: deviceId, line: line);
+      return;
+    }
+    _pendingLogLines.add(line);
+    if (_pendingLogLines.length > _kMaxPendingLogLines) {
+      _pendingLogLines.removeAt(0);
+    }
+  }
+
+  @override
+  Future<void> startLogStream({required String deviceId}) async {
+    _logStreams.add(deviceId);
+    for (final String line in _pendingLogLines) {
+      emitLogLine(deviceId: deviceId, line: line);
+    }
+    _pendingLogLines.clear();
+  }
+
+  @override
+  Future<void> stopLogStream({required String deviceId}) async {
+    _logStreams.remove(deviceId);
   }
 
   @override

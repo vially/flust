@@ -1,8 +1,8 @@
 /// Tool extension for Flust (https://forge.lab.vially.dev/vially/flust),
 /// a Rust Flutter embedder for Wayland built on the embedder API.
 ///
-/// A Flust app is a Flutter project with a Cargo package at its root (a
-/// `Cargo.toml` next to `pubspec.yaml`) whose binary loads the Flutter bundle
+/// A Flust app is a Flutter project with a Cargo package (its runner) in
+/// `flust/` or at the project root, whose binary loads the Flutter bundle
 /// from next to itself: `data/flutter_assets`, `data/icudtl.dat`,
 /// `lib/libapp.so` and `lib/libflutter_engine.so`.
 library flust_flutter_tools;
