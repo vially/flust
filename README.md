@@ -23,7 +23,7 @@
 </p>
 
 Flust runs [Flutter] apps in native Wayland windows, and lets you write the
-native side of an app in Rust instead of C++.
+native side of an app in Rust.
 
 ## Status
 
