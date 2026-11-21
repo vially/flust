@@ -1,0 +1,16 @@
+name: flust_flutter_tools
+description: "Flutter tool extension for Flust: `flutter build flust` and `flutter run -d flust`."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0-0
+
+# The tool extension API isn't published yet: it is resolved from the
+# Flutter SDK that `.flutter-sdk` (at the repository root, not tracked) links
+# to. See README.md.
+dependencies:
+  flutter_tools_core:
+    path: ../../.flutter-sdk/packages/flutter_tools/packages/flutter_tools_core
+  flutter_tools_extension:
+    path: ../../.flutter-sdk/packages/flutter_tools/packages/flutter_tools_extension
