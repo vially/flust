@@ -1,18 +1,28 @@
-# Flust
+<h1 align="center">Flust</h1>
 
-[![MIT licensed][license-badge]][license-url]
+<p align="center">A Flutter embedder for Linux and Wayland, written in Rust.</p>
 
-Flust is a [Flutter] embedder for Linux, written in Rust. It runs Flutter
-apps in native Wayland windows, and lets you write the native side of an
-app in Rust instead of C++.
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="examples">Examples</a> ·
+  <a href="packages/flust_flutter_tools/README.md"><code>flutter</code> tool extension</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="https://github.com/vially/flust/issues">Issues</a>
+</p>
 
-[Examples](examples) | [`flutter` tool extension](packages/flust_flutter_tools/README.md) |
-[Contributing](CONTRIBUTING.md) | [Issues][issues]
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/screenshot-dark.webp">
+    <img alt="A Flutter task app running on Flust in three windows: a task list, an activity chart and a focus timer" src="assets/readme/screenshot-light.webp">
+  </picture>
+</p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/screenshot-dark.webp">
-  <img alt="A Flutter task app running on Flust in three windows: a task list, an activity chart and a focus timer" src="assets/readme/screenshot-light.webp">
-</picture>
+Flust runs [Flutter] apps in native Wayland windows, and lets you write the
+native side of an app in Rust instead of C++.
+
+It works with Flutter's own tools: `flutter run -d flust` with hot reload,
+hot restart and DevTools, and `flutter build flust` for self-contained debug,
+profile and release bundles.
 
 ## Status
 
@@ -44,9 +54,6 @@ anything that matters yet.
   through Flutter's semantics.
 - Text input, keyboard and mouse cursors, localization, platform settings
   and app lifecycle.
-- The usual `flutter` workflow: `flutter run -d flust` with hot reload, hot
-  restart and DevTools, and `flutter build flust` for self-contained debug,
-  profile and release bundles.
 
 ## Requirements
 
@@ -155,5 +162,3 @@ so a decision was made to fork the project and rename it to Flust.
 [Flutter]: https://flutter.dev
 [Smithay's client toolkit]: https://github.com/Smithay/client-toolkit
 [issues]: https://github.com/vially/flust/issues
-[license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
-[license-url]: LICENSE
