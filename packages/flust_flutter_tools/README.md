@@ -49,6 +49,10 @@ dev_dependencies:
     path: <flust repository>/packages/flust_flutter_tools
 ```
 
+and run `flutter pub get`: the `flutter` tool finds the extension in the
+app's resolved dependencies, so until they are resolved, `flutter run -d
+flust` doesn't know the device and `flutter build flust` doesn't exist.
+
 The runner is the Cargo package in `flust/` (with `flust/Cargo.toml`) or,
 if there is none, at the project root, as in [`examples/`](../../examples).
 Its binary loads the bundle from next to itself, which is what
