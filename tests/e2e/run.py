@@ -70,7 +70,7 @@ FLUST_ONLY |= WINDOWING
 # Windows that the app creates can not be drawn into straight: these only
 # run with the framebuffer target.
 FRAMEBUFFER_ONLY = {"windows", "windows-semantics"} | WINDOWING
-WINDOWING_APP = HERE / "windowing-app/target/debug/flust-e2e-windowing"
+WINDOWING_APP = HERE / "windowing-app/build/flust/debug/bundle/flust-e2e-windowing"
 REFERENCE = HERE / "app/build/reference/build/linux/x64/debug/bundle/flust_e2e_probe"
 
 
@@ -101,7 +101,7 @@ def main():
     if args.reference and args.skia:
         parser.error("--skia is for Flust, not for the reference")
 
-    app = HERE / "app/target/debug/flust-e2e-probe"
+    app = HERE / "app/build/flust/debug/bundle/flust-e2e-probe"
     build = "build-app.sh"
     if args.reference:
         app, build = REFERENCE, "build-reference.sh"

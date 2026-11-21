@@ -6,7 +6,7 @@
 # windowing.yaml.
 app:
   command: ./flust-e2e-windowing
-  cwd: ../windowing-app/target/debug
+  cwd: ../windowing-app/build/flust/debug/bundle
   env:
     RUST_LOG: info
     LD_LIBRARY_PATH: lib

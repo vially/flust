@@ -39,10 +39,9 @@ against on the next run.
 
 `waytape` on `PATH` (and what it needs: `sway`, `swaybg`, `ffmpeg`;
 `waytape doctor` checks), Python 3 with `numpy` and `Pillow` for the
-analyzers, and the Flutter SDK and a Rust toolchain to build the app.
-
-The windowing app also needs a checkout of Flutter's master channel: see
-[The windowing app](#the-windowing-app).
+analyzers, and a Rust toolchain and Flutter with the flust tool extension
+to build the apps: `build-app.sh` runs `flutter build flust` (see
+[its setup](../../packages/flust_flutter_tools/README.md#setup)).
 
 The `semantics` scenario also needs AT-SPI (`at-spi2-core`, with its
 `Atspi` bindings for Python through PyGObject), `dbus-run-session`,
@@ -202,22 +201,15 @@ tap in any window prints `<title>: tap`. A window that the compositor
 asks to close is destroyed, with `<title>: destroyed`. When the main
 window is, the app exits, after `main: destroyed, exiting`.
 
-The windowing API is only on Flutter's master channel, and changes often,
-so the app is built against a known commit of it. Check it out somewhere,
-and point `FLUTTER_ROOT` at it:
+The windowing API is only on Flutter's master channel, which the flust
+tool extension runs on too. Build the app with:
 
 ```sh
-git clone https://github.com/flutter/flutter.git ~/code/flutter-master
-git -C ~/code/flutter-master checkout b34b017b48ad7b28544b25d20cda6c4a5564ca08
-FLUTTER_ROOT=~/code/flutter-master tests/e2e/build-app.sh windowing
+tests/e2e/build-app.sh windowing
 ```
 
-`build-app.sh windowing` turns the windowing feature on for the build
-(`FLUTTER_WINDOWING=true`) and links the app against the engine library
-that Flutter builds for that commit
-(`FLUTTER_ENGINE_DOWNLOAD_SOURCE=flutter-infra`), which is only there in
-debug mode. `run.py` skips the `windowing` scenarios while the app is not
-built.
+It turns the windowing feature on for the build (`FLUTTER_WINDOWING=true`).
+`run.py` skips the `windowing` scenarios while the app is not built.
 
 ## Accessibility
 

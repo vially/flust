@@ -12,5 +12,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+dev_dependencies:
+  # `flutter build flust` (tool extension), which build-app.sh runs.
+  flust_flutter_tools:
+    path: ../../../packages/flust_flutter_tools
+
 flutter:
   uses-material-design: false
