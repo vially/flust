@@ -11,5 +11,10 @@ dependencies:
     sdk: flutter
   material_ui: ^1.11.1
 
+dev_dependencies:
+  # `flutter build flust` and `flutter run -d flust` (tool extension).
+  flust_flutter_tools:
+    path: ../../packages/flust_flutter_tools
+
 flutter:
   uses-material-design: true
