@@ -24,7 +24,8 @@ enum Command {
         command: Option<EngineLibraryCommands>,
     },
 
-    /// Custom device management commands
+    /// Custom device management commands (deprecated: use `flutter run -d
+    /// flust` with the flust_flutter_tools tool extension)
     CustomDevice {
         #[command(subcommand)]
         command: CustomDeviceCommands,
@@ -235,9 +236,7 @@ fn main() -> Result<(), Error> {
                             Ok(())
                         }
                         Err(err) => {
-                            println!(
-                                "Failed to uninstall Flutter engine library version: {err}"
-                            );
+                            println!("Failed to uninstall Flutter engine library version: {err}");
                             Err(err)
                         }
                     }
@@ -245,23 +244,35 @@ fn main() -> Result<(), Error> {
             },
             None => Ok(()),
         },
-        Command::CustomDevice { command } => match command {
-            CustomDeviceCommands::PostBuild {
-                build_mode,
-                bundle_output_path,
-                engine_revision,
-                icu_data_path,
-            } => flust_build::CustomDeviceCommands::post_build(
-                (*build_mode).into(),
-                engine_revision,
-                bundle_output_path,
-                icu_data_path,
-            ),
-            CustomDeviceCommands::Run {
-                build_mode,
-                engine_revision,
-            } => flust_build::CustomDeviceCommands::run((*build_mode).into(), engine_revision),
-        },
+        Command::CustomDevice { command } => {
+            eprintln!("{CUSTOM_DEVICE_DEPRECATION}");
+            run_custom_device_command(command)
+        }
+    }
+}
+
+const CUSTOM_DEVICE_DEPRECATION: &str = "warning: `flust-tools custom-device` is deprecated. \
+On Flutter's master channel, add the flust_flutter_tools tool extension to the app's \
+dev_dependencies and use `flutter run -d flust` (see packages/flust_flutter_tools/README.md \
+in the flust repository).";
+
+fn run_custom_device_command(command: &CustomDeviceCommands) -> Result<(), Error> {
+    match command {
+        CustomDeviceCommands::PostBuild {
+            build_mode,
+            bundle_output_path,
+            engine_revision,
+            icu_data_path,
+        } => flust_build::CustomDeviceCommands::post_build(
+            (*build_mode).into(),
+            engine_revision,
+            bundle_output_path,
+            icu_data_path,
+        ),
+        CustomDeviceCommands::Run {
+            build_mode,
+            engine_revision,
+        } => flust_build::CustomDeviceCommands::run((*build_mode).into(), engine_revision),
     }
 }
 
