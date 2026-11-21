@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# Manage the Flutter SDK fork that flust's tool extension runs on.
+#
+# Tool extensions (RFC 510, https://github.com/flutter/rfc/pull/40) only
+# exist on Flutter's master channel, and some of the pieces flust needs are
+# still open pull requests. The fork carries them as a linear stack on top of
+# a pinned upstream master commit (the "base"):
+#
+#     <base> ── [upstream] <PR> ── … ── [flust] <fork-only change> ── …
+#
+# The engine version follows the base (bin/internal/content_aware_hash.sh
+# hashes the engine sources at the merge-base with upstream/master), so as
+# long as the base doesn't move, neither do the engine libraries. Debug
+# engines are downloaded for any engine version; profile and release engines
+# for master have to be built locally (`build-engine`), which takes a while.
+#
+# Commands:
+#   link <fork dir>        Point .flutter-sdk (repository root) at the fork.
+#   status                 Base, engine version, patch stack, engine libraries.
+#   rebase [<commit>]      Move the stack onto a new base (default:
+#                          upstream/master), dropping [upstream] commits whose
+#                          pull request has been merged.
+#   build-engine [<mode>…] Build profile/release (default: both) engine
+#                          libraries for the fork's engine version and install
+#                          them into flust's engine cache.
+#
+# Environment:
+#   FLUTTER_FORK             The fork checkout (default: where .flutter-sdk points).
+#   FLUST_ENGINE_BUILD_DIR   Engine build checkout, a worktree of the fork
+#                            (default: ~/code/flust-engine-build/flutter).
+#
+# Context: https://forge.lab.vially.dev/vially/flust/issues/24
+set -euo pipefail
+
+repo="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+sdk_link="$repo/.flutter-sdk"
+branch="flust/main"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/flutter-engine-lib"
+engine_build_dir="${FLUST_ENGINE_BUILD_DIR:-$HOME/code/flust-engine-build/flutter}"
+
+die() { echo "flutter-fork: $*" >&2; exit 1; }
+
+fork_dir() {
+    local dir="${FLUTTER_FORK:-}"
+    if [ -z "$dir" ]; then
+        [ -e "$sdk_link" ] || die "no fork: run \`$0 link <fork dir>\` or set FLUTTER_FORK"
+        dir="$(readlink -f "$sdk_link")"
+    fi
+    [ -x "$dir/bin/flutter" ] || die "$dir is not a Flutter checkout"
+    echo "$dir"
+}
+
+base_of() { git -C "$1" merge-base HEAD upstream/master; }
+engine_version_of() { "$1/bin/internal/content_aware_hash.sh"; }
+
+# The pull request number of an `[upstream] … (flutter/flutter PR <n>)` commit.
+pr_of_commit() {
+    git -C "$1" log -1 --format=%s "$2" | sed -nE 's/^\[upstream\].*PR ([0-9]+)\)$/\1/p'
+}
+
+pr_state() {
+    gh pr view "$1" -R flutter/flutter --json state -q .state 2>/dev/null || echo "unknown"
+}
+
+host_arch() {
+    case "$(uname -m)" in
+    x86_64) echo x64 ;;
+    aarch64) echo arm64 ;;
+    *) die "unsupported host architecture $(uname -m)" ;;
+    esac
+}
+
+# The cached engine library for <engine version> <mode>, if any. Mirrors
+# flust-build's lookup by engine version.
+cached_engine() {
+    local path="$cache/by-engine-version/$1/$2/libflutter_engine.so"
+    [ -f "$path" ] && readlink -f "$path"
+}
+
+cmd_link() {
+    [ $# -eq 1 ] || die "usage: link <fork dir>"
+    local dir
+    dir="$(readlink -f "$1")"
+    [ -x "$dir/bin/flutter" ] || die "$dir is not a Flutter checkout"
+    ln -sfn "$dir" "$sdk_link"
+    echo "$sdk_link -> $dir"
+}
+
+cmd_status() {
+    local fork base engine
+    fork="$(fork_dir)"
+    base="$(base_of "$fork")"
+    engine="$(engine_version_of "$fork")"
+    echo "fork:    $fork ($(git -C "$fork" rev-parse --abbrev-ref HEAD) at $(git -C "$fork" rev-parse --short HEAD))"
+    echo "base:    $(git -C "$fork" log -1 --format='%h %cs %s' "$base")"
+    echo "         $(git -C "$fork" rev-list --count "$base..upstream/master") commits behind upstream/master (as last fetched)"
+    echo "engine:  $engine"
+    echo
+    echo "patches:"
+    local commit pr
+    for commit in $(git -C "$fork" rev-list --reverse "$base..HEAD"); do
+        pr="$(pr_of_commit "$fork" "$commit")"
+        printf '  %s %s' "$(git -C "$fork" rev-parse --short "$commit")" "$(git -C "$fork" log -1 --format=%s "$commit")"
+        [ -n "$pr" ] && printf ' [%s]' "$(pr_state "$pr")"
+        echo
+    done
+    echo
+    echo "engine libraries (linux-$(host_arch)):"
+    local mode path
+    for mode in debug profile release; do
+        if path="$(cached_engine "$engine" "$mode")"; then
+            echo "  $mode: $path"
+        elif [ "$mode" = debug ]; then
+            echo "  $mode: not cached yet (downloaded by the first debug build)"
+        else
+            echo "  $mode: MISSING (run \`$0 build-engine\`)"
+        fi
+    done
+}
+
+cmd_rebase() {
+    local fork target old_base old_engine new_engine
+    fork="$(fork_dir)"
+    [ "$(git -C "$fork" rev-parse --abbrev-ref HEAD)" = "$branch" ] || die "$fork is not on $branch"
+    [ -z "$(git -C "$fork" status --porcelain --untracked-files=no)" ] || die "$fork has uncommitted changes"
+    git -C "$fork" fetch upstream master
+    target="$(git -C "$fork" rev-parse --verify "${1:-upstream/master}^{commit}")"
+    old_base="$(base_of "$fork")"
+    old_engine="$(engine_version_of "$fork")"
+
+    local backup="refs/flust-fork/backup/$(date +%Y%m%d-%H%M%S)"
+    git -C "$fork" update-ref "$backup" HEAD
+    echo "backup of the current stack: $backup"
+
+    # Drop the [upstream] commits whose pull request has been merged.
+    local drop=() commit pr
+    for commit in $(git -C "$fork" rev-list --reverse "$old_base..HEAD"); do
+        pr="$(pr_of_commit "$fork" "$commit")"
+        if [ -n "$pr" ] && [ "$(pr_state "$pr")" = MERGED ]; then
+            echo "dropping $(git -C "$fork" log -1 --format='%h %s' "$commit") (merged)"
+            drop+=("$(git -C "$fork" rev-parse --short=12 "$commit")")
+        fi
+    done
+    local editor="true"
+    if [ ${#drop[@]} -gt 0 ]; then
+        editor="sed -i -E '/^pick ($(IFS='|'; echo "${drop[*]}"))/d'"
+    fi
+    GIT_SEQUENCE_EDITOR="$editor" git -C "$fork" -c core.abbrev=12 rebase -i --onto "$target" "$old_base" \
+        || die "rebase stopped: resolve it in $fork (\`git rebase --continue\`), or go back with \`git reset --hard $backup\`"
+
+    new_engine="$(engine_version_of "$fork")"
+    echo
+    echo "base:   $(git -C "$fork" rev-parse --short "$old_base") -> $(git -C "$fork" rev-parse --short "$target")"
+    if [ "$new_engine" = "$old_engine" ]; then
+        echo "engine: unchanged ($new_engine)"
+    else
+        echo "engine: $old_engine -> $new_engine"
+        echo "        profile/release engines have to be rebuilt: $0 build-engine"
+    fi
+}
+
+cmd_build_engine() {
+    local fork base engine modes=("$@")
+    [ ${#modes[@]} -gt 0 ] || modes=(profile release)
+    fork="$(fork_dir)"
+    base="$(base_of "$fork")"
+    engine="$(engine_version_of "$fork")"
+    echo "building ${modes[*]} engine libraries for engine $engine (sources at $(git -C "$fork" rev-parse --short "$base"))"
+
+    export PATH="$HOME/.local/share/depot_tools:$PATH"
+    command -v gclient >/dev/null || die "gclient not found: install depot_tools"
+
+    # A detached worktree at the base, so the fork's checkout isn't touched.
+    if [ ! -e "$engine_build_dir/.git" ]; then
+        mkdir -p "$(dirname "$engine_build_dir")"
+        git -C "$fork" worktree add --detach "$engine_build_dir" "$base"
+    else
+        git -C "$engine_build_dir" checkout --detach "$base"
+    fi
+    [ "$(engine_version_of "$engine_build_dir")" = "$engine" ] \
+        || die "the engine sources in $engine_build_dir don't hash to $engine"
+
+    (
+        cd "$engine_build_dir"
+        [ -f .gclient ] || cp engine/scripts/standard.gclient .gclient
+        gclient sync --no-history -D
+        cd engine/src
+        local mode
+        for mode in "${modes[@]}"; do
+            ./flutter/tools/gn \
+                --runtime-mode "$mode" \
+                --no-rbe \
+                --no-enable-unittests \
+                --no-build-embedder-examples \
+                --no-build-glfw-shell \
+                --disable-desktop-embeddings
+            ninja -C "out/host_$mode" flutter/shell/platform/embedder:flutter_engine
+            nm -D --defined-only "out/host_$mode/libflutter_engine.so" | grep -q ' FlutterEngineRun$'
+        done
+    )
+
+    # Install where flust-build looks up engines by version. That directory
+    # may be a link to a by-sdk-version directory.
+    local dest="$cache/by-engine-version/$engine" mode
+    [ -L "$dest" ] && dest="$(readlink -f "$dest")"
+    for mode in "${modes[@]}"; do
+        install -D -m755 "$engine_build_dir/engine/src/out/host_$mode/libflutter_engine.so" \
+            "$dest/$mode/libflutter_engine.so"
+        echo "installed $dest/$mode/libflutter_engine.so"
+    done
+}
+
+case "${1:-}" in
+link | status | rebase | build-engine)
+    command="${1//-/_}"
+    shift
+    "cmd_$command" "$@"
+    ;;
+*)
+    sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac
