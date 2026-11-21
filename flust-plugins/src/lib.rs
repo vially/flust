@@ -10,4 +10,3 @@ pub mod platform;
 pub mod settings;
 pub mod system;
 pub mod textinput;
-pub mod window;
