@@ -60,11 +60,12 @@ Its binary loads the bundle from next to itself, which is what
 
 ## Setup
 
-1. **A Flutter fork with tool extensions.** The fork is a checkout of
-   https://github.com/flutter/flutter on the `flust/main` branch of
-   https://github.com/vially/flutter: Flutter's master channel at a pinned
-   commit, plus the open pull requests the extension needs (see
-   [`tools/flutter-fork`](../../tools/flutter-fork)).
+1. **A Flutter fork with tool extensions.** The fork is the
+   [`flust/main`](https://github.com/vially/flutter/tree/flust/main) branch
+   of [vially/flutter](https://github.com/vially/flutter): Flutter's master
+   channel at a pinned commit, plus the open pull requests the extension
+   needs (see [`tools/flutter-fork`](../../tools/flutter-fork)). Clone
+   Flutter itself, then check out that branch from the fork:
 
    ```sh
    git clone https://github.com/flutter/flutter.git ~/code/flutter-tool-ext
