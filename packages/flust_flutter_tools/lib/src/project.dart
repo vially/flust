@@ -7,7 +7,8 @@ import 'dart:io';
 /// template will generate, then at the project root, where the examples keep
 /// it today.
 Directory? findRunnerDirectory(Directory projectDirectory) {
-  for (final String path in <String>['${projectDirectory.path}/flust', projectDirectory.path]) {
+  final String root = projectDirectory.path.replaceFirst(RegExp(r'/+$'), '');
+  for (final String path in <String>['$root/flust', root]) {
     if (File('$path/Cargo.toml').existsSync()) {
       return Directory(path);
     }

@@ -88,7 +88,7 @@ final class FlustBuildTarget extends BuildTarget {
     // 2. The Rust side. `flust-engine-sys` picks the engine library matching
     //    the SDK at FLUTTER_ROOT. Flutter's own storage only has it in debug
     //    mode, but it has it for every engine version (master included).
-    stdout.writeln('Running cargo build...');
+    stdout.writeln('Building the runner (${runnerDir.path})...');
     // The engine library's mode follows FLUST_BUILD_MODE, not Cargo's profile.
     final environment = <String, String>{
       'FLUTTER_ROOT': flutterRoot,
@@ -106,13 +106,13 @@ final class FlustBuildTarget extends BuildTarget {
     if (cargoExitCode != 0) {
       return ExtensionBuildResult(
         success: false,
-        errorMessage: 'cargo build failed with exit code $cargoExitCode.',
+        errorMessage: 'Building the runner failed (cargo exit code $cargoExitCode).',
       );
     }
     if (executables.length != 1) {
       return ExtensionBuildResult(
         success: false,
-        errorMessage: 'Expected one binary from cargo build, got: $executables.',
+        errorMessage: 'Expected the runner to build one binary, got: $executables.',
       );
     }
     final executable = File(executables.single);
@@ -140,7 +140,7 @@ final class FlustBuildTarget extends BuildTarget {
     if (engine == null) {
       return ExtensionBuildResult(
         success: false,
-        errorMessage: 'libflutter_engine.so not found in the linked paths of cargo build: '
+        errorMessage: 'libflutter_engine.so not found in the library paths of the runner build: '
             '$engineLibraryDirs.',
       );
     }
@@ -273,8 +273,16 @@ File? _findEngineLibrary(List<String> linkedPaths) {
   return null;
 }
 
-/// Runs `cargo build` and returns the paths of the binaries it produced and
-/// the library search paths of the build scripts that link the engine.
+/// Builds the runner's binary and returns the paths of the binaries cargo
+/// produced and the library search paths of the build scripts that link the
+/// engine.
+///
+/// The binary looks for the engine library and `libapp.so` in `lib/` next to
+/// itself (an `$ORIGIN/lib` run path), so the bundle runs without
+/// LD_LIBRARY_PATH. The link argument is passed with `cargo rustc`, which
+/// only applies it to the binary: changing RUSTFLAGS instead would rebuild
+/// every dependency whenever plain `cargo build` and `flutter build`
+/// alternate.
 Future<(int, List<String>, List<String>)> _cargoBuild({
   required bool release,
   required String workingDirectory,
@@ -282,7 +290,13 @@ Future<(int, List<String>, List<String>)> _cargoBuild({
 }) async {
   final Process process = await Process.start(
     'cargo',
-    <String>['build', if (release) '--release', '--message-format=json-render-diagnostics'],
+    <String>[
+      'rustc',
+      if (release) '--release',
+      '--message-format=json-render-diagnostics',
+      '--',
+      r'-Clink-arg=-Wl,-rpath,$ORIGIN/lib',
+    ],
     workingDirectory: workingDirectory,
     environment: environment,
   );

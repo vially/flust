@@ -78,10 +78,10 @@ final class FlustDeviceService extends DeviceService {
     await stopApp(deviceId: deviceId);
     _pendingLogLines.clear();
 
-    // The engine library is found through LD_LIBRARY_PATH. Engine switches use
-    // the environment variables of Flutter's Linux embedder.
+    // The binary finds the engine library through its run path (see
+    // `flutter build flust`). Engine switches use the environment variables
+    // of Flutter's Linux embedder.
     final environment = <String, String>{
-      'LD_LIBRARY_PATH': '${executable.parent.path}/lib',
       for (var i = 0; i < debuggingOptions.engineSwitches.length; i++)
         'FLUTTER_ENGINE_SWITCH_${i + 1}': debuggingOptions.engineSwitches[i],
       if (debuggingOptions.engineSwitches.isNotEmpty)
