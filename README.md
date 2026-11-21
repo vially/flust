@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-<p align="center">A Flutter embedder for Linux and Wayland, written in Rust.</p>
+<p align="center">A Flutter embedder for the modern Linux desktop, written in Rust.</p>
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
