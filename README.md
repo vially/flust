@@ -34,18 +34,15 @@ profile and release bundles.
 Flust is **experimental**. Expect breaking changes, and don't use it for
 anything that matters yet.
 
-- **Wayland only.** There is no X11 support. The end-to-end tests run on
-  sway. Other compositors, such as Mutter and KWin, haven't been tested
-  much yet.
-- **It needs a fork of Flutter.** `flutter run -d flust` works through
-  Flutter's tool extensions, an experiment on Flutter's master channel
-  whose remaining parts are still open pull requests. Until they land,
-  Flust runs on [a fork of Flutter](packages/flust_flutter_tools/README.md#setup)
-  that carries them.
-- **Impeller is only tried on Mesa's `radeonsi` driver so far**, and there
-  is no fallback to Skia if it fails to start. See
-  [`flust-sctk`](flust-sctk/README.md#limitations) for the other known
-  limitations.
+> [!NOTE]
+> **For now, Flust needs a fork of Flutter.** `flutter run -d flust` works
+> through Flutter's tool extensions ([RFC 510]), an experiment on Flutter's
+> master channel that is still being built upstream, in
+> [flutter/flutter#190755]. Some of the pieces Flust needs are open pull
+> requests: [flutter/flutter#194772] and [flutter/flutter#195924]. Until they
+> are merged, Flust runs on [a fork of Flutter](packages/flust_flutter_tools/README.md#setup)
+> that carries them. The fork is only temporary: once they land, it won't be
+> needed anymore.
 
 ## Features
 
@@ -165,5 +162,9 @@ the patches turned into something that might be usable upstream, the
 so a decision was made to fork the project and rename it to Flust.
 
 [Flutter]: https://flutter.dev
+[RFC 510]: https://github.com/flutter/rfc/pull/40
+[flutter/flutter#190755]: https://github.com/flutter/flutter/issues/190755
+[flutter/flutter#194772]: https://github.com/flutter/flutter/pull/194772
+[flutter/flutter#195924]: https://github.com/flutter/flutter/pull/195924
 [Smithay's client toolkit]: https://github.com/Smithay/client-toolkit
 [issues]: https://github.com/vially/flust/issues
