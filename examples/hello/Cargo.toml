@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-# Not a member of the repository's workspace: the app loads its Flutter
-# bundle from next to its binary, so it needs a target directory of its own.
+# Not a member of the repository's workspace: like an app's runner, it is a
+# workspace of its own (see ../README.md).
 [workspace]
 
 [dependencies]

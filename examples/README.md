@@ -18,9 +18,9 @@ the runner. The crate is called `flust-example-<name>`, and the Dart package
 `flust_example_<name>`.
 
 Each example is a Cargo workspace of its own, not a member of the
-repository's. Flust loads an app's Flutter bundle from next to its binary
-(`data/` and `lib/`), so two apps sharing a target directory would
-overwrite each other's bundle.
+repository's, the way an app's runner would be: it has its own
+`Cargo.lock` and `target/`, and builds the same way out of this
+repository.
 
 ## Running
 
@@ -29,6 +29,7 @@ You need a Rust toolchain, a Wayland session, and Flutter with
 set up. From an example's directory:
 
 ```sh
+flutter pub get
 flutter run -d flust              # or --profile, --release
 ```
 
