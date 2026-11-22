@@ -70,11 +70,10 @@ The `scale-fractional` scenario runs on an output at scale 1.5. The `scale-chang
 By default, Flust creates one window when the app starts, for Flutter's implicit view. An app that wants more windows creates all of them itself, from Dart, with Flutter's windowing API (`WindowController`, the `Window` widget, `WindowManager`), and is started without a window of its own:
 
 ```rust
-use flust::{application::Application, Backend, BackendConfigSctk};
+use flust::application::Application;
 
-let config = BackendConfigSctk::default().with_startup_window(false);
 let app = Application::builder()
-    .with_backend(Backend::Sctk(config))
+    .with_startup_window(false)
     .build()?;
 ```
 

@@ -77,6 +77,21 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Whether the application starts with a window, the implicit view. On
+    /// by default. An app that creates its windows itself, from Dart, turns
+    /// it off: see [`BackendConfigSctk::startup_window`].
+    ///
+    /// This sets it on the current backend, so a later
+    /// [`Self::with_backend`] replaces it.
+    ///
+    /// [`BackendConfigSctk::startup_window`]: flust_runner_api::BackendConfigSctk::startup_window
+    pub fn with_startup_window(mut self, startup_window: bool) -> Self {
+        match &mut self.attributes.backend {
+            Backend::Sctk(config) => config.startup_window = startup_window,
+        }
+        self
+    }
+
     pub fn with_inner_size<S: Into<Size>>(mut self, size: S) -> Self {
         self.attributes.inner_size = Some(size.into());
         self
