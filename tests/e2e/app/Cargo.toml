@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# Not a member of the repository's workspace: it needs a Flutter bundle next
-# to its binary, which `tests/e2e/build-app.sh` puts there.
+# Not a member of the repository's workspace: like an app's runner, it is a
+# workspace of its own. `../build-app.sh` builds it with `flutter build flust`.
 [workspace]
 
 [dependencies]
