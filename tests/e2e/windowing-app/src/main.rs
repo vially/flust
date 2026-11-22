@@ -1,17 +1,16 @@
 use std::process::ExitCode;
 
-use flust::{application::Application, Backend, BackendConfigSctk};
+use flust::application::Application;
 
 /// An app that opens its windows itself, with Flutter's windowing API:
 /// Flust starts it without a window.
 fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let config = BackendConfigSctk::default().with_startup_window(false);
     let app = Application::builder()
-        .with_backend(Backend::Sctk(config))
         .with_title("Flust E2E Windowing")
         .with_app_id("dev.vially.flust.e2e-windowing")
+        .with_startup_window(false)
         .with_args(engine_args())
         .build()?;
 
