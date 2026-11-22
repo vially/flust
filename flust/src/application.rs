@@ -64,6 +64,18 @@ pub struct ApplicationBuilder {
 
 impl ApplicationBuilder {
     /// Builds the application.
+    ///
+    /// On Linux, the paths that weren't set default to the layout that
+    /// `flutter build flust` gives a bundle, next to the binary:
+    ///
+    /// - [assets](Self::with_assets_path): `data/flutter_assets`;
+    /// - [ICU data](Self::with_icu_data_path): `data/icudtl.dat`;
+    /// - [AOT library](Self::with_aot_library_path): `lib/libapp.so`, which
+    ///   only profile and release builds have;
+    /// - [persistent cache](Self::with_persistent_cache_path):
+    ///   `<app_id>` in the user's cache directory (`$XDG_CACHE_HOME`, or
+    ///   `~/.cache`), if the app has an [app id](Self::with_app_id).
+    ///   The engine keeps its cache in `flutter_engine` inside it.
     pub fn build(mut self) -> Result<Application, ApplicationBuildError> {
         #[cfg(target_os = "linux")]
         self.use_default_paths_if_empty();
@@ -139,21 +151,25 @@ impl ApplicationBuilder {
         self
     }
 
+    /// See [`Self::build`] for the default.
     pub fn with_aot_library_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.attributes.aot_library_path = path.into();
         self
     }
 
+    /// See [`Self::build`] for the default.
     pub fn with_assets_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.attributes.assets_path = path.into();
         self
     }
 
+    /// See [`Self::build`] for the default.
     pub fn with_icu_data_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.attributes.icu_data_path = path.into();
         self
     }
 
+    /// See [`Self::build`] for the default.
     pub fn with_persistent_cache_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.attributes.persistent_cache_path = path.into();
         self
